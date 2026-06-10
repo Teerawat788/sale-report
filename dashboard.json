@@ -23,5 +23,26 @@
     "สูงกว่า Budget 35 ตัน",
     "Fish4 ต่ำกว่าเป้า 45 ตัน",
     "Fish5 สูงกว่าเป้า 80 ตัน"
-  ]
+  ],
+"workingDaysPassed": 6,
+"workingDaysTotal": 24,
+
+"speed": {
+  "current": 89.8,
+  "required": 83.3
+},
+
+"achievement": {
+  "total": 25.4,
+  "fish4": 24.3,
+  "fish5": 28.9
+},
+
+"topCustomers": [
+  {"name":"กบทองฟาร์ม","ton":30.2},
+  {"name":"อนันตชัยฟาร์ม","ton":29.0},
+  {"name":"นลินรัตน์ฟาร์ม","ton":26.0},
+  {"name":"พรศิลป์ฟาร์ม","ton":21.5},
+  {"name":"พี่แมว เสนา","ton":18.3}
+]
 }
