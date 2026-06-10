@@ -73,6 +73,40 @@ color:#21409A;
 
 </div>
 
+<h2>Fish4 Central</h2>
+
+<div class="kpi-grid">
+  <div class="card">
+    <h3>Actual</h3>
+    <div class="value" id="fish4Actual">-</div>
+  </div>
+
+  <div class="card">
+    <h3>Forecast</h3>
+    <div class="value" id="fish4Forecast">-</div>
+  </div>
+</div>
+
+<h2>Fish5 South</h2>
+
+<div class="kpi-grid">
+  <div class="card">
+    <h3>Actual</h3>
+    <div class="value" id="fish5Actual">-</div>
+  </div>
+
+  <div class="card">
+    <h3>Forecast</h3>
+    <div class="value" id="fish5Forecast">-</div>
+  </div>
+</div>
+
+<h2>Executive Summary</h2>
+
+<div class="card">
+  <ul id="summary"></ul>
+</div>
+
 <script>
 fetch('dashboard.json')
 .then(response => response.json())
@@ -93,6 +127,25 @@ data.total.forecastTon.toFixed(1);
 document.getElementById('gapTon').innerText =
 data.total.gapTon.toFixed(1);
 
+document.getElementById('fish4Actual').innerText =
+data.fish4.actualTon.toFixed(1);
+
+document.getElementById('fish4Forecast').innerText =
+data.fish4.forecastTon.toFixed(1);
+
+document.getElementById('fish5Actual').innerText =
+data.fish5.actualTon.toFixed(1);
+
+document.getElementById('fish5Forecast').innerText =
+data.fish5.forecastTon.toFixed(1);
+
+let html='';
+
+data.summary.forEach(item=>{
+html += '<li>' + item + '</li>';
+});
+
+document.getElementById('summary').innerHTML = html;
 });
 </script>
 
