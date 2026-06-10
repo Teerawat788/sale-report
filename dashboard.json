@@ -1,9 +1,31 @@
 {
-  "date": "2026-06-11",
-  "total": {
-    "actualTon": 538.81,
-    "budgetTon": 2120.02,
-    "forecastTon": 2155.22,
-    "gapTon": 35.20
-  }
+"date": "2026-06-11",
+
+"total": {
+"actualTon": 538.81,
+"budgetTon": 2120.02,
+"forecastTon": 2155.22,
+"gapTon": 35.20
+},
+
+"fish4": {
+"actualTon": 391.32,
+"budgetTon": 1610.00,
+"forecastTon": 1565.28,
+"gapTon": -44.72
+},
+
+"fish5": {
+"actualTon": 147.49,
+"budgetTon": 510.02,
+"forecastTon": 589.96,
+"gapTon": 79.94
+},
+
+"summary": [
+"Forecast ประเทศ 2,155 ตัน",
+"สูงกว่า Budget 35 ตัน",
+"Fish4 ต่ำกว่าเป้า 45 ตัน",
+"Fish5 สูงกว่าเป้า 80 ตัน"
+]
 }
