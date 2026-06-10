@@ -101,6 +101,45 @@ color:#21409A;
   </div>
 </div>
 
+ <h2>Speed Monitor</h2>
+
+<div class="kpi-grid">
+  <div class="card">
+    <h3>Current Speed</h3>
+    <div class="value" id="currentSpeed">-</div>
+  </div>
+
+  <div class="card">
+    <h3>Required Speed</h3>
+    <div class="value" id="requiredSpeed">-</div>
+  </div>
+</div>
+
+<h2>Achievement (%)</h2>
+
+<div class="kpi-grid">
+  <div class="card">
+    <h3>Total</h3>
+    <div class="value" id="achTotal">-</div>
+  </div>
+
+  <div class="card">
+    <h3>Fish4</h3>
+    <div class="value" id="achFish4">-</div>
+  </div>
+
+  <div class="card">
+    <h3>Fish5</h3>
+    <div class="value" id="achFish5">-</div>
+  </div>
+</div>
+
+<h2>Top Customers</h2>
+
+<div class="card">
+  <ol id="topCustomers"></ol>
+</div> 
+  
 <h2>Executive Summary</h2>
 
 <div class="card">
@@ -146,7 +185,33 @@ html += '<li>' + item + '</li>';
 });
 
 document.getElementById('summary').innerHTML = html;
+
+document.getElementById('currentSpeed').innerText =
+data.speed.current + ' T/D';
+
+document.getElementById('requiredSpeed').innerText =
+data.speed.required + ' T/D';
+
+document.getElementById('achTotal').innerText =
+data.achievement.total + '%';
+
+document.getElementById('achFish4').innerText =
+data.achievement.fish4 + '%';
+
+document.getElementById('achFish5').innerText =
+data.achievement.fish5 + '%';
+
+let custHtml='';
+
+data.topCustomers.forEach(c=>{
+  custHtml += '<li>' + c.name + ' - ' + c.ton + ' ตัน</li>';
 });
+
+document.getElementById('topCustomers').innerHTML =
+custHtml;
+
+});
+  
 </script>
 
 </body>
