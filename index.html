@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TFM Fish Command Center</title>
+
+<style>
+body{
+font-family:Arial,sans-serif;
+background:#f4f7fb;
+margin:0;
+padding:20px;
+}
+
+.header{
+background:#21409A;
+color:white;
+padding:20px;
+border-radius:12px;
+margin-bottom:20px;
+}
+
+.kpi-grid{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+gap:12px;
+}
+
+.card{
+background:white;
+padding:15px;
+border-radius:12px;
+box-shadow:0 2px 8px rgba(0,0,0,.1);
+}
+
+.value{
+font-size:28px;
+font-weight:bold;
+color:#21409A;
+}
+</style>
+
+</head>
+<body>
+
+<div class="header">
+<h1>TFM FISH COMMAND CENTER</h1>
+<p id="updateDate"></p>
+</div>
+
+<div class="kpi-grid">
+
+<div class="card">
+<h3>Actual Ton</h3>
+<div class="value" id="actualTon">-</div>
+</div>
+
+<div class="card">
+<h3>Budget Ton</h3>
+<div class="value" id="budgetTon">-</div>
+</div>
+
+<div class="card">
+<h3>Forecast EOM</h3>
+<div class="value" id="forecastTon">-</div>
+</div>
+
+<div class="card">
+<h3>Gap</h3>
+<div class="value" id="gapTon">-</div>
+</div>
+
+</div>
+
+<script>
+fetch('dashboard.json')
+.then(response => response.json())
+.then(data => {
+
+document.getElementById('updateDate').innerText =
+'Update : ' + data.date;
+
+document.getElementById('actualTon').innerText =
+data.total.actualTon.toFixed(1);
+
+document.getElementById('budgetTon').innerText =
+data.total.budgetTon.toFixed(1);
+
+document.getElementById('forecastTon').innerText =
+data.total.forecastTon.toFixed(1);
+
+document.getElementById('gapTon').innerText =
+data.total.gapTon.toFixed(1);
+
+});
+</script>
+
+</body>
+</html>
