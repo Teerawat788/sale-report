@@ -30,28 +30,5 @@
     "actualTon":147.46,
     "budgetTon":510.02,
     "achievement":28.91
-  },
-
-  "opportunity":[
-    "Fish5 Achievement สูงกว่า Fish4",
-    "Achievement ประเทศมากกว่า 25%"
-  ],
-
-  "watchout":[
-    "Forecast ต่ำกว่า Budget",
-    "Current Speed ต่ำกว่า Required Speed"
-  ],
-
-  "summary":[
-    "Actual 538.84 ตัน",
-    "Achievement 28.36%",
-    "Forecast 1616.52 ตัน"
-  ],
-
-  "trend":{
-    "labels":["WD1","WD2","WD3","WD4","WD5","WD6","WD7","WD8"],
-    "actual":[65,132,198,255,321,401,470,538.84],
-    "budget":[88,177,265,353,442,530,618,707],
-    "forecast":[1617,1617,1617,1617,1617,1617,1617,1617]
   }
 }
