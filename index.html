@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="th">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,21 +11,20 @@
 <style>
 
 :root{
---tfm-blue:#21409A;
---success:#16a34a;
---danger:#dc2626;
---warning:#f59e0b;
+--blue:#21409A;
+--green:#16a34a;
+--red:#dc2626;
 --bg:#f4f7fb;
 }
 
 *{
-box-sizing:border-box;
 margin:0;
 padding:0;
+box-sizing:border-box;
 }
 
 body{
-font-family:Segoe UI,Tahoma,sans-serif;
+font-family:'Segoe UI',Tahoma,sans-serif;
 background:var(--bg);
 padding:15px;
 color:#222;
@@ -41,12 +39,8 @@ margin-bottom:20px;
 }
 
 .header h1{
-font-size:28px;
-margin-bottom:8px;
-}
-
-.update{
-opacity:.9;
+font-size:30px;
+margin-bottom:6px;
 }
 
 .grid{
@@ -57,8 +51,8 @@ gap:15px;
 
 .card{
 background:white;
-border-radius:14px;
 padding:18px;
+border-radius:14px;
 box-shadow:0 2px 10px rgba(0,0,0,.08);
 }
 
@@ -69,24 +63,24 @@ color:#666;
 }
 
 .value{
-font-size:32px;
+font-size:30px;
 font-weight:700;
-color:var(--tfm-blue);
+color:var(--blue);
 }
 
 .section{
-margin-top:22px;
+margin-top:24px;
 }
 
 .section-title{
 font-size:22px;
 font-weight:700;
+color:var(--blue);
 margin-bottom:12px;
-color:var(--tfm-blue);
 }
 
 .progress{
-height:26px;
+height:28px;
 background:#ddd;
 border-radius:20px;
 overflow:hidden;
@@ -94,19 +88,27 @@ overflow:hidden;
 
 .progress-bar{
 height:100%;
-background:var(--success);
-text-align:center;
+background:var(--green);
 color:white;
 font-weight:bold;
-line-height:26px;
+line-height:28px;
+text-align:center;
+}
+
+.good{
+color:var(--green);
+}
+
+.bad{
+color:var(--red);
 }
 
 .alert-green{
-border-left:6px solid var(--success);
+border-left:6px solid var(--green);
 }
 
 .alert-red{
-border-left:6px solid var(--danger);
+border-left:6px solid var(--red);
 }
 
 ul{
@@ -117,34 +119,25 @@ li{
 margin-bottom:8px;
 }
 
-.status{
-font-size:30px;
-font-weight:bold;
-}
-
-.good{
-color:var(--success);
-}
-
-.bad{
-color:var(--danger);
+canvas{
+max-height:420px;
 }
 
 .footer{
-margin-top:20px;
 text-align:center;
+margin-top:25px;
 font-size:12px;
 color:#777;
 }
 
 @media(max-width:768px){
 
-.value{
-font-size:26px;
-}
-
 .header h1{
 font-size:22px;
+}
+
+.value{
+font-size:24px;
 }
 
 }
@@ -156,8 +149,10 @@ font-size:22px;
 
 <div class="header">
 <h1>TFM FISH SALES COMMAND CENTER</h1>
-<div class="update" id="updateDate">Loading...</div>
+<div id="updateDate">Loading...</div>
 </div>
+
+<!-- KPI -->
 
 <div class="grid">
 
@@ -183,6 +178,8 @@ font-size:22px;
 
 </div>
 
+<!-- Progress -->
+
 <div class="section">
 
 <div class="section-title">
@@ -192,7 +189,7 @@ Achievement Progress
 <div class="card">
 
 <div class="progress">
-<div id="progressBar" class="progress-bar">
+<div class="progress-bar" id="progressBar">
 0%
 </div>
 </div>
@@ -200,6 +197,8 @@ Achievement Progress
 </div>
 
 </div>
+
+<!-- Speed Engine -->
 
 <div class="section">
 
@@ -226,12 +225,14 @@ Speed Engine
 
 <div class="card">
 <h3>Status</h3>
-<div class="status" id="status">-</div>
+<div class="value" id="status">-</div>
 </div>
 
 </div>
 
 </div>
+
+<!-- Fish Area -->
 
 <div class="section">
 
@@ -242,58 +243,44 @@ Fish Area Performance
 <div class="grid">
 
 <div class="card">
-
 <h3>Fish4 Central</h3>
-
-<p id="fish4Info"></p>
-
+<div id="fish4Info"></div>
 </div>
 
 <div class="card">
-
 <h3>Fish5 South</h3>
-
-<p id="fish5Info"></p>
-
+<div id="fish5Info"></div>
 </div>
 
 </div>
 
 </div>
+
+<!-- Opportunity -->
 
 <div class="section">
 
 <div class="grid">
 
 <div class="card alert-green">
-
 <h3>Opportunity</h3>
-
 <ul id="opportunity"></ul>
-
 </div>
 
 <div class="card alert-red">
-
 <h3>Watch Out</h3>
-
 <ul id="watchout"></ul>
-
 </div>
 
 </div>
 
 </div>
+
+<!-- Summary -->
 
 <div class="section">
 
 <div class="card">
-
-<h2>Monthly Trend</h2>
-
-<div class="card">
-<canvas id="trendChart"></canvas>
-</div>  
 
 <h3>Executive Summary</h3>
 
@@ -303,36 +290,13 @@ Fish Area Performance
 
 </div>
 
+<!-- Trend -->
+
 <div class="section">
 
 <div class="card">
 
-<h2>Forecast Status</h2>
-
-<div class="kpi-grid">
-
-<div class="card">
-<h3>Forecast</h3>
-<div class="value" id="forecastStatus"></div>
-</div>
-
-<div class="card">
-<h3>Speed</h3>
-<div class="value" id="speedStatus"></div>
-<div class="card">
-<h3>Speed Gap</h3>
-<div class="value" id="speedGap"></div>
-  
-</div>
-
-<div class="card">
-<h3>Achievement</h3>
-<div class="value" id="achievementStatus"></div>
-</div>
-
-</div>
-
-<h3>Sales Trend</h3>
+<h3>Monthly Trend</h3>
 
 <canvas id="trendChart"></canvas>
 
@@ -341,7 +305,7 @@ Fish Area Performance
 </div>
 
 <div class="footer">
-TFM Fish Sales Command Center V10
+TFM Fish Sales Command Center V10 Production
 </div>
 
 <script>
@@ -365,31 +329,16 @@ document.getElementById('forecastTon').innerText =
 data.total.forecastTon.toFixed(2);
 
 document.getElementById('achievement').innerText =
-data.total.achievement + '%';
+data.total.achievement.toFixed(2) + '%';
 
 document.getElementById('currentSpeed').innerText =
-
-document.getElementById('speedGap').innerText =
-(data.speed.current - data.speed.required).toFixed(1) + ' T/D';
-
-document.getElementById('forecastStatus').innerText =
-data.status.forecast;
-
-document.getElementById('speedStatus').innerText =
-data.status.speed;
-
-document.getElementById('achievementStatus').innerText =
-data.status.achievement;
-  
 data.total.currentSpeed.toFixed(2);
 
 document.getElementById('requiredSpeed').innerText =
 data.total.requiredSpeed.toFixed(2);
 
 document.getElementById('workingDay').innerText =
-data.workingDaysPassed +
-' / ' +
-data.workingDaysTotal;
+data.workingDaysPassed + '/' + data.workingDaysTotal;
 
 document.getElementById('progressBar').style.width =
 data.total.achievement + '%';
@@ -401,14 +350,14 @@ document.getElementById('fish4Info').innerHTML =
 `
 Actual : ${data.fish4.actualTon.toFixed(2)} ตัน<br>
 Budget : ${data.fish4.budgetTon.toFixed(2)} ตัน<br>
-Achievement : ${data.fish4.achievement}%
+Achievement : ${data.fish4.achievement.toFixed(2)}%
 `;
 
 document.getElementById('fish5Info').innerHTML =
 `
 Actual : ${data.fish5.actualTon.toFixed(2)} ตัน<br>
 Budget : ${data.fish5.budgetTon.toFixed(2)} ตัน<br>
-Achievement : ${data.fish5.achievement}%
+Achievement : ${data.fish5.achievement.toFixed(2)}%
 `;
 
 document.getElementById('opportunity').innerHTML =
@@ -426,26 +375,21 @@ data.summary.map(x =>
 `<li>${x}</li>`
 ).join('');
 
-const status =
-data.total.currentSpeed >=
-data.total.requiredSpeed;
+const ahead =
+data.total.currentSpeed >= data.total.requiredSpeed;
 
 document.getElementById('status').innerText =
-status ? '🟢 AHEAD' : '🔴 RISK';
+ahead ? 'AHEAD' : 'RISK';
 
 document.getElementById('status').className =
-status ? 'status good' : 'status bad';
+ahead ? 'value good' : 'value bad';
 
 new Chart(
 document.getElementById('trendChart'),
 {
 type:'line',
 data:{
-labels:[
-'Day 1',
-'Day 5',
-'Day 10'
-],
+labels:data.trend.labels,
 datasets:[
 {
 label:'Actual',
@@ -477,39 +421,8 @@ maintainAspectRatio:true
 
 console.error(error);
 
-alert(
-'ไม่พบ dashboard.json'
-);
-new Chart(
-document.getElementById('trendChart'),
-{
-type:'line',
-data:{
-labels:data.trend.labels,
-datasets:[
-{
-label:'Actual',
-data:data.trend.actual,
-borderWidth:3
-},
-{
-label:'Budget',
-data:data.trend.budget,
-borderWidth:3
-},
-{
-label:'Forecast',
-data:data.trend.forecast,
-borderWidth:3
-}
-]
-},
-options:{
-responsive:true,
-maintainAspectRatio:true
-}
-}
-);
+alert('ไม่พบ dashboard.json');
+
 });
 
 </script>
