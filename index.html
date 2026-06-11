@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="th">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -288,6 +289,12 @@ Fish Area Performance
 
 <div class="card">
 
+<h2>Monthly Trend</h2>
+
+<div class="card">
+<canvas id="trendChart"></canvas>
+</div>  
+
 <h3>Executive Summary</h3>
 
 <ul id="summary"></ul>
@@ -299,6 +306,31 @@ Fish Area Performance
 <div class="section">
 
 <div class="card">
+
+<h2>Forecast Status</h2>
+
+<div class="kpi-grid">
+
+<div class="card">
+<h3>Forecast</h3>
+<div class="value" id="forecastStatus"></div>
+</div>
+
+<div class="card">
+<h3>Speed</h3>
+<div class="value" id="speedStatus"></div>
+<div class="card">
+<h3>Speed Gap</h3>
+<div class="value" id="speedGap"></div>
+  
+</div>
+
+<div class="card">
+<h3>Achievement</h3>
+<div class="value" id="achievementStatus"></div>
+</div>
+
+</div>
 
 <h3>Sales Trend</h3>
 
@@ -336,6 +368,19 @@ document.getElementById('achievement').innerText =
 data.total.achievement + '%';
 
 document.getElementById('currentSpeed').innerText =
+
+document.getElementById('speedGap').innerText =
+(data.speed.current - data.speed.required).toFixed(1) + ' T/D';
+
+document.getElementById('forecastStatus').innerText =
+data.status.forecast;
+
+document.getElementById('speedStatus').innerText =
+data.status.speed;
+
+document.getElementById('achievementStatus').innerText =
+data.status.achievement;
+  
 data.total.currentSpeed.toFixed(2);
 
 document.getElementById('requiredSpeed').innerText =
@@ -435,7 +480,36 @@ console.error(error);
 alert(
 'ไม่พบ dashboard.json'
 );
-
+new Chart(
+document.getElementById('trendChart'),
+{
+type:'line',
+data:{
+labels:data.trend.labels,
+datasets:[
+{
+label:'Actual',
+data:data.trend.actual,
+borderWidth:3
+},
+{
+label:'Budget',
+data:data.trend.budget,
+borderWidth:3
+},
+{
+label:'Forecast',
+data:data.trend.forecast,
+borderWidth:3
+}
+]
+},
+options:{
+responsive:true,
+maintainAspectRatio:true
+}
+}
+);
 });
 
 </script>
