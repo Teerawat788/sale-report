@@ -1,3 +1,15 @@
+"status":{
+  "forecast":"ON TRACK",
+  "speed":"GOOD",
+  "achievement":"NORMAL"
+},
+
+"trend":{
+  "labels":["WD1","WD2","WD3","WD4","WD5","WD6","WD7","WD8"],
+  "actual":[65,132,198,255,321,401,470,538.8],
+  "budget":[88,177,265,353,442,530,618,707],
+  "forecast":[2155,2155,2155,2155,2155,2155,2155,2155]
+}
 {
   "date":"10/06/2026",
   "workingDaysPassed":8,
