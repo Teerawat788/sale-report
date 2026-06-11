@@ -1,19 +1,14 @@
-"status":{
-  "forecast":"ON TRACK",
-  "speed":"GOOD",
-  "achievement":"NORMAL"
-},
-
-"trend":{
-  "labels":["WD1","WD2","WD3","WD4","WD5","WD6","WD7","WD8"],
-  "actual":[65,132,198,255,321,401,470,538.8],
-  "budget":[88,177,265,353,442,530,618,707],
-  "forecast":[2155,2155,2155,2155,2155,2155,2155,2155]
-}
 {
   "date":"10/06/2026",
+
   "workingDaysPassed":8,
   "workingDaysTotal":24,
+
+  "status":{
+    "forecast":"ON TRACK",
+    "speed":"GOOD",
+    "achievement":"NORMAL"
+  },
 
   "total":{
     "actualTon":538.84,
@@ -50,13 +45,13 @@
   "summary":[
     "Actual 538.84 ตัน",
     "Achievement 28.36%",
-    "Forecast 1616.52 ตัน",
-    "ต้องเร่งความเร็วขายในช่วงครึ่งหลังของเดือน"
+    "Forecast 1616.52 ตัน"
   ],
 
   "trend":{
-    "actual":[410,470,538.84],
-    "budget":[633,1266,1900],
-    "forecast":[1230,1410,1616]
+    "labels":["WD1","WD2","WD3","WD4","WD5","WD6","WD7","WD8"],
+    "actual":[65,132,198,255,321,401,470,538.84],
+    "budget":[88,177,265,353,442,530,618,707],
+    "forecast":[1617,1617,1617,1617,1617,1617,1617,1617]
   }
 }
