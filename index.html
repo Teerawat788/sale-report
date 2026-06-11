@@ -3,215 +3,441 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TFM Fish Command Center</title>
+
+<title>TFM Fish Sales Command Center V10</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body{
-font-family:Arial,sans-serif;
-background:#f4f7fb;
+
+:root{
+--tfm-blue:#21409A;
+--success:#16a34a;
+--danger:#dc2626;
+--warning:#f59e0b;
+--bg:#f4f7fb;
+}
+
+*{
+box-sizing:border-box;
 margin:0;
-padding:20px;
+padding:0;
+}
+
+body{
+font-family:Segoe UI,Tahoma,sans-serif;
+background:var(--bg);
+padding:15px;
+color:#222;
 }
 
 .header{
-background:#21409A;
+background:linear-gradient(135deg,#21409A,#14285f);
 color:white;
-padding:20px;
-border-radius:12px;
+padding:24px;
+border-radius:16px;
 margin-bottom:20px;
 }
 
-.kpi-grid{
+.header h1{
+font-size:28px;
+margin-bottom:8px;
+}
+
+.update{
+opacity:.9;
+}
+
+.grid{
 display:grid;
-grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-gap:12px;
+grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+gap:15px;
 }
 
 .card{
 background:white;
-padding:15px;
-border-radius:12px;
-box-shadow:0 2px 8px rgba(0,0,0,.1);
+border-radius:14px;
+padding:18px;
+box-shadow:0 2px 10px rgba(0,0,0,.08);
+}
+
+.card h3{
+font-size:15px;
+margin-bottom:10px;
+color:#666;
 }
 
 .value{
-font-size:28px;
-font-weight:bold;
-color:#21409A;
+font-size:32px;
+font-weight:700;
+color:var(--tfm-blue);
 }
-</style>
 
+.section{
+margin-top:22px;
+}
+
+.section-title{
+font-size:22px;
+font-weight:700;
+margin-bottom:12px;
+color:var(--tfm-blue);
+}
+
+.progress{
+height:26px;
+background:#ddd;
+border-radius:20px;
+overflow:hidden;
+}
+
+.progress-bar{
+height:100%;
+background:var(--success);
+text-align:center;
+color:white;
+font-weight:bold;
+line-height:26px;
+}
+
+.alert-green{
+border-left:6px solid var(--success);
+}
+
+.alert-red{
+border-left:6px solid var(--danger);
+}
+
+ul{
+padding-left:20px;
+}
+
+li{
+margin-bottom:8px;
+}
+
+.status{
+font-size:30px;
+font-weight:bold;
+}
+
+.good{
+color:var(--success);
+}
+
+.bad{
+color:var(--danger);
+}
+
+.footer{
+margin-top:20px;
+text-align:center;
+font-size:12px;
+color:#777;
+}
+
+@media(max-width:768px){
+
+.value{
+font-size:26px;
+}
+
+.header h1{
+font-size:22px;
+}
+
+}
+
+</style>
 </head>
+
 <body>
 
 <div class="header">
-<h1>TFM FISH COMMAND CENTER</h1>
-<p id="updateDate"></p>
+<h1>TFM FISH SALES COMMAND CENTER</h1>
+<div class="update" id="updateDate">Loading...</div>
 </div>
 
-<div class="kpi-grid">
+<div class="grid">
 
 <div class="card">
 <h3>Actual Ton</h3>
-<div class="value" id="actualTon">-</div>
+<div class="value" id="actualTon">0</div>
 </div>
 
 <div class="card">
 <h3>Budget Ton</h3>
-<div class="value" id="budgetTon">-</div>
+<div class="value" id="budgetTon">0</div>
 </div>
 
 <div class="card">
 <h3>Forecast EOM</h3>
-<div class="value" id="forecastTon">-</div>
+<div class="value" id="forecastTon">0</div>
 </div>
 
 <div class="card">
-<h3>Gap</h3>
-<div class="value" id="gapTon">-</div>
+<h3>Achievement</h3>
+<div class="value" id="achievement">0%</div>
 </div>
 
 </div>
 
-<h2>Fish4 Central</h2>
+<div class="section">
 
-<div class="kpi-grid">
-  <div class="card">
-    <h3>Actual</h3>
-    <div class="value" id="fish4Actual">-</div>
-  </div>
-
-  <div class="card">
-    <h3>Forecast</h3>
-    <div class="value" id="fish4Forecast">-</div>
-  </div>
+<div class="section-title">
+Achievement Progress
 </div>
-
-<h2>Fish5 South</h2>
-
-<div class="kpi-grid">
-  <div class="card">
-    <h3>Actual</h3>
-    <div class="value" id="fish5Actual">-</div>
-  </div>
-
-  <div class="card">
-    <h3>Forecast</h3>
-    <div class="value" id="fish5Forecast">-</div>
-  </div>
-</div>
-
- <h2>Speed Monitor</h2>
-
-<div class="kpi-grid">
-  <div class="card">
-    <h3>Current Speed</h3>
-    <div class="value" id="currentSpeed">-</div>
-  </div>
-
-  <div class="card">
-    <h3>Required Speed</h3>
-    <div class="value" id="requiredSpeed">-</div>
-  </div>
-</div>
-
-<h2>Achievement (%)</h2>
-
-<div class="kpi-grid">
-  <div class="card">
-    <h3>Total</h3>
-    <div class="value" id="achTotal">-</div>
-  </div>
-
-  <div class="card">
-    <h3>Fish4</h3>
-    <div class="value" id="achFish4">-</div>
-  </div>
-
-  <div class="card">
-    <h3>Fish5</h3>
-    <div class="value" id="achFish5">-</div>
-  </div>
-</div>
-
-<h2>Top Customers</h2>
 
 <div class="card">
-  <ol id="topCustomers"></ol>
-</div> 
-  
-<h2>Executive Summary</h2>
+
+<div class="progress">
+<div id="progressBar" class="progress-bar">
+0%
+</div>
+</div>
+
+</div>
+
+</div>
+
+<div class="section">
+
+<div class="section-title">
+Speed Engine
+</div>
+
+<div class="grid">
 
 <div class="card">
-  <ul id="summary"></ul>
+<h3>Current Speed</h3>
+<div class="value" id="currentSpeed">0</div>
+</div>
+
+<div class="card">
+<h3>Required Speed</h3>
+<div class="value" id="requiredSpeed">0</div>
+</div>
+
+<div class="card">
+<h3>Working Day</h3>
+<div class="value" id="workingDay">0</div>
+</div>
+
+<div class="card">
+<h3>Status</h3>
+<div class="status" id="status">-</div>
+</div>
+
+</div>
+
+</div>
+
+<div class="section">
+
+<div class="section-title">
+Fish Area Performance
+</div>
+
+<div class="grid">
+
+<div class="card">
+
+<h3>Fish4 Central</h3>
+
+<p id="fish4Info"></p>
+
+</div>
+
+<div class="card">
+
+<h3>Fish5 South</h3>
+
+<p id="fish5Info"></p>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="section">
+
+<div class="grid">
+
+<div class="card alert-green">
+
+<h3>Opportunity</h3>
+
+<ul id="opportunity"></ul>
+
+</div>
+
+<div class="card alert-red">
+
+<h3>Watch Out</h3>
+
+<ul id="watchout"></ul>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="section">
+
+<div class="card">
+
+<h3>Executive Summary</h3>
+
+<ul id="summary"></ul>
+
+</div>
+
+</div>
+
+<div class="section">
+
+<div class="card">
+
+<h3>Sales Trend</h3>
+
+<canvas id="trendChart"></canvas>
+
+</div>
+
+</div>
+
+<div class="footer">
+TFM Fish Sales Command Center V10
 </div>
 
 <script>
+
 fetch('dashboard.json')
+
 .then(response => response.json())
+
 .then(data => {
 
 document.getElementById('updateDate').innerText =
-'Update : ' + data.date;
+'Update Date : ' + data.date;
 
 document.getElementById('actualTon').innerText =
-data.total.actualTon.toFixed(1);
+data.total.actualTon.toFixed(2);
 
 document.getElementById('budgetTon').innerText =
-data.total.budgetTon.toFixed(1);
+data.total.budgetTon.toFixed(2);
 
 document.getElementById('forecastTon').innerText =
-data.total.forecastTon.toFixed(1);
+data.total.forecastTon.toFixed(2);
 
-document.getElementById('gapTon').innerText =
-data.total.gapTon.toFixed(1);
-
-document.getElementById('fish4Actual').innerText =
-data.fish4.actualTon.toFixed(1);
-
-document.getElementById('fish4Forecast').innerText =
-data.fish4.forecastTon.toFixed(1);
-
-document.getElementById('fish5Actual').innerText =
-data.fish5.actualTon.toFixed(1);
-
-document.getElementById('fish5Forecast').innerText =
-data.fish5.forecastTon.toFixed(1);
-
-let html='';
-
-data.summary.forEach(item=>{
-html += '<li>' + item + '</li>';
-});
-
-document.getElementById('summary').innerHTML = html;
+document.getElementById('achievement').innerText =
+data.total.achievement + '%';
 
 document.getElementById('currentSpeed').innerText =
-data.speed.current + ' T/D';
+data.total.currentSpeed.toFixed(2);
 
 document.getElementById('requiredSpeed').innerText =
-data.speed.required + ' T/D';
+data.total.requiredSpeed.toFixed(2);
 
-document.getElementById('achTotal').innerText =
-data.achievement.total + '%';
+document.getElementById('workingDay').innerText =
+data.workingDaysPassed +
+' / ' +
+data.workingDaysTotal;
 
-document.getElementById('achFish4').innerText =
-data.achievement.fish4 + '%';
+document.getElementById('progressBar').style.width =
+data.total.achievement + '%';
 
-document.getElementById('achFish5').innerText =
-data.achievement.fish5 + '%';
+document.getElementById('progressBar').innerText =
+data.total.achievement + '%';
 
-let custHtml='';
+document.getElementById('fish4Info').innerHTML =
+`
+Actual : ${data.fish4.actualTon.toFixed(2)} ตัน<br>
+Budget : ${data.fish4.budgetTon.toFixed(2)} ตัน<br>
+Achievement : ${data.fish4.achievement}%
+`;
 
-data.topCustomers.forEach(c=>{
-  custHtml += '<li>' + c.name + ' - ' + c.ton + ' ตัน</li>';
+document.getElementById('fish5Info').innerHTML =
+`
+Actual : ${data.fish5.actualTon.toFixed(2)} ตัน<br>
+Budget : ${data.fish5.budgetTon.toFixed(2)} ตัน<br>
+Achievement : ${data.fish5.achievement}%
+`;
+
+document.getElementById('opportunity').innerHTML =
+data.opportunity.map(x =>
+`<li>${x}</li>`
+).join('');
+
+document.getElementById('watchout').innerHTML =
+data.watchout.map(x =>
+`<li>${x}</li>`
+).join('');
+
+document.getElementById('summary').innerHTML =
+data.summary.map(x =>
+`<li>${x}</li>`
+).join('');
+
+const status =
+data.total.currentSpeed >=
+data.total.requiredSpeed;
+
+document.getElementById('status').innerText =
+status ? '🟢 AHEAD' : '🔴 RISK';
+
+document.getElementById('status').className =
+status ? 'status good' : 'status bad';
+
+new Chart(
+document.getElementById('trendChart'),
+{
+type:'line',
+data:{
+labels:[
+'Day 1',
+'Day 5',
+'Day 10'
+],
+datasets:[
+{
+label:'Actual',
+data:data.trend.actual,
+borderWidth:3
+},
+{
+label:'Budget',
+data:data.trend.budget,
+borderWidth:3
+},
+{
+label:'Forecast',
+data:data.trend.forecast,
+borderWidth:3
+}
+]
+},
+options:{
+responsive:true,
+maintainAspectRatio:true
+}
+}
+);
+
+})
+
+.catch(error=>{
+
+console.error(error);
+
+alert(
+'ไม่พบ dashboard.json'
+);
+
 });
 
-document.getElementById('topCustomers').innerHTML =
-custHtml;
-
-});
-  
 </script>
 
 </body>
