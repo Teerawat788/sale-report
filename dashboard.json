@@ -1,48 +1,50 @@
 {
-  "date": "2026-06-11",
+  "date":"10/06/2026",
+  "workingDaysPassed":8,
+  "workingDaysTotal":24,
 
-  "total": {
-    "actualTon": 538.81,
-    "budgetTon": 2120.02,
-    "forecastTon": 2155.22,
-    "gapTon": 35.20
+  "total":{
+    "actualTon":538.84,
+    "budgetTon":1900.02,
+    "achievement":28.36,
+    "forecastTon":1616.52,
+    "gapTon":-283.50,
+    "currentSpeed":67.35,
+    "requiredSpeed":85.07
   },
 
-  "fish4": {
-    "actualTon": 391.32,
-    "forecastTon": 1565.28
+  "fish4":{
+    "actualTon":391.32,
+    "budgetTon":1390.00,
+    "achievement":28.15
   },
 
-  "fish5": {
-    "actualTon": 147.49,
-    "forecastTon": 589.96
+  "fish5":{
+    "actualTon":147.46,
+    "budgetTon":510.02,
+    "achievement":28.91
   },
 
-  "summary": [
-    "Forecast ประเทศ 2,155 ตัน",
-    "สูงกว่า Budget 35 ตัน",
-    "Fish4 ต่ำกว่าเป้า 45 ตัน",
-    "Fish5 สูงกว่าเป้า 80 ตัน"
+  "opportunity":[
+    "Fish5 Achievement สูงกว่า Fish4",
+    "Achievement ประเทศมากกว่า 25%"
   ],
-"workingDaysPassed": 6,
-"workingDaysTotal": 24,
 
-"speed": {
-  "current": 89.8,
-  "required": 83.3
-},
+  "watchout":[
+    "Forecast ต่ำกว่า Budget",
+    "Current Speed ต่ำกว่า Required Speed"
+  ],
 
-"achievement": {
-  "total": 25.4,
-  "fish4": 24.3,
-  "fish5": 28.9
-},
+  "summary":[
+    "Actual 538.84 ตัน",
+    "Achievement 28.36%",
+    "Forecast 1616.52 ตัน",
+    "ต้องเร่งความเร็วขายในช่วงครึ่งหลังของเดือน"
+  ],
 
-"topCustomers": [
-  {"name":"กบทองฟาร์ม","ton":30.2},
-  {"name":"อนันตชัยฟาร์ม","ton":29.0},
-  {"name":"นลินรัตน์ฟาร์ม","ton":26.0},
-  {"name":"พรศิลป์ฟาร์ม","ton":21.5},
-  {"name":"พี่แมว เสนา","ton":18.3}
-]
+  "trend":{
+    "actual":[410,470,538.84],
+    "budget":[633,1266,1900],
+    "forecast":[1230,1410,1616]
+  }
 }
