@@ -58,7 +58,8 @@
 ### 2) สร้าง Google Sheet + Apps Script
 1. สร้าง Google Sheet ใหม่ เช่น "Sales Bot" → เมนู **ส่วนขยาย → Apps Script**
 2. **Project Settings** (ไอคอนเฟือง) → ติ๊ก *Show "appsscript.json" manifest file* → ตั้ง Time zone เป็น `(GMT+07:00) Bangkok`
-3. คัดลอกไฟล์ทุกไฟล์ในโฟลเดอร์ `src/` ไปวางเป็นไฟล์ชื่อเดียวกันในโปรเจกต์ (`appsscript.json` วางทับของเดิม)
+3. **วิธีง่ายสุด:** เปิด [`dist/Code.gs`](dist/Code.gs) บน GitHub → กดปุ่ม **Copy raw file** (ไอคอนสี่เหลี่ยมซ้อนมุมขวาบน) → ไปที่ไฟล์ `Code.gs` ใน Apps Script ลบของเดิมแล้ววาง → กด 💾 บันทึก
+   แล้วทำแบบเดียวกันกับ [`src/appsscript.json`](src/appsscript.json) วางทับไฟล์ `appsscript.json`
    - หรือใช้ [clasp](https://github.com/google/clasp): คัดลอก `.clasp.json.example` เป็น `.clasp.json`, ใส่ Script ID, แล้ว `clasp push`
 4. **Project Settings → Script Properties** เพิ่ม:
 

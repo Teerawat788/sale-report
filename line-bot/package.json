@@ -3,6 +3,7 @@
   "private": true,
   "description": "LINE group bot for the sales team (Google Apps Script)",
   "scripts": {
-    "test": "TZ=Asia/Bangkok node test/run.js"
+    "test": "TZ=Asia/Bangkok node test/run.js",
+    "build": "node build.js"
   }
 }

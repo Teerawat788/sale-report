@@ -1,0 +1,1231 @@
+// ===== บอท LINE ผู้ช่วยทีมขาย — สร้างจาก line-bot/src ด้วย `npm run build` (อย่าแก้ไฟล์นี้โดยตรง) =====
+
+// ---------- Config.gs ----------
+/**
+ * การตั้งค่าบอท — ค่าที่เป็นความลับ/เปลี่ยนบ่อยเก็บใน Script Properties
+ * (Project Settings > Script Properties) ดูรายละเอียดใน README.md
+ *
+ *  LINE_CHANNEL_ACCESS_TOKEN  (จำเป็น) token ของ Messaging API channel
+ *  BOT_USER_ID                (แนะนำ)  Bot user ID (Uxxxx) ใช้กรอง webhook ปลอม
+ *  GROUP_ID                   ตั้งให้อัตโนมัติเมื่อพิมพ์ "ลงทะเบียน" ในกลุ่ม
+ *  SHEET_ID                   ว่างได้ถ้าสคริปต์ผูกกับ Google Sheet
+ *  CALENDAR_ID                ว่าง = ปฏิทินหลักของเจ้าของสคริปต์
+ *  DASHBOARD_URL              URL ของ dashboard.json
+ *  MORNING_HOUR               ชั่วโมงส่งสรุปเช้า (ค่าเริ่มต้น 7)
+ *  WORK_DAYS                  วันทำงาน 0=อา..6=ส (ค่าเริ่มต้น 1,2,3,4,5,6)
+ *  BRIEF_ENABLED / REVIEW_ENABLED / REMINDER_ENABLED  true|false
+ *  REMIND_BEFORE_MIN          เตือนก่อนนัดกี่นาที (ค่าเริ่มต้น 30)
+ */
+const CONFIG = {
+  DASHBOARD_URL: 'https://raw.githubusercontent.com/teerawat788/sale-report/main/dashboard.json',
+  DASHBOARD_PAGE: 'https://teerawat788.github.io/sale-report/',
+  EVENT_DEFAULT_MINUTES: 60,
+  REMIND_BEFORE_MIN: 30,
+  MORNING_HOUR: 7,
+  REVIEW_DAY: 5,      // ศุกร์
+  REVIEW_HOUR: 16,
+  WORK_DAYS: '1,2,3,4,5,6',
+};
+
+function prop_(key, def) {
+  const v = PropertiesService.getScriptProperties().getProperty(key);
+  return v === null || v === undefined || v === '' ? def : v;
+}
+
+function setProp_(key, value) {
+  PropertiesService.getScriptProperties().setProperty(key, String(value));
+}
+
+function flag_(key, def) {
+  return String(prop_(key, def === undefined ? 'true' : String(def))).toLowerCase() === 'true';
+}
+
+/** แยกไว้เป็นฟังก์ชันเพื่อให้ทดสอบโดยกำหนดเวลาได้ */
+function now_() {
+  return new Date();
+}
+
+// ---------- Util.gs ----------
+/** วันที่/เวลา และตัวช่วยจัดรูปแบบ (ไม่เรียก Google service — ทดสอบได้) */
+
+const TH_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+const TH_DAYS_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+function toDate_(v) {
+  if (!v) return null;
+  if (typeof v.getTime === 'function') return new Date(v.getTime());
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function startOfDay_(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function addDays_(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n,
+    d.getHours(), d.getMinutes(), d.getSeconds());
+}
+
+/** วันจันทร์ 00:00 ของสัปดาห์ที่ d อยู่ */
+function startOfWeek_(d) {
+  const s = startOfDay_(d);
+  const offset = (s.getDay() + 6) % 7;
+  return addDays_(s, -offset);
+}
+
+function dayDiff_(a, b) {
+  return Math.round((startOfDay_(a).getTime() - startOfDay_(b).getTime()) / 86400000);
+}
+
+/** รหัสสัปดาห์แบบ ISO เช่น 2026-W47 ใช้ติ๊กงานประจำรายสัปดาห์ */
+function isoWeekKey_(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((t - yearStart) / 86400000 + 1) / 7);
+  return t.getUTCFullYear() + '-W' + (week < 10 ? '0' : '') + week;
+}
+
+function pad2_(n) {
+  return (n < 10 ? '0' : '') + n;
+}
+
+function fmtTime_(d) {
+  return pad2_(d.getHours()) + ':' + pad2_(d.getMinutes());
+}
+
+/** "พฤ. 19 พ.ย." */
+function fmtDate_(d) {
+  return TH_DAYS_SHORT[d.getDay()] + ' ' + d.getDate() + ' ' + TH_MONTHS_SHORT[d.getMonth()];
+}
+
+/** "พฤหัสบดี 19 พ.ย. 2569" */
+function fmtDateLong_(d) {
+  return TH_DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + TH_MONTHS_SHORT[d.getMonth()] + ' ' + (d.getFullYear() + 543);
+}
+
+function fmtNum_(n, digits) {
+  if (n === null || n === undefined || isNaN(n)) return '-';
+  const dg = digits === undefined ? 2 : digits;
+  const parts = Number(n).toFixed(dg).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.join('.');
+}
+
+/** ป้ายกำหนดส่งเทียบกับวันนี้ */
+function dueLabel_(due, now) {
+  if (!due) return 'ไม่มีกำหนด';
+  const diff = dayDiff_(due, now);
+  if (diff < 0) return '🔴 เลยกำหนด ' + (-diff) + ' วัน';
+  if (diff === 0) return '🟠 วันนี้';
+  if (diff === 1) return '🟡 พรุ่งนี้';
+  return fmtDate_(due);
+}
+
+function truncate_(s, max) {
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+// ---------- Parser.gs ----------
+/** แปลงข้อความในกลุ่มเป็นคำสั่ง (ไม่เรียก Google service — ทดสอบได้) */
+
+const COMMANDS = {
+  help: ['เมนู', 'คำสั่ง', 'ช่วยเหลือ', 'help', '?'],
+  register: ['ลงทะเบียน', 'register'],
+  whoami: ['ไอดี', 'myid'],
+  sales: ['ยอด', 'สรุปยอด', 'ยอดขาย', 'sales'],
+  tasks: ['งาน', 'งานค้าง', 'tasks'],
+  mytasks: ['งานฉัน', 'งานของฉัน', 'mytasks'],
+  addtask: ['งาน+', '+งาน', 'เพิ่มงาน', 'task+'],
+  done: ['เสร็จ', 'ปิดงาน', 'done'],
+  deltask: ['ลบงาน'],
+  movetask: ['เลื่อน', 'เลื่อนงาน'],
+  today: ['วันนี้', 'นัด', 'นัดวันนี้', 'agenda'],
+  tomorrow: ['พรุ่งนี้', 'นัดพรุ่งนี้'],
+  week: ['สัปดาห์นี้', 'นัดสัปดาห์นี้', 'week'],
+  addevent: ['นัด+', '+นัด', 'เพิ่มนัด'],
+  weekly: ['ประจำ', 'งานประจำ', 'weekly'],
+  addweekly: ['ประจำ+', '+ประจำ', 'เพิ่มประจำ'],
+  weeklydone: ['เช็ค', 'เช็ก', 'ประจำเสร็จ'],
+  delweekly: ['ลบประจำ'],
+  brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
+  review: ['สรุปสัปดาห์', 'review'],
+};
+
+/** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
+const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+  'tomorrow', 'week', 'weekly', 'brief', 'review'];
+
+const ALIAS_TO_CMD = (function () {
+  const m = {};
+  Object.keys(COMMANDS).forEach(function (cmd) {
+    COMMANDS[cmd].forEach(function (a) { m[a.toLowerCase()] = cmd; });
+  });
+  return m;
+})();
+
+/**
+ * ตัด @mention ออกจากข้อความตามตำแหน่งที่ LINE ส่งมา
+ * คืน { text, mentions: [{userId, name}] } (ไม่รวมการ mention ตัวบอทเอง)
+ */
+function stripMentions_(text, mention) {
+  const list = (mention && mention.mentionees) ? mention.mentionees.slice() : [];
+  list.sort(function (a, b) { return b.index - a.index; });
+  const mentions = [];
+  let out = text;
+  list.forEach(function (m) {
+    const raw = text.substr(m.index, m.length);
+    out = out.slice(0, m.index) + ' ' + out.slice(m.index + m.length);
+    if (m.isSelf || m.type === 'all') return;
+    mentions.unshift({ userId: m.userId || '', name: raw.replace(/^@/, '').trim() });
+  });
+  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions };
+}
+
+/** คืน { cmd, args: string[], argText } หรือ null ถ้าไม่ใช่คำสั่ง */
+function parseCommand_(text) {
+  let t = String(text || '').trim();
+  if (!t) return null;
+  t = t.replace(/^[\/!]/, '');
+  let tokens = t.split(/\s+/);
+  // รองรับ "งาน +", "นัด +", "ประจำ +"
+  if (tokens.length > 1 && tokens[1] === '+' && ALIAS_TO_CMD[tokens[0] + '+']) {
+    tokens = [tokens[0] + '+'].concat(tokens.slice(2));
+  }
+  const cmd = ALIAS_TO_CMD[tokens[0].toLowerCase()];
+  if (!cmd) return null;
+  const args = tokens.slice(1);
+  if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
+  if (cmd === 'sales' && args.length && !/^(fish|f)\s?[45]$/i.test(args.join(''))) return null;
+  if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
+      !(args.length && args.every(function (a) { return /^#?\d+$/.test(a); }))) return null;
+  return { cmd: cmd, args: args, argText: args.join(' ') };
+}
+
+function parseIds_(args) {
+  return args.map(function (a) { return Number(String(a).replace('#', '')); })
+    .filter(function (n) { return n > 0; });
+}
+
+const DAY_ALIASES = {
+  'อาทิตย์': 0, 'จันทร์': 1, 'อังคาร': 2, 'พุธ': 3, 'พฤหัส': 4, 'พฤหัสบดี': 4,
+  'ศุกร์': 5, 'เสาร์': 6,
+  'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6,
+};
+const DAY_SHORT_ALIASES = { 'อา': 0, 'จ': 1, 'อ': 2, 'พ': 3, 'พฤ': 4, 'ศ': 5, 'ส': 6 };
+
+/** "จันทร์", "วันศุกร์หน้า", "พฤ." → { dow, nextWeek } */
+function parseDayName_(tok, allowShort) {
+  let t = String(tok).toLowerCase().replace(/\.$/, '');
+  let nextWeek = false;
+  t = t.replace(/^วัน(?=.)/, '');
+  if (/หน้า$/.test(t)) { nextWeek = true; t = t.replace(/หน้า$/, ''); }
+  t = t.replace(/นี้$/, '');
+  if (DAY_ALIASES.hasOwnProperty(t)) return { dow: DAY_ALIASES[t], nextWeek: nextWeek };
+  if (allowShort && DAY_SHORT_ALIASES.hasOwnProperty(t)) return { dow: DAY_SHORT_ALIASES[t], nextWeek: nextWeek };
+  return null;
+}
+
+/** แปลงคำบอกวันเป็น Date (00:00) หรือ null */
+function parseDateToken_(tok, now) {
+  const t = String(tok).trim().toLowerCase();
+  const today = startOfDay_(now);
+  if (t === 'วันนี้' || t === 'today') return today;
+  if (t === 'พรุ่งนี้' || t === 'tomorrow') return addDays_(today, 1);
+  if (t === 'มะรืน' || t === 'มะรืนนี้') return addDays_(today, 2);
+
+  const day = parseDayName_(t, false);
+  if (day) {
+    const diff = (day.dow - today.getDay() + 7) % 7;
+    return addDays_(today, diff + (day.nextWeek ? 7 : 0));
+  }
+
+  const m = t.match(/^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/);
+  if (m) {
+    const dd = Number(m[1]);
+    const mm = Number(m[2]) - 1;
+    let yyyy;
+    if (m[3]) {
+      yyyy = Number(m[3]);
+      if (yyyy < 100) yyyy += yyyy >= 50 ? 2500 : 2000; // 69 → 2569, 26 → 2026
+      if (yyyy > 2400) yyyy -= 543;                    // พ.ศ. → ค.ศ.
+    } else {
+      yyyy = today.getFullYear();
+    }
+    let d = new Date(yyyy, mm, dd);
+    if (d.getMonth() !== mm || d.getDate() !== dd) return null;
+    if (!m[3] && dayDiff_(d, today) < -31) d = new Date(yyyy + 1, mm, dd);
+    return d;
+  }
+  return null;
+}
+
+/** "14:00", "9.30น.", "14:00-15:30", "14น." → { h, m, endH?, endM? } */
+function parseTimeToken_(tok) {
+  const t = String(tok).trim().replace(/\s/g, '').replace(/น\.?$/, '');
+  const hm = '(\\d{1,2})(?:[:.](\\d{2}))?';
+  const m = t.match(new RegExp('^' + hm + '(?:-' + hm + ')?$'));
+  if (!m) return null;
+  // ตัวเลขโดด ๆ เช่น "3" ไม่ถือเป็นเวลา (ยกเว้นมี "น." หรือ ":")
+  if (m[2] === undefined && m[3] === undefined && !/น\.?$/.test(String(tok).trim())) return null;
+  const r = { h: Number(m[1]), m: Number(m[2] || 0) };
+  if (m[3] !== undefined) { r.endH = Number(m[3]); r.endM = Number(m[4] || 0); }
+  if (r.h > 23 || r.m > 59 || (r.endH !== undefined && (r.endH > 23 || r.endM > 59))) return null;
+  return r;
+}
+
+/** "ส่งใบเสนอราคา ฟาร์ม A พรุ่งนี้ @สมชาย" → { text, due, names } */
+function parseTaskInput_(argText, now) {
+  const tokens = String(argText || '').split(/\s+/).filter(Boolean);
+  let due = null;
+  const words = [];
+  const names = [];
+  tokens.forEach(function (tok) {
+    if (/^@\S+/.test(tok)) { names.push(tok.slice(1)); return; }
+    if (!due) {
+      const d = parseDateToken_(tok, now);
+      if (d) { due = d; return; }
+    }
+    words.push(tok);
+  });
+  return { text: words.join(' '), due: due, names: names };
+}
+
+/** "25/11 14:00-15:00 เยี่ยมฟาร์มคุณสมชาย" → { title, start, end, allDay } */
+function parseEventInput_(argText, now) {
+  const tokens = String(argText || '').split(/\s+/).filter(Boolean);
+  let date = null;
+  let time = null;
+  const words = [];
+  tokens.forEach(function (tok) {
+    if (!date) {
+      const d = parseDateToken_(tok, now);
+      if (d) { date = d; return; }
+    }
+    if (!time) {
+      const t = parseTimeToken_(tok);
+      if (t) { time = t; return; }
+    }
+    words.push(tok);
+  });
+  if (!words.length) return null;
+  const day = date || startOfDay_(now);
+  if (!time) return { title: words.join(' '), start: day, end: addDays_(day, 1), allDay: true };
+  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), time.h, time.m);
+  let end = time.endH !== undefined
+    ? new Date(day.getFullYear(), day.getMonth(), day.getDate(), time.endH, time.endM)
+    : new Date(start.getTime() + CONFIG.EVENT_DEFAULT_MINUTES * 60000);
+  if (end <= start) end = new Date(start.getTime() + CONFIG.EVENT_DEFAULT_MINUTES * 60000);
+  return { title: words.join(' '), start: start, end: end, allDay: false };
+}
+
+/** "จันทร์ ส่งรายงาน @สมชาย" → { dow ('' = ภายในสัปดาห์), text, names } */
+function parseWeeklyInput_(argText) {
+  const tokens = String(argText || '').split(/\s+/).filter(Boolean);
+  let dow = '';
+  if (tokens.length) {
+    const d = parseDayName_(tokens[0], true);
+    if (d) { dow = d.dow; tokens.shift(); }
+    else if (tokens[0] === 'ทุกวัน' || tokens[0] === 'สัปดาห์' || tokens[0] === 'ทุกสัปดาห์') tokens.shift();
+  }
+  const names = [];
+  const words = [];
+  tokens.forEach(function (tok) {
+    if (/^@\S+/.test(tok)) names.push(tok.slice(1)); else words.push(tok);
+  });
+  return { dow: dow, text: words.join(' '), names: names };
+}
+
+// ---------- Line.gs ----------
+/** เรียก LINE Messaging API */
+
+const LINE_API = 'https://api.line.me/v2/bot';
+const LINE_TEXT_MAX = 4900;
+
+function lineFetch_(path, method, payload) {
+  const token = prop_('LINE_CHANNEL_ACCESS_TOKEN', '');
+  if (!token) throw new Error('ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties');
+  const opts = {
+    method: method,
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true,
+  };
+  if (payload) {
+    opts.contentType = 'application/json';
+    opts.payload = JSON.stringify(payload);
+  }
+  const res = UrlFetchApp.fetch(LINE_API + path, opts);
+  const code = res.getResponseCode();
+  if (code >= 300) console.error('LINE API ' + path + ' ' + code + ': ' + res.getContentText());
+  return { code: code, body: res.getContentText() };
+}
+
+/** ข้อความยาวเกินจะถูกแบ่งเป็นหลายบับเบิล (สูงสุด 5) */
+function toMessages_(input) {
+  const items = Array.isArray(input) ? input : [input];
+  const out = [];
+  items.forEach(function (it) {
+    if (typeof it !== 'string') { out.push(it); return; }
+    let rest = it;
+    while (rest.length > LINE_TEXT_MAX) {
+      let cut = rest.lastIndexOf('\n', LINE_TEXT_MAX);
+      if (cut < LINE_TEXT_MAX / 2) cut = LINE_TEXT_MAX;
+      out.push({ type: 'text', text: rest.slice(0, cut) });
+      rest = rest.slice(cut).replace(/^\n/, '');
+    }
+    if (rest) out.push({ type: 'text', text: rest });
+  });
+  return out.slice(0, 5);
+}
+
+/** ตอบกลับ (reply ไม่นับโควตาข้อความ) */
+function lineReply_(replyToken, messages) {
+  return lineFetch_('/message/reply', 'post', { replyToken: replyToken, messages: toMessages_(messages) });
+}
+
+/** ส่งหาแบบ push (นับโควตาข้อความของ LINE OA ตามจำนวนสมาชิกในกลุ่ม) */
+function linePush_(to, messages) {
+  if (!to) { console.warn('ไม่มีปลายทาง push — พิมพ์ "ลงทะเบียน" ในกลุ่มก่อน'); return null; }
+  return lineFetch_('/message/push', 'post', { to: to, messages: toMessages_(messages) });
+}
+
+/** ชื่อที่แสดงของผู้ส่ง (cache 6 ชม.) */
+function lineDisplayName_(source) {
+  if (!source || !source.userId) return 'ไม่ทราบชื่อ';
+  const cache = CacheService.getScriptCache();
+  const key = 'name_' + source.userId;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  let path = '/profile/' + source.userId;
+  if (source.type === 'group') path = '/group/' + source.groupId + '/member/' + source.userId;
+  if (source.type === 'room') path = '/room/' + source.roomId + '/member/' + source.userId;
+  const res = lineFetch_(path, 'get');
+  let name = 'สมาชิก';
+  if (res.code === 200) {
+    try { name = JSON.parse(res.body).displayName || name; } catch (e) { /* ignore */ }
+  }
+  cache.put(key, name, 21600);
+  return name;
+}
+
+/** ปุ่มลัดใต้ข้อความ */
+function withQuickReply_(text, labels) {
+  return {
+    type: 'text',
+    text: text,
+    quickReply: {
+      items: labels.map(function (l) {
+        return { type: 'action', action: { type: 'message', label: l, text: l } };
+      }),
+    },
+  };
+}
+
+/** รันจาก editor ครั้งเดียว: ดู Bot user ID แล้วบันทึกเป็น BOT_USER_ID ให้อัตโนมัติ */
+function showBotInfo() {
+  const res = lineFetch_('/info', 'get');
+  console.log(res.body);
+  if (res.code === 200) {
+    const info = JSON.parse(res.body);
+    setProp_('BOT_USER_ID', info.userId);
+    console.log('บันทึก BOT_USER_ID = ' + info.userId + ' (' + info.displayName + ')');
+  }
+}
+
+// ---------- Store.gs ----------
+/** เก็บข้อมูลใน Google Sheet: แท็บ Tasks และ Weekly (สร้างให้อัตโนมัติ) */
+
+const TASK_SHEET = 'Tasks';
+const TASK_HEADERS = ['ID', 'งาน', 'ผู้รับผิดชอบ', 'userIds', 'กำหนดส่ง', 'สถานะ',
+  'สร้างโดย', 'สร้างเมื่อ', 'เสร็จเมื่อ', 'ปิดโดย'];
+const WEEKLY_SHEET = 'Weekly';
+const WEEKLY_HEADERS = ['ID', 'รายการ', 'วันกำหนด (0=อา..6=ส, ว่าง=ภายในสัปดาห์)',
+  'ผู้รับผิดชอบ', 'userIds', 'ใช้งาน', 'สัปดาห์ที่ทำแล้ว', 'ทำโดย', 'ทำเมื่อ'];
+
+const STATUS_OPEN = 'ค้าง';
+const STATUS_DONE = 'เสร็จ';
+
+function spreadsheet_() {
+  const id = prop_('SHEET_ID', '');
+  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function sheet_(name, headers) {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.appendRow(headers);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** คืน [{row, v: [...]}] ไม่รวมหัวตาราง */
+function rows_(sh) {
+  const values = sh.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === '' || values[i][0] === null) continue;
+    out.push({ row: i + 1, v: values[i] });
+  }
+  return out;
+}
+
+function nextId_(sh) {
+  return rows_(sh).reduce(function (max, r) { return Math.max(max, Number(r.v[0]) || 0); }, 0) + 1;
+}
+
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+function splitIds_(s) {
+  return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+}
+
+/** รวมผู้รับผิดชอบจาก @mention จริง + @ชื่อที่พิมพ์เอง; ไม่มีเลย = ผู้สั่ง */
+function resolveOwners_(mentions, names, sender) {
+  const owners = mentions.slice();
+  names.forEach(function (n) {
+    if (!owners.some(function (o) { return o.name === n; })) owners.push({ userId: '', name: n });
+  });
+  if (!owners.length && sender) owners.push(sender);
+  return owners;
+}
+
+// ---------- Tasks.gs ----------
+/** งานติดตาม (follow-up tasks) */
+
+function taskFromRow_(r) {
+  const v = r.v;
+  return {
+    row: r.row,
+    id: Number(v[0]),
+    text: String(v[1]),
+    owner: String(v[2] || ''),
+    ownerIds: splitIds_(v[3]),
+    due: toDate_(v[4]),
+    status: String(v[5] || STATUS_OPEN),
+    createdBy: String(v[6] || ''),
+    createdAt: toDate_(v[7]),
+    doneAt: toDate_(v[8]),
+    doneBy: String(v[9] || ''),
+  };
+}
+
+function getTasks_() {
+  return rows_(sheet_(TASK_SHEET, TASK_HEADERS)).map(taskFromRow_);
+}
+
+function openTasks_() {
+  return getTasks_().filter(function (t) { return t.status !== STATUS_DONE; });
+}
+
+function addTask_(text, due, owners, createdBy) {
+  return withLock_(function () {
+    const sh = sheet_(TASK_SHEET, TASK_HEADERS);
+    const id = nextId_(sh);
+    sh.appendRow([
+      id, text,
+      owners.map(function (o) { return o.name; }).join(', '),
+      owners.map(function (o) { return o.userId; }).filter(Boolean).join(','),
+      due || '', STATUS_OPEN, createdBy, now_(), '', '',
+    ]);
+    return id;
+  });
+}
+
+/** คืน { done: [task], missing: [id] } */
+function completeTasks_(ids, byName) {
+  return withLock_(function () {
+    const sh = sheet_(TASK_SHEET, TASK_HEADERS);
+    const tasks = rows_(sh).map(taskFromRow_);
+    const done = [];
+    const missing = [];
+    ids.forEach(function (id) {
+      const t = tasks.find(function (x) { return x.id === id; });
+      if (!t || t.status === STATUS_DONE) { missing.push(id); return; }
+      sh.getRange(t.row, 6).setValue(STATUS_DONE);
+      sh.getRange(t.row, 9).setValue(now_());
+      sh.getRange(t.row, 10).setValue(byName);
+      done.push(t);
+    });
+    return { done: done, missing: missing };
+  });
+}
+
+function deleteTask_(id) {
+  return withLock_(function () {
+    const sh = sheet_(TASK_SHEET, TASK_HEADERS);
+    const t = rows_(sh).map(taskFromRow_).find(function (x) { return x.id === id; });
+    if (!t) return null;
+    sh.deleteRow(t.row);
+    return t;
+  });
+}
+
+function rescheduleTask_(id, due) {
+  return withLock_(function () {
+    const sh = sheet_(TASK_SHEET, TASK_HEADERS);
+    const t = rows_(sh).map(taskFromRow_).find(function (x) { return x.id === id; });
+    if (!t) return null;
+    sh.getRange(t.row, 5).setValue(due);
+    t.due = due;
+    return t;
+  });
+}
+
+function sortTasks_(tasks) {
+  return tasks.slice().sort(function (a, b) {
+    if (a.due && b.due) return a.due - b.due || a.id - b.id;
+    if (a.due) return -1;
+    if (b.due) return 1;
+    return a.id - b.id;
+  });
+}
+
+function formatTaskLine_(t, now) {
+  return '#' + t.id + ' ' + t.text + (t.owner ? ' — ' + t.owner : '') + ' (' + dueLabel_(t.due, now) + ')';
+}
+
+function formatTaskList_(title, tasks, now, max) {
+  if (!tasks.length) return title + '\nไม่มีงานค้าง 🎉';
+  const limit = max || 30;
+  const sorted = sortTasks_(tasks);
+  const lines = sorted.slice(0, limit).map(function (t) { return '• ' + formatTaskLine_(t, now); });
+  if (sorted.length > limit) lines.push('…และอีก ' + (sorted.length - limit) + ' งาน');
+  const overdue = tasks.filter(function (t) { return t.due && dayDiff_(t.due, now) < 0; }).length;
+  return title + ' ' + tasks.length + ' งาน' + (overdue ? ' (เลยกำหนด ' + overdue + ')' : '') + '\n' + lines.join('\n');
+}
+
+function isMine_(t, user) {
+  if (user.userId && t.ownerIds.indexOf(user.userId) >= 0) return true;
+  const names = t.owner.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  // เทียบชื่อเฉพาะงานที่มีผู้รับผิดชอบแบบพิมพ์ชื่อเอง (ไม่มี userId ครบทุกคน)
+  if (t.ownerIds.length >= names.length) return false;
+  return !!user.name && names.indexOf(user.name) >= 0;
+}
+
+// ---------- Weekly.gs ----------
+/** งานติดตามประจำสัปดาห์ (เช็กลิสต์ที่วนทุกสัปดาห์) */
+
+function weeklyFromRow_(r) {
+  const v = r.v;
+  const dowRaw = v[2];
+  return {
+    row: r.row,
+    id: Number(v[0]),
+    text: String(v[1]),
+    dow: dowRaw === '' || dowRaw === null ? '' : Number(dowRaw),
+    owner: String(v[3] || ''),
+    ownerIds: splitIds_(v[4]),
+    active: String(v[5]).toUpperCase() !== 'FALSE' && v[5] !== false,
+    doneWeek: String(v[6] || ''),
+    doneBy: String(v[7] || ''),
+  };
+}
+
+function getWeekly_() {
+  return rows_(sheet_(WEEKLY_SHEET, WEEKLY_HEADERS)).map(weeklyFromRow_)
+    .filter(function (w) { return w.active; });
+}
+
+function addWeekly_(text, dow, owners) {
+  return withLock_(function () {
+    const sh = sheet_(WEEKLY_SHEET, WEEKLY_HEADERS);
+    const id = nextId_(sh);
+    sh.appendRow([
+      id, text, dow,
+      owners.map(function (o) { return o.name; }).join(', '),
+      owners.map(function (o) { return o.userId; }).filter(Boolean).join(','),
+      true, '', '', '',
+    ]);
+    return id;
+  });
+}
+
+function checkWeekly_(ids, byName) {
+  return withLock_(function () {
+    const sh = sheet_(WEEKLY_SHEET, WEEKLY_HEADERS);
+    const items = rows_(sh).map(weeklyFromRow_);
+    const week = isoWeekKey_(now_());
+    const done = [];
+    const missing = [];
+    ids.forEach(function (id) {
+      const w = items.find(function (x) { return x.id === id && x.active; });
+      if (!w) { missing.push(id); return; }
+      sh.getRange(w.row, 7).setValue(week);
+      sh.getRange(w.row, 8).setValue(byName);
+      sh.getRange(w.row, 9).setValue(now_());
+      done.push(w);
+    });
+    return { done: done, missing: missing };
+  });
+}
+
+function deleteWeekly_(id) {
+  return withLock_(function () {
+    const sh = sheet_(WEEKLY_SHEET, WEEKLY_HEADERS);
+    const w = rows_(sh).map(weeklyFromRow_).find(function (x) { return x.id === id; });
+    if (!w) return null;
+    sh.deleteRow(w.row);
+    return w;
+  });
+}
+
+function weeklyDueLabel_(dow) {
+  return dow === '' ? 'ภายในสัปดาห์' : 'ภายใน ' + TH_DAYS_SHORT[dow];
+}
+
+function isWeeklyDone_(w, now) {
+  return w.doneWeek === isoWeekKey_(now);
+}
+
+/** งานประจำที่ยังไม่ทำ และถึง/เลยวันกำหนดของสัปดาห์นี้แล้ว */
+function weeklyDueNow_(items, now) {
+  const dayIdx = (now.getDay() + 6) % 7; // จ=0..อา=6
+  return items.filter(function (w) {
+    if (isWeeklyDone_(w, now) || w.dow === '') return false;
+    return (w.dow + 6) % 7 <= dayIdx;
+  });
+}
+
+function formatWeeklyList_(items, now) {
+  const start = startOfWeek_(now);
+  const head = '🔁 งานประจำสัปดาห์ (' + fmtDate_(start) + ' – ' + fmtDate_(addDays_(start, 6)) + ')';
+  if (!items.length) return head + '\nยังไม่มีรายการ — เพิ่มด้วย "ประจำ+ จันทร์ ส่งรายงาน @ชื่อ"';
+  const sorted = items.slice().sort(function (a, b) {
+    const ka = a.dow === '' ? 99 : (a.dow + 6) % 7;
+    const kb = b.dow === '' ? 99 : (b.dow + 6) % 7;
+    return ka - kb || a.id - b.id;
+  });
+  const doneCount = items.filter(function (w) { return isWeeklyDone_(w, now); }).length;
+  const lines = sorted.map(function (w) {
+    const mark = isWeeklyDone_(w, now) ? '✅' : '⬜';
+    return mark + ' #' + w.id + ' ' + w.text + (w.owner ? ' — ' + w.owner : '') + ' (' + weeklyDueLabel_(w.dow) + ')';
+  });
+  return head + ' ทำแล้ว ' + doneCount + '/' + items.length + '\n' + lines.join('\n') +
+    '\nติ๊กว่าทำแล้ว: "เช็ค <เลข>"';
+}
+
+// ---------- Calendar.gs ----------
+/** ปฏิทิน / agenda — ใช้ Google Calendar */
+
+function calendar_() {
+  const id = prop_('CALENDAR_ID', '');
+  const cal = id ? CalendarApp.getCalendarById(id) : CalendarApp.getDefaultCalendar();
+  if (!cal) throw new Error('ไม่พบปฏิทิน CALENDAR_ID=' + id);
+  return cal;
+}
+
+function getEvents_(start, end) {
+  return calendar_().getEvents(start, end).map(function (ev) {
+    return {
+      id: ev.getId(),
+      title: ev.getTitle(),
+      start: toDate_(ev.getStartTime()),
+      end: toDate_(ev.getEndTime()),
+      allDay: ev.isAllDayEvent(),
+      location: ev.getLocation() || '',
+    };
+  }).sort(function (a, b) { return (b.allDay - a.allDay) || (a.start - b.start); });
+}
+
+function createEvent_(ev, attendees, createdBy) {
+  const cal = calendar_();
+  const desc = 'สร้างจาก LINE โดย ' + createdBy +
+    (attendees.length ? '\nผู้เกี่ยวข้อง: ' + attendees.map(function (a) { return a.name; }).join(', ') : '');
+  const created = ev.allDay
+    ? cal.createAllDayEvent(ev.title, ev.start, { description: desc })
+    : cal.createEvent(ev.title, ev.start, ev.end, { description: desc });
+  return created.getId();
+}
+
+function formatEventLine_(e) {
+  const when = e.allDay ? 'ทั้งวัน' : fmtTime_(e.start) + '–' + fmtTime_(e.end);
+  return '• ' + when + ' ' + e.title + (e.location ? ' 📍' + e.location : '');
+}
+
+function formatAgenda_(title, events, emptyText) {
+  if (!events.length) return title + '\n' + (emptyText || 'ไม่มีนัด');
+  return title + ' (' + events.length + ')\n' + events.map(formatEventLine_).join('\n');
+}
+
+/** agenda หลายวัน จัดกลุ่มตามวัน */
+function formatAgendaDays_(title, events, from, days) {
+  if (!events.length) return title + '\nไม่มีนัด';
+  const out = [title + ' (' + events.length + ')'];
+  for (let i = 0; i < days; i++) {
+    const day = addDays_(from, i);
+    const evs = events.filter(function (e) {
+      const s = startOfDay_(e.start);
+      const lastDay = e.allDay ? addDays_(startOfDay_(e.end), -1) : startOfDay_(e.end);
+      return s <= day && day <= lastDay;
+    });
+    if (!evs.length) continue;
+    out.push('\n' + fmtDate_(day));
+    evs.forEach(function (e) { out.push(formatEventLine_(e)); });
+  }
+  return out.join('\n');
+}
+
+// ---------- Sales.gs ----------
+/** สรุปยอดขายจาก dashboard.json (ไฟล์เดียวกับหน้า Sales Command Center) */
+
+function fetchDashboard_() {
+  const url = prop_('DASHBOARD_URL', CONFIG.DASHBOARD_URL);
+  const res = UrlFetchApp.fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + now_().getTime(),
+    { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('โหลด dashboard.json ไม่ได้ (' + res.getResponseCode() + ')');
+  return JSON.parse(res.getContentText());
+}
+
+function pct_(a, b) {
+  return b ? (a / b) * 100 : null;
+}
+
+function teamLine_(label, t) {
+  if (!t) return null;
+  return '🐟 ' + label + ': ' + fmtNum_(t.actualTon) + ' / ' + fmtNum_(t.budgetTon) + ' ตัน (' +
+    fmtNum_(t.achievement) + '%)';
+}
+
+/** scope: '' | 'fish4' | 'fish5' */
+function formatSales_(d, scope) {
+  const total = d.total || {};
+  const passed = Number(d.workingDaysPassed) || 0;
+  const all = Number(d.workingDaysTotal) || 0;
+  const timeGone = pct_(passed, all);
+  const lines = ['📊 สรุปยอดขาย Fish — ข้อมูล ณ ' + (d.date || '-')];
+  if (all) lines.push('วันทำงาน ' + passed + '/' + all + ' (Time gone ' + fmtNum_(timeGone, 0) + '%)');
+  lines.push('━━━━━━━━━━');
+
+  if (scope === 'fish4' || scope === 'fish5') {
+    const t = d[scope];
+    if (!t) return 'ไม่พบข้อมูล ' + scope + ' ใน dashboard.json';
+    lines.push(teamLine_(scope === 'fish4' ? 'Fish 4' : 'Fish 5', t));
+    if (timeGone !== null) lines.push(gapVsTimeLine_(t.achievement, timeGone));
+    const remainDays = all - passed;
+    if (remainDays > 0) {
+      lines.push('🎯 ต้องทำอีก ' + fmtNum_(t.budgetTon - t.actualTon) + ' ตัน ≈ ' +
+        fmtNum_((t.budgetTon - t.actualTon) / remainDays) + ' ตัน/วัน');
+    }
+  } else {
+    lines.push('รวม: ' + fmtNum_(total.actualTon) + ' / ' + fmtNum_(total.budgetTon) + ' ตัน (' +
+      fmtNum_(total.achievement) + '%)');
+    if (timeGone !== null && total.achievement !== undefined) lines.push(gapVsTimeLine_(total.achievement, timeGone));
+    if (total.forecastTon !== undefined) {
+      lines.push('🔮 คาดการณ์สิ้นเดือน ' + fmtNum_(total.forecastTon) + ' ตัน (' +
+        fmtNum_(pct_(total.forecastTon, total.budgetTon), 1) + '%)' +
+        (total.gapTon !== undefined ? ' | Gap ' + fmtNum_(total.gapTon) : ''));
+    }
+    if (total.currentSpeed !== undefined && total.requiredSpeed !== undefined) {
+      const diff = total.currentSpeed - total.requiredSpeed;
+      lines.push('🚀 สปีด ' + fmtNum_(total.currentSpeed) + ' ตัน/วัน | ต้องการ ' + fmtNum_(total.requiredSpeed));
+      lines.push(diff >= 0 ? '✅ เร็วกว่าเป้า +' + fmtNum_(diff) + ' ตัน/วัน'
+        : '⚠️ ต้องเร่งอีก ' + fmtNum_(-diff) + ' ตัน/วัน');
+    }
+    lines.push('━━━━━━━━━━');
+    [teamLine_('Fish 4', d.fish4), teamLine_('Fish 5', d.fish5)].forEach(function (l) { if (l) lines.push(l); });
+    if (d.status) {
+      lines.push('สถานะ: ' + Object.keys(d.status).map(function (k) { return k + ' ' + d.status[k]; }).join(' · '));
+    }
+    appendBullets_(lines, '💡 โอกาส', d.opportunity);
+    appendBullets_(lines, '👀 ต้องระวัง', d.watchout);
+    appendBullets_(lines, '📝 สรุป', d.summary);
+  }
+  lines.push('🔗 ' + CONFIG.DASHBOARD_PAGE);
+  return lines.join('\n');
+}
+
+function gapVsTimeLine_(achievement, timeGone) {
+  const gap = achievement - timeGone;
+  return (gap >= 0 ? '🟢 นำ Time gone +' : '🔴 ตาม Time gone ') + fmtNum_(gap, 1) + ' pts';
+}
+
+function appendBullets_(lines, title, list) {
+  if (!Array.isArray(list) || !list.length) return;
+  lines.push(title);
+  list.slice(0, 5).forEach(function (x) { lines.push('• ' + x); });
+}
+
+/** บรรทัดสั้นสำหรับสรุปเช้า/สรุปสัปดาห์ */
+function formatSalesShort_(d) {
+  const t = d.total || {};
+  const parts = ['📊 ยอด ' + fmtNum_(t.actualTon) + '/' + fmtNum_(t.budgetTon) + ' ตัน (' + fmtNum_(t.achievement) + '%)'];
+  if (t.forecastTon !== undefined) parts.push('คาดการณ์ ' + fmtNum_(t.forecastTon));
+  if (t.currentSpeed !== undefined && t.requiredSpeed !== undefined) {
+    const diff = t.currentSpeed - t.requiredSpeed;
+    parts.push(diff >= 0 ? 'สปีดผ่านเป้า ✅' : 'ต้องเร่ง +' + fmtNum_(-diff) + ' ตัน/วัน ⚠️');
+  }
+  return parts.join(' | ') + ' (ข้อมูล ' + (d.date || '-') + ')';
+}
+
+function safeSalesShort_() {
+  try { return formatSalesShort_(fetchDashboard_()); } catch (e) {
+    console.error(e);
+    return '📊 ยอด: โหลดข้อมูลไม่ได้';
+  }
+}
+
+// ---------- Schedule.gs ----------
+/**
+ * งานตั้งเวลา: สรุปเช้า, เตือนก่อนนัด, สรุปประจำสัปดาห์
+ * รัน setupTriggers() ครั้งเดียวหลังติดตั้ง (หรือทุกครั้งที่เปลี่ยนเวลา)
+ */
+
+function setupTriggers() {
+  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview'];
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (handlers.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  const hour = Number(prop_('MORNING_HOUR', CONFIG.MORNING_HOUR));
+  ScriptApp.newTrigger('morningBrief').timeBased().everyDays(1).atHour(hour).nearMinute(0).create();
+  ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY)
+    .atHour(CONFIG.REVIEW_HOUR).create();
+  ScriptApp.newTrigger('eventReminder').timeBased().everyMinutes(10).create();
+  console.log('ตั้ง trigger แล้ว: สรุปเช้า ' + hour + ':00, สรุปสัปดาห์ ศุกร์ ' + CONFIG.REVIEW_HOUR + ':00, เตือนนัดทุก 10 นาที');
+}
+
+function isWorkDay_(d) {
+  return String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number).indexOf(d.getDay()) >= 0;
+}
+
+/** Trigger: ทุกเช้า (วันทำงาน) */
+function morningBrief() {
+  const now = now_();
+  if (!flag_('BRIEF_ENABLED') || !isWorkDay_(now)) return;
+  linePush_(prop_('GROUP_ID', ''), buildMorningBrief_(now));
+}
+
+/** Trigger: ทุกศุกร์บ่าย */
+function weeklyReview() {
+  if (!flag_('REVIEW_ENABLED')) return;
+  linePush_(prop_('GROUP_ID', ''), buildWeeklyReview_(now_()));
+}
+
+/** Trigger: ทุก 10 นาที — เตือนนัดที่จะเริ่มภายใน REMIND_BEFORE_MIN นาที (ครั้งเดียวต่อนัด) */
+function eventReminder() {
+  const groupId = prop_('GROUP_ID', '');
+  if (!flag_('REMINDER_ENABLED') || !groupId) return;
+  const now = now_();
+  const before = Number(prop_('REMIND_BEFORE_MIN', CONFIG.REMIND_BEFORE_MIN));
+  const events = getEvents_(now, new Date(now.getTime() + before * 60000))
+    .filter(function (e) { return !e.allDay && e.start >= now; });
+  if (!events.length) return;
+  const cache = CacheService.getScriptCache();
+  const fresh = events.filter(function (e) {
+    const key = 'rem_' + Utilities.base64EncodeWebSafe(e.id + '|' + e.start.getTime()).slice(0, 200);
+    if (cache.get(key)) return false;
+    cache.put(key, '1', 21600);
+    return true;
+  });
+  if (!fresh.length) return;
+  const lines = ['⏰ ใกล้ถึงเวลานัด'];
+  fresh.forEach(function (e) {
+    const mins = Math.max(0, Math.round((e.start - now) / 60000));
+    lines.push(formatEventLine_(e) + ' (อีก ' + mins + ' นาที)');
+  });
+  linePush_(groupId, lines.join('\n'));
+}
+
+function buildMorningBrief_(now) {
+  const today = startOfDay_(now);
+  const out = ['☀️ สวัสดีตอนเช้าทีมขาย — ' + fmtDateLong_(now)];
+
+  const weekly = getWeekly_();
+  if (now.getDay() === 1) {
+    out.push('');
+    out.push('🗓️ แผนสัปดาห์นี้');
+    out.push(formatWeeklyList_(weekly, now));
+    const weekEvents = getEvents_(today, addDays_(today, 7));
+    out.push('');
+    out.push(formatAgendaDays_('📅 นัดสัปดาห์นี้', weekEvents, today, 7));
+  } else {
+    out.push('');
+    out.push(formatAgenda_('📅 นัดวันนี้', getEvents_(today, addDays_(today, 1))));
+  }
+
+  const open = openTasks_();
+  const dueSoon = open.filter(function (t) { return t.due && dayDiff_(t.due, now) <= 1; });
+  out.push('');
+  out.push(dueSoon.length ? formatTaskList_('📋 งานถึงกำหนด/เลยกำหนด', dueSoon, now, 15)
+    : '📋 ไม่มีงานถึงกำหนดวันนี้ (งานค้างทั้งหมด ' + open.length + ')');
+
+  if (now.getDay() !== 1) {
+    const pending = weeklyDueNow_(weekly, now);
+    if (pending.length) {
+      out.push('');
+      out.push('🔁 งานประจำที่ถึงกำหนดแล้วแต่ยังไม่ติ๊ก');
+      pending.forEach(function (w) {
+        out.push('⬜ #' + w.id + ' ' + w.text + (w.owner ? ' — ' + w.owner : '') + ' (' + weeklyDueLabel_(w.dow) + ')');
+      });
+    }
+  }
+
+  out.push('');
+  out.push(safeSalesShort_());
+  return out.join('\n');
+}
+
+function buildWeeklyReview_(now) {
+  const weekStart = startOfWeek_(now);
+  const weekEnd = addDays_(weekStart, 7);
+  const out = ['📈 สรุปประจำสัปดาห์ ' + fmtDate_(weekStart) + ' – ' + fmtDate_(addDays_(weekStart, 6))];
+
+  const tasks = getTasks_();
+  const closed = tasks.filter(function (t) {
+    return t.status === STATUS_DONE && t.doneAt && t.doneAt >= weekStart && t.doneAt < weekEnd;
+  });
+  out.push('');
+  out.push('✅ ปิดงานสัปดาห์นี้ ' + closed.length + ' งาน');
+  closed.slice(0, 10).forEach(function (t) {
+    out.push('• #' + t.id + ' ' + t.text + (t.doneBy ? ' — ' + t.doneBy : ''));
+  });
+
+  const open = tasks.filter(function (t) { return t.status !== STATUS_DONE; });
+  out.push('');
+  out.push(formatTaskList_('⏳ งานค้าง', open, now, 15));
+
+  const weekly = getWeekly_();
+  if (weekly.length) {
+    const notDone = weekly.filter(function (w) { return !isWeeklyDone_(w, now); });
+    out.push('');
+    out.push('🔁 งานประจำ ทำแล้ว ' + (weekly.length - notDone.length) + '/' + weekly.length);
+    notDone.forEach(function (w) {
+      out.push('⬜ #' + w.id + ' ' + w.text + (w.owner ? ' — ' + w.owner : ''));
+    });
+  }
+
+  const nextWeek = getEvents_(weekEnd, addDays_(weekEnd, 7));
+  out.push('');
+  out.push(formatAgendaDays_('📅 นัดสัปดาห์หน้า', nextWeek, weekEnd, 7));
+
+  out.push('');
+  out.push(safeSalesShort_());
+  return out.join('\n');
+}
+
+// ---------- Main.gs ----------
+/** Webhook ของ LINE → แปลงคำสั่ง → ตอบกลับ */
+
+function doGet() {
+  return ContentService.createTextOutput('Sales LINE bot is running');
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const botId = prop_('BOT_USER_ID', '');
+    // Apps Script อ่าน header X-Line-Signature ไม่ได้ จึงกรองด้วย destination แทน
+    if (botId && body.destination !== botId) {
+      console.warn('ข้าม webhook: destination ไม่ตรง ' + body.destination);
+    } else {
+      (body.events || []).forEach(function (ev) {
+        try { handleEvent_(ev); } catch (err) {
+          console.error(err && err.stack || err);
+          if (ev.replyToken) lineReply_(ev.replyToken, '⚠️ เกิดข้อผิดพลาด: ' + (err && err.message || err));
+        }
+      });
+    }
+  } catch (err) {
+    console.error(err && err.stack || err);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function chatId_(source) {
+  return source.groupId || source.roomId || source.userId;
+}
+
+function handleEvent_(ev) {
+  const source = ev.source || {};
+  const registered = prop_('GROUP_ID', '');
+
+  if (ev.type === 'join') {
+    lineReply_(ev.replyToken, withQuickReply_(
+      '👋 สวัสดีทีมขาย! ผมคือบอทผู้ช่วย\n' +
+      (registered ? '' : 'พิมพ์ "ลงทะเบียน" เพื่อให้บอทส่งสรุปเช้า/เตือนนัดเข้ากลุ่มนี้\n') +
+      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมด', ['ลงทะเบียน', 'เมนู']));
+    return;
+  }
+  if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
+
+  const stripped = stripMentions_(ev.message.text, ev.message.mention);
+  const parsed = parseCommand_(stripped.text);
+  if (!parsed) return;
+
+  // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
+  const isGroupChat = source.type === 'group' || source.type === 'room';
+  if (registered && isGroupChat && chatId_(source) !== registered &&
+      parsed.cmd !== 'whoami' && parsed.cmd !== 'register') return;
+
+  const ctx = {
+    now: now_(),
+    source: source,
+    mentions: stripped.mentions,
+    sender: null,
+  };
+  ctx.senderInfo = function () {
+    if (!ctx.sender) ctx.sender = { userId: source.userId || '', name: lineDisplayName_(source) };
+    return ctx.sender;
+  };
+
+  const reply = runCommand_(parsed, ctx);
+  if (reply) lineReply_(ev.replyToken, reply);
+}
+
+function runCommand_(p, ctx) {
+  const now = ctx.now;
+  switch (p.cmd) {
+    case 'help':
+      return withQuickReply_(HELP_TEXT, ['ยอด', 'งาน', 'งานฉัน', 'วันนี้', 'สัปดาห์นี้', 'ประจำ']);
+
+    case 'register': {
+      const id = chatId_(ctx.source);
+      const current = prop_('GROUP_ID', '');
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่ม LINE ที่ต้องการให้บอทส่งแจ้งเตือน';
+      if (current === id) return '✅ กลุ่มนี้ลงทะเบียนไว้แล้ว';
+      if (current) return '⚠️ บอทลงทะเบียนกับกลุ่มอื่นอยู่แล้ว — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อน';
+      setProp_('GROUP_ID', id);
+      return '✅ ลงทะเบียนกลุ่มนี้แล้ว บอทจะส่งสรุปเช้า เตือนนัด และสรุปสัปดาห์เข้ากลุ่มนี้\nพิมพ์ "เมนู" เพื่อดูคำสั่ง';
+    }
+
+    case 'whoami':
+      return 'chat: ' + chatId_(ctx.source) + '\nuser: ' + (ctx.source.userId || '-');
+
+    case 'sales': {
+      const scope = p.argText ? (/5/.test(p.argText) ? 'fish5' : 'fish4') : '';
+      return formatSales_(fetchDashboard_(), scope);
+    }
+
+    case 'tasks':
+      return formatTaskList_('📋 งานค้าง', openTasks_(), now);
+
+    case 'mytasks': {
+      const me = ctx.senderInfo();
+      return formatTaskList_('📋 งานของ ' + me.name, openTasks_().filter(function (t) { return isMine_(t, me); }), now);
+    }
+
+    case 'addtask': {
+      const input = parseTaskInput_(p.argText, now);
+      if (!input.text) return 'รูปแบบ: งาน+ <รายละเอียด> [วันที่] [@ผู้รับผิดชอบ]\nเช่น งาน+ ส่งใบเสนอราคาฟาร์ม A พรุ่งนี้ @สมชาย';
+      const me = ctx.senderInfo();
+      const owners = resolveOwners_(ctx.mentions, input.names, me);
+      const id = addTask_(input.text, input.due, owners, me.name);
+      return '➕ เพิ่มงาน #' + id + ' ' + input.text +
+        '\n👤 ' + owners.map(function (o) { return o.name; }).join(', ') +
+        '\n📆 ' + (input.due ? fmtDate_(input.due) : 'ไม่มีกำหนด') +
+        '\nปิดงาน: "เสร็จ ' + id + '"';
+    }
+
+    case 'done': {
+      const r = completeTasks_(parseIds_(p.args), ctx.senderInfo().name);
+      const lines = r.done.map(function (t) { return '✅ ปิดงาน #' + t.id + ' ' + t.text; });
+      if (r.missing.length) lines.push('ไม่พบงานค้าง #' + r.missing.join(', #'));
+      return lines.join('\n');
+    }
+
+    case 'deltask': {
+      const t = deleteTask_(parseIds_(p.args)[0]);
+      return t ? '🗑️ ลบงาน #' + t.id + ' ' + t.text : 'ไม่พบงานนี้';
+    }
+
+    case 'movetask': {
+      const id = parseIds_(p.args.slice(0, 1))[0];
+      const due = p.args[1] ? parseDateToken_(p.args[1], now) : null;
+      if (!id || !due) return 'รูปแบบ: เลื่อน <เลขงาน> <วันที่> เช่น เลื่อน 3 ศุกร์ หรือ เลื่อน 3 28/11';
+      const t = rescheduleTask_(id, due);
+      return t ? '↪️ เลื่อนงาน #' + t.id + ' ' + t.text + ' เป็น ' + fmtDate_(due) : 'ไม่พบงานนี้';
+    }
+
+    case 'today': {
+      const d = startOfDay_(now);
+      return formatAgenda_('📅 นัดวันนี้ ' + fmtDate_(d), getEvents_(d, addDays_(d, 1)));
+    }
+
+    case 'tomorrow': {
+      const d = addDays_(startOfDay_(now), 1);
+      return formatAgenda_('📅 นัดพรุ่งนี้ ' + fmtDate_(d), getEvents_(d, addDays_(d, 1)));
+    }
+
+    case 'week': {
+      const s = startOfWeek_(now);
+      return formatAgendaDays_('📅 นัดสัปดาห์นี้', getEvents_(s, addDays_(s, 7)), s, 7);
+    }
+
+    case 'addevent': {
+      const ev = parseEventInput_(p.argText, now);
+      if (!ev) return 'รูปแบบ: นัด+ <วันที่> [เวลา] <เรื่อง>\nเช่น นัด+ 25/11 14:00-15:00 เยี่ยมฟาร์มคุณสมชาย';
+      createEvent_(ev, ctx.mentions, ctx.senderInfo().name);
+      return '📅 บันทึกนัดแล้ว\n' + fmtDate_(ev.start) + ' ' +
+        (ev.allDay ? 'ทั้งวัน' : fmtTime_(ev.start) + '–' + fmtTime_(ev.end)) + ' ' + ev.title +
+        (ctx.mentions.length ? '\n👥 ' + ctx.mentions.map(function (m) { return m.name; }).join(', ') : '');
+    }
+
+    case 'weekly':
+      return formatWeeklyList_(getWeekly_(), now);
+
+    case 'addweekly': {
+      const w = parseWeeklyInput_(p.argText);
+      if (!w.text) return 'รูปแบบ: ประจำ+ [วัน] <รายการ> [@ผู้รับผิดชอบ]\nเช่น ประจำ+ จันทร์ ส่งรายงานลูกค้าใหม่ @สมชาย';
+      const owners = resolveOwners_(ctx.mentions, w.names, null);
+      const id = addWeekly_(w.text, w.dow, owners);
+      return '🔁 เพิ่มงานประจำ #' + id + ' ' + w.text + ' (' + weeklyDueLabel_(w.dow) + ')' +
+        (owners.length ? '\n👤 ' + owners.map(function (o) { return o.name; }).join(', ') : '');
+    }
+
+    case 'weeklydone': {
+      const r = checkWeekly_(parseIds_(p.args), ctx.senderInfo().name);
+      const lines = r.done.map(function (w) { return '✅ ' + w.text + ' (สัปดาห์นี้)'; });
+      if (r.missing.length) lines.push('ไม่พบงานประจำ #' + r.missing.join(', #'));
+      return lines.join('\n');
+    }
+
+    case 'delweekly': {
+      const w = deleteWeekly_(parseIds_(p.args)[0]);
+      return w ? '🗑️ ลบงานประจำ #' + w.id + ' ' + w.text : 'ไม่พบงานประจำนี้';
+    }
+
+    case 'brief':
+      return buildMorningBrief_(now);
+
+    case 'review':
+      return buildWeeklyReview_(now);
+  }
+  return null;
+}
+
+const HELP_TEXT = [
+  '🤖 คำสั่งบอททีมขาย',
+  '',
+  '📊 ยอดขาย',
+  '• ยอด — สรุปยอดล่าสุด | ยอด fish4 | ยอด fish5',
+  '',
+  '📋 งานติดตาม',
+  '• งาน — งานค้างทั้งหมด | งานฉัน',
+  '• งาน+ ส่งใบเสนอราคาฟาร์ม A พรุ่งนี้ @สมชาย',
+  '• เสร็จ 3  (ปิดหลายงาน: เสร็จ 3 5)',
+  '• เลื่อน 3 ศุกร์ | ลบงาน 3',
+  '',
+  '📅 นัด / ปฏิทิน',
+  '• วันนี้ | พรุ่งนี้ | สัปดาห์นี้',
+  '• นัด+ 25/11 14:00-15:00 เยี่ยมฟาร์มคุณสมชาย @ทีม',
+  '',
+  '🔁 งานประจำสัปดาห์',
+  '• ประจำ — เช็กลิสต์สัปดาห์นี้',
+  '• ประจำ+ จันทร์ ส่งรายงานลูกค้าใหม่ @สมชาย',
+  '• เช็ค 2 — ติ๊กว่าทำแล้ว | ลบประจำ 2',
+  '',
+  '☀️ สรุปเช้า | 📈 สรุปสัปดาห์',
+  '',
+  'วันที่ใช้ได้: วันนี้ พรุ่งนี้ มะรืน จันทร์…อาทิตย์ ศุกร์หน้า 25/11 25/11/69',
+].join('\n');
