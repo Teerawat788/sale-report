@@ -96,7 +96,7 @@ function createBot(opts = {}) {
       getProperty: (k) => (k in props ? props[k] : null),
       setProperty: (k, v) => { props[k] = v; },
     }) },
-    CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) },
+    CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; }, remove: (k) => { delete cache[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: { base64EncodeWebSafe: (s) => Buffer.from(s).toString('base64url'), parseCsv },
     SpreadsheetApp: {

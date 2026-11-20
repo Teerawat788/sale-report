@@ -442,4 +442,35 @@ test('ฟอร์มหลัก: ไฟล์วันถัดไป → ย�
   assert.strictEqual(bot.say('อัปเดตยอด พรุ่งนี้ครับ'), null);
 });
 
+test('พิมพ์ชื่อลูกค้า / F4 เฉย ๆ ก็ขึ้นยอด (ตัน + ล้านบาท) และไม่ตอบแชทปกติ', () => {
+  const bot = mtdBot();
+  bot.say('อัปเดตยอด');
+  const t19 = mtdTable([['ณรงค์วิทย์ ช่วยทอง', 'TFM Fish4 Central', 'ณรงค์วิทย์ ช่วยทอง', 'TFM Fish4 Central', '10037015', 'กบทองฟาร์ม', 'Fish', 12]]);
+  t19[3][7] = 175.6; // นลินรัตน์ฟาร์ม +10
+  t19[0].push('Actual Value ThisYY');
+  t19.slice(1).forEach((r) => { if (typeof r[7] === 'number') r.push(r[7] * 21000); });
+  bot.setNow(D(2026, 11, 20, 9));
+  bot.driveFiles.push({ id: 'd19', name: 'data_19.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    table: t19, updated: D(2026, 11, 20, 8) });
+  bot.say('อัปเดตยอด');
+
+  const c = bot.say('นลินรัตน์ฟาร์ม');
+  assert.match(c, /👥 นลินรัตน์ฟาร์ม\n📍 F4 · 👤 ณรงค์วิทย์ ช่วยทอง/);
+  assert.match(c, /วันทำงาน 16\/25/);
+  assert.match(c, /ตัน: 175\.60\n   สปีด 10\.97 ตัน\/วัน → ปิดเดือน 274\.38/);
+  assert.match(c, /มูลค่า: 3\.69 ล้านบาท/);
+  assert.match(c, /📅 รายวันล่าสุด\n• พฤ\. 19 พ\.ย\. \+10\.00 ตัน$/m);
+  assert.match(bot.say('กบทองฟาร์ม'), /👥 กบทองฟาร์ม[\s\S]*ตัน: 12\.00/);
+  assert.match(bot.say('ยอด นลินรัตน์'), /👥 นลินรัตน์ฟาร์ม/);
+  assert.match(bot.say('ยอด ฟาร์ม'), /พบลูกค้า 3 ราย/);
+  assert.strictEqual(bot.say('ฟาร์ม'), null);
+  assert.strictEqual(bot.say('ไปเยี่ยมฟาร์มกันไหม'), null);
+
+  const z = bot.say('F4');
+  assert.match(z, /📍 F4 🔴\nตัน: 187\.60 \/ 500\.00 \(37\.5%\)[\s\S]*มูลค่า: 3\.94 ล้านบาท\n   สปีด 0\.25 ล้านบาท\/วัน → ปิดเดือน 6\.16 ล้านบาท/);
+  assert.doesNotMatch(z, /📍 F3/);
+  assert.match(bot.say('f4'), /📍 F4/);
+  assert.strictEqual(bot.say('F4 ไปไหน'), null);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

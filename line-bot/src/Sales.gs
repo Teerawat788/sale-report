@@ -145,7 +145,7 @@ function formatSalesShort_(d) {
     }
     let x = lines.join('\n');
     if (d.lastDay.unavailable) return x;
-    x += '\n📅 วันที่ ' + fmtDate_(d.lastDay.date) + ' ' + fmtNum_(d.lastDay.total) + ' ตัน' + (d.hasAmount ? ' · ' + fmtMoney_(d.lastDay.totalAmt) : '');
+    x += '\n📅 วันที่ ' + fmtDate_(d.lastDay.date) + ' ' + fmtNum_(d.lastDay.total) + ' ตัน' + (d.hasAmount && !d.lastDay.amtUnknown ? ' · ' + fmtMoney_(d.lastDay.totalAmt) : '');
     if (d.lastDay.bySales.length) {
       x += ' · ท็อป: ' + d.lastDay.bySales.slice(0, 3).map(function (e) { return e.name + ' ' + fmtNum_(e.ton, 1); }).join(', ');
     }

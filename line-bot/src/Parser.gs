@@ -74,7 +74,7 @@ function parseCommand_(text) {
   const args = tokens.slice(1);
   if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
-  if (cmd === 'sales' && args.length > 3) return null;
+  if (cmd === 'sales' && args.length > 6) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
       !(args.length && args.every(function (a) { return /^#?\d+$/.test(a); }))) return null;

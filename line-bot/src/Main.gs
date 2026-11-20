@@ -44,7 +44,8 @@ function handleEvent_(ev) {
   if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
 
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
-  const parsed = parseCommand_(stripped.text);
+  // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
+  const parsed = parseCommand_(stripped.text) || lookupCommand_(stripped.text);
   if (!parsed) return;
 
   // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
@@ -92,9 +93,23 @@ function runCommand_(p, ctx) {
       try { snap = getSalesSnapshot_(); } catch (e) { return null; }
       const team = findTeam_(snap, p.argText);
       if (team) return formatSales_(snap, team);
+      if (snap.source !== 'sheet') return null;
+      const customers = customerNames_(snap);
+      const exact = findCustomers_(customers, p.argText, true);
+      if (exact.length === 1) return formatCustomerSales_(snap, exact[0]);
       const person = findSalesPerson_(snap, p.argText);
-      return person ? formatPersonSales_(snap, person) : null;
+      if (person) return formatPersonSales_(snap, person);
+      const found = findCustomers_(customers, p.argText, false);
+      if (found.length === 1) return formatCustomerSales_(snap, found[0]);
+      if (found.length > 1) {
+        return '🔎 พบลูกค้า ' + found.length + ' ราย — พิมพ์ชื่อให้ตรงขึ้น\n' +
+          found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
+      }
+      return null;
     }
+
+    case 'customer':
+      return formatCustomerSales_(getSalesSnapshot_(), p.argText);
 
     case 'salesday':
     case 'salesrank':
@@ -212,6 +227,15 @@ function runCommand_(p, ctx) {
   return null;
 }
 
+/** ข้อความที่ไม่ใช่คำสั่ง: "F4" → ยอดเขต, ชื่อลูกค้า (ตรงรายเดียว) → ยอดลูกค้า, อย่างอื่นเงียบ */
+function lookupCommand_(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 60 || /\n/.test(t)) return null;
+  if (/^(?:f|fish|เขต|zone)\s*\d{1,2}$/i.test(t)) return { cmd: 'sales', args: [t], argText: t };
+  const found = findCustomers_(customerIndex_(), t, false);
+  return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
+}
+
 const NO_SHEET_SALES_TEXT = 'ยังไม่มียอดรายวันจาก Power BI ในแท็บ SalesData\n' +
   'Export ข้อมูลจาก Power BI เป็น .csv แล้ววางในโฟลเดอร์ Google Drive ที่ตั้งไว้ จากนั้นพิมพ์ "อัปเดตยอด"';
 
@@ -220,6 +244,7 @@ const HELP_TEXT = [
   '',
   '📊 ยอดขาย',
   '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
+  '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
   '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
