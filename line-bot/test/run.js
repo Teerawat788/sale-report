@@ -21,7 +21,6 @@ test('parseCommand: คำสั่งพื้นฐานและกันข
   assert.strictEqual(ctx.parseCommand_('ยอด').cmd, 'sales');
   assert.strictEqual(ctx.parseCommand_('ยอด fish4').cmd, 'sales');
   assert.strictEqual(ctx.parseCommand_('ยอดเยี่ยมมาก'), null);
-  assert.strictEqual(ctx.parseCommand_('ยอด ดีมากครับ'), null);
   assert.strictEqual(ctx.parseCommand_('วันนี้ ไปไหนกัน'), null);
   assert.strictEqual(ctx.parseCommand_('วันนี้').cmd, 'today');
   assert.strictEqual(ctx.parseCommand_('งาน + โทรหาลูกค้า').cmd, 'addtask');
@@ -104,6 +103,7 @@ test('ยอดขายจาก dashboard.json', () => {
   assert.doesNotMatch(f5, /Fish 4/);
   bot.setDashboard(null);
   assert.match(bot.say('ยอด'), /เกิดข้อผิดพลาด.*dashboard\.json/);
+  assert.strictEqual(bot.say('ยอด ดีมากครับ'), null);
 });
 
 test('งานติดตาม: เพิ่ม/ดู/งานฉัน/เลื่อน/ปิด/ลบ', () => {
@@ -205,7 +205,7 @@ test('ปิดการแจ้งเตือนด้วย Script Propertie
   assert.strictEqual(bot.pushes().length, 0);
   bot.ctx.setupTriggers();
   bot.ctx.setupTriggers();
-  assert.deepStrictEqual(bot.triggers.map((t) => t.fn).sort(), ['eventReminder', 'morningBrief', 'weeklyReview']);
+  assert.deepStrictEqual(bot.triggers.map((t) => t.fn).sort(), ['eventReminder', 'importSalesHourly', 'morningBrief', 'weeklyReview']);
 });
 
 test('ข้อความยาวถูกแบ่งเป็นหลายบับเบิล', () => {
@@ -214,6 +214,113 @@ test('ข้อความยาวถูกแบ่งเป็นหลา�
   const msgs = ctx.toMessages_(long);
   assert.ok(msgs.length >= 2 && msgs.every((m) => m.text.length <= 4900));
   assert.strictEqual(msgs.map((m) => m.text).join('\n'), long);
+});
+
+// ---------- Power BI / SalesData ----------
+const PBI_CSV = [
+  '\uFEFFInvoice Date,Sales Team,Sales Name,Customer Name,Material Description,Qty (KG),Net Amount',
+  '11/17/2026,Fish 4,สมชาย ใจดี,ฟาร์ม A,อาหารปลา 1,"12,000","240,000.00"',
+  '11/18/2026,Fish 4,สมชาย ใจดี,ฟาร์ม B,อาหารปลา 2,8000,160000',
+  '11/18/2026,Fish 5,วิทย์ รักงาน,ร้าน C,อาหารปลา 1,15000,300000',
+  '11/19/2026,Fish 4,สมชาย ใจดี,ฟาร์ม A,อาหารปลา 1,5000,100000',
+  '11/19/2026,Fish 5,วิทย์ รักงาน,ร้าน D,อาหารปลา 3,20000,400000',
+  '11/19/2026,Fish 5,นก สายบุญ,ฟาร์ม E,อาหารปลา 3,3000,60000',
+  'Total,,,,,"63,000","1,260,000"',
+].join('\r\n');
+
+function pbiBot() {
+  const bot = createBot({ dashboard, now: D(2026, 11, 20, 9), props: { IMPORT_FOLDER_ID: 'folder1' } });
+  bot.say('ลงทะเบียน');
+  bot.driveFiles.push({ id: 'f1', name: 'export.csv', mime: 'text/csv', content: PBI_CSV, updated: D(2026, 11, 20, 6) });
+  bot.ctx.setupSalesSheets();
+  const tgt = bot.sheets.Targets.data;
+  tgt.push(['2026-11', 'Fish 4', '', 400], ['2026-11', 'Fish 5', '', 300],
+    ['2026-11', 'Fish 4', 'สมชาย ใจดี', 200], ['2026-11', 'Fish 5', 'วิทย์ รักงาน', 150], ['2026-11', 'Fish 5', 'นก สายบุญ', 100]);
+  return bot;
+}
+
+test('mapColumns / วันที่ / ตัวเลข', () => {
+  const { ctx } = createBot();
+  const m = ctx.mapColumns_(['Invoice Date', 'Sales Team', 'Sales Name', 'Customer Name', 'Material Description', 'Qty (KG)', 'Sales Amount']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m)), { date: 0, ton: 5, amount: 6, customer: 3, product: 4, team: 1, sales: 2 });
+  assert.strictEqual(ctx.parseNumber_('(1,234.5)'), -1234.5);
+  same(ctx.parseSheetDate_('19/11/2569', 'DMY'), D(2026, 11, 19));
+  same(ctx.parseSheetDate_('11/19/2026', 'MDY'), D(2026, 11, 19));
+  same(ctx.parseSheetDate_('2026-11-19T00:00:00', 'DMY'), D(2026, 11, 19));
+  same(ctx.parseSheetDate_(46345, 'DMY'), D(2026, 11, 19));
+  assert.strictEqual(ctx.detectDateOrder_(['11/19/2026', '11/18/2026']), 'MDY');
+  assert.throws(() => ctx.rowsFromTable_([['a', 'b'], [1, 2]]), /ไม่พบคอลัมน์/);
+});
+
+test('อัปเดตยอด: นำเข้า CSV จาก Power BI (kg→ตัน, ข้ามแถว Total, นำเข้าซ้ำไม่ซ้ำซ้อน)', () => {
+  const bot = pbiBot();
+  const r = bot.say('อัปเดตยอด');
+  assert.match(r, /นำเข้ายอดขาย 6 แถว \(อ\. 17 พ\.ย\. – พฤ\. 19 พ\.ย\.\)/);
+  assert.strictEqual(bot.sheets.SalesData.data.length, 7);
+  assert.strictEqual(bot.sheets.SalesData.data[1][5], 12);
+  bot.say('อัปเดตยอด');
+  assert.strictEqual(bot.sheets.SalesData.data.length, 7);
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.sheets.SalesData.data.length, 7);
+});
+
+test('นำเข้า .xlsx (แปลงผ่าน Drive) และแทนที่เฉพาะช่วงวันที่ในไฟล์', () => {
+  const bot = pbiBot();
+  bot.say('อัปเดตยอด');
+  bot.driveFiles.push({ id: 'f2', name: 'day20.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    table: [['วันที่', 'ทีม', 'เซลส์', 'ลูกค้า', 'สินค้า', 'ตัน'], [D(2026, 11, 19), 'Fish 4', 'สมชาย ใจดี', 'ฟาร์ม A', 'อาหารปลา 1', 7]],
+    updated: D(2026, 11, 20, 8) });
+  assert.match(bot.say('อัปเดตยอด'), /1 แถว[\s\S]*day20\.xlsx/);
+  const d19 = bot.sheets.SalesData.data.slice(1).filter((r) => r[0].getDate() === 19);
+  assert.strictEqual(d19.length, 1);
+  assert.ok(bot.driveFiles.find((f) => f.id.startsWith('tmp')).trashed, 'ไฟล์ชั่วคราวต้องถูกลบ');
+});
+
+test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ / ยอด <ชื่อ> / ยอดลูกค้า / ยอดสินค้า จาก SalesData', () => {
+  const bot = pbiBot();
+  bot.say('อัปเดตยอด');
+  const total = bot.say('ยอด');
+  // 63 ตัน จากเป้า 700, วันทำงาน จ-ส: พ.ย. 2026 มี 25 วัน, ถึง 19 พ.ย. = 16 วัน (อาทิตย์ 1,8,15)
+  assert.match(total, /ข้อมูล ณ 19\/11\/2026/);
+  assert.match(total, /วันทำงาน 16\/25/);
+  assert.match(total, /รวม: 63\.00 \/ 700\.00 ตัน \(9\.00%\)/);
+  assert.match(total, /Fish 4: 25\.00 \/ 400\.00/);
+  assert.match(total, /วันล่าสุด \(พฤ\. 19 พ\.ย\.\) 28\.00 ตัน/);
+
+  const day = bot.say('ยอดเมื่อวาน');
+  assert.match(day, /ยอดขายวันที่ พฤ\. 19 พ\.ย\.: 28\.00 ตัน/);
+  assert.match(day, /1\. วิทย์ รักงาน — 20\.00 ตัน/);
+
+  const rank = bot.say('ยอดเซลส์');
+  assert.match(rank, /1\. วิทย์ รักงาน \(Fish 5\) — 35\.00 \/ 150\.00 ตัน \(23\.3%\) 🔴/);
+
+  const me = bot.say('ยอด สมชาย');
+  assert.match(me, /👤 สมชาย ใจดี \(Fish 4\)/);
+  assert.match(me, /25\.00 \/ 200\.00 ตัน/);
+  assert.match(me, /ต้องทำอีก 175\.00 ตัน ≈ 19\.44 ตัน\/วัน/);
+  assert.match(me, /1\. ฟาร์ม A — 17\.00 ตัน/);
+
+  assert.match(bot.say('ยอด f5'), /Fish 5: 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
+  assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
+  assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ\n1\. อาหารปลา 1 — 32\.00 ตัน\n2\. อาหารปลา 3 — 23\.00/);
+  assert.strictEqual(bot.say('ยอด ใครไม่รู้'), null);
+});
+
+test('สรุปเช้านำเข้าไฟล์ใหม่อัตโนมัติ และแสดงยอดวันล่าสุด + ท็อปเซลส์', () => {
+  const bot = pbiBot();
+  bot.ctx.morningBrief();
+  const text = bot.pushes()[0].body.messages[0].text;
+  assert.match(text, /📊 ยอด 63\.00\/700\.00 ตัน/);
+  assert.match(text, /ยอดวันที่ พฤ\. 19 พ\.ย\. 28\.00 ตัน · ท็อป: วิทย์ รักงาน 20\.0/);
+  bot.setNow(D(2026, 11, 20, 16));
+  bot.ctx.weeklyReview();
+  assert.match(bot.pushes()[1].body.messages[0].text, /ท็อปเซลส์เดือนนี้\n1\. วิทย์ รักงาน/);
+});
+
+test('ไม่มี SalesData: คำสั่งยอดรายวันแนะนำวิธีตั้งค่า', () => {
+  const bot = createBot({ dashboard });
+  assert.match(bot.say('ยอดเซลส์'), /ยังไม่มียอดรายวันจาก Power BI/);
+  assert.match(bot.say('อัปเดตยอด'), /ยังไม่ได้ตั้ง IMPORT_FOLDER_ID/);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

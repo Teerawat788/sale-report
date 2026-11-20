@@ -5,6 +5,11 @@ const COMMANDS = {
   register: ['ลงทะเบียน', 'register'],
   whoami: ['ไอดี', 'myid'],
   sales: ['ยอด', 'สรุปยอด', 'ยอดขาย', 'sales'],
+  salesday: ['ยอดเมื่อวาน', 'ยอดล่าสุด', 'ยอดรายวัน'],
+  salesrank: ['ยอดเซลส์', 'อันดับเซลส์', 'ranking'],
+  salescust: ['ยอดลูกค้า', 'ลูกค้าท็อป'],
+  salesprod: ['ยอดสินค้า', 'สินค้าท็อป'],
+  importsales: ['อัปเดตยอด', 'ดึงยอด'],
   tasks: ['งาน', 'งานค้าง', 'tasks'],
   mytasks: ['งานฉัน', 'งานของฉัน', 'mytasks'],
   addtask: ['งาน+', '+งาน', 'เพิ่มงาน', 'task+'],
@@ -25,7 +30,8 @@ const COMMANDS = {
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
 const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
-  'tomorrow', 'week', 'weekly', 'brief', 'review'];
+  'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
+  'salesprod', 'importsales'];
 
 const ALIAS_TO_CMD = (function () {
   const m = {};
@@ -67,7 +73,8 @@ function parseCommand_(text) {
   if (!cmd) return null;
   const args = tokens.slice(1);
   if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
-  if (cmd === 'sales' && args.length && !/^(fish|f)\s?[45]$/i.test(args.join(''))) return null;
+  // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
+  if (cmd === 'sales' && args.length > 3) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
       !(args.length && args.every(function (a) { return /^#?\d+$/.test(a); }))) return null;
   return { cmd: cmd, args: args, argText: args.join(' ') };

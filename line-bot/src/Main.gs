@@ -87,8 +87,30 @@ function runCommand_(p, ctx) {
       return 'chat: ' + chatId_(ctx.source) + '\nuser: ' + (ctx.source.userId || '-');
 
     case 'sales': {
-      const scope = p.argText ? (/5/.test(p.argText) ? 'fish5' : 'fish4') : '';
-      return formatSales_(fetchDashboard_(), scope);
+      if (!p.argText) return formatSales_(getSalesSnapshot_(), null);
+      let snap;
+      try { snap = getSalesSnapshot_(); } catch (e) { return null; }
+      const team = findTeam_(snap, p.argText);
+      if (team) return formatSales_(snap, team);
+      const person = findSalesPerson_(snap, p.argText);
+      return person ? formatPersonSales_(snap, person) : null;
+    }
+
+    case 'salesday':
+    case 'salesrank':
+    case 'salescust':
+    case 'salesprod': {
+      const snap = getSalesSnapshot_();
+      if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
+      if (p.cmd === 'salesday') return formatLastDay_(snap);
+      if (p.cmd === 'salesrank') return formatSalesRank_(snap);
+      if (p.cmd === 'salescust') return formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10);
+      return formatTopBy_(snap, 'product', '📦 สินค้าท็อป', 10);
+    }
+
+    case 'importsales': {
+      const r = importSalesFromDrive_(true);
+      return r.skipped ? 'ℹ️ ' + r.message : r.message;
     }
 
     case 'tasks':
@@ -188,11 +210,16 @@ function runCommand_(p, ctx) {
   return null;
 }
 
+const NO_SHEET_SALES_TEXT = 'ยังไม่มียอดรายวันจาก Power BI ในแท็บ SalesData\n' +
+  'Export ข้อมูลจาก Power BI เป็น .csv แล้ววางในโฟลเดอร์ Google Drive ที่ตั้งไว้ จากนั้นพิมพ์ "อัปเดตยอด"';
+
 const HELP_TEXT = [
   '🤖 คำสั่งบอททีมขาย',
   '',
   '📊 ยอดขาย',
-  '• ยอด — สรุปยอดล่าสุด | ยอด fish4 | ยอด fish5',
+  '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
+  '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
+  '• อัปเดตยอด — ดึงไฟล์ Power BI ล่าสุดเข้าระบบ',
   '',
   '📋 งานติดตาม',
   '• งาน — งานค้างทั้งหมด | งานฉัน',

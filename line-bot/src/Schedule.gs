@@ -4,7 +4,8 @@
  */
 
 function setupTriggers() {
-  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview'];
+  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview', 'importSalesHourly'];
+  setupSalesSheets();
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (handlers.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -13,7 +14,8 @@ function setupTriggers() {
   ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY)
     .atHour(CONFIG.REVIEW_HOUR).create();
   ScriptApp.newTrigger('eventReminder').timeBased().everyMinutes(10).create();
-  console.log('ตั้ง trigger แล้ว: สรุปเช้า ' + hour + ':00, สรุปสัปดาห์ ศุกร์ ' + CONFIG.REVIEW_HOUR + ':00, เตือนนัดทุก 10 นาที');
+  ScriptApp.newTrigger('importSalesHourly').timeBased().everyHours(1).create();
+  console.log('ตั้ง trigger แล้ว: สรุปเช้า ' + hour + ':00, สรุปสัปดาห์ ศุกร์ ' + CONFIG.REVIEW_HOUR + ':00, เตือนนัดทุก 10 นาที, นำเข้ายอด Power BI ทุกชั่วโมง');
 }
 
 function isWorkDay_(d) {
@@ -24,6 +26,7 @@ function isWorkDay_(d) {
 function morningBrief() {
   const now = now_();
   if (!flag_('BRIEF_ENABLED') || !isWorkDay_(now)) return;
+  importSalesHourly(); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ
   linePush_(prop_('GROUP_ID', ''), buildMorningBrief_(now));
 }
 
@@ -125,6 +128,9 @@ function buildWeeklyReview_(now) {
       out.push('⬜ #' + w.id + ' ' + w.text + (w.owner ? ' — ' + w.owner : ''));
     });
   }
+
+  const top = safeSalesTop_();
+  if (top) { out.push(''); out.push(top); }
 
   const nextWeek = getEvents_(weekEnd, addDays_(weekEnd, 7));
   out.push('');

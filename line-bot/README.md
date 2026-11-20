@@ -18,7 +18,8 @@
 ## คำสั่งในกลุ่ม
 
 ```
-ยอด                     สรุปยอดล่าสุด  (ยอด fish4 / ยอด fish5)
+ยอด                     สรุปยอดเดือนนี้ (ยอด fish4 / ยอด สมชาย)
+ยอดเมื่อวาน | ยอดเซลส์ | ยอดลูกค้า | ยอดสินค้า | อัปเดตยอด
 งาน                     งานค้างทั้งหมด
 งานฉัน                   งานที่ฉันรับผิดชอบ
 งาน+ ส่งใบเสนอราคาฟาร์ม A พรุ่งนี้ @สมชาย
@@ -96,7 +97,38 @@
   - หรือปิดบางอย่าง เช่น `REMINDER_ENABLED=false` (เตือนนัดใช้โควตามากที่สุด) แล้วให้ทีมพิมพ์ `สรุปเช้า` / `วันนี้` เอง ซึ่งไม่เสียโควตา
 - ถ้าโควตาหมด คำสั่งแบบตอบกลับยังใช้ได้ตามปกติ
 
-## ข้อมูลยอดขาย
+## ยอดขายรายวันจาก Power BI
+
+บอทอ่านยอดรายวันจากแท็บ **SalesData** ใน Google Sheet ถ้ามีข้อมูล (ถ้าไม่มีจะใช้ `dashboard.json` เหมือนเดิม)
+
+```
+Power BI → Export data (.csv) → โฟลเดอร์ Google Drive → บอทดึงเข้า SalesData ทุกชั่วโมง → คำนวณยอด
+```
+
+**ตั้งค่าครั้งเดียว**
+1. สร้างโฟลเดอร์ใน Google Drive (เช่น "Sales Bot - Power BI Export") แล้วคัดลอก ID จาก URL (`drive.google.com/drive/folders/<ID>`)
+2. Script Properties → เพิ่ม `IMPORT_FOLDER_ID` = ID นั้น
+3. วาง `dist/Code.gs` และ `src/appsscript.json` ใหม่ (เพิ่มสิทธิ์ Google Drive) → รัน `setupTriggers` อีกครั้งและกดอนุญาต
+   แท็บ `SalesData` และ `Targets` จะถูกสร้างให้อัตโนมัติ
+4. กรอกเป้าในแท็บ **Targets**: `เดือน (yyyy-mm)` | `ทีม` | `เซลส์` (ว่าง = เป้าทั้งทีม) | `เป้า (ตัน)`
+5. (ไม่บังคับ) `HOLIDAYS` = วันหยุดที่ไม่นับวันทำงาน เช่น `5/12,10/12,31/12`
+
+**ทุกวัน**
+- ใน Power BI สร้าง **ตาราง (Table visual)** ที่มีคอลัมน์ วันที่ / ทีม / เซลส์ / ลูกค้า / สินค้า / ตัน (หรือ kg) — ตั้งเป็นเดือนปัจจุบัน
+- `…` ที่มุมตาราง → **Export data** → **Summarized data** → **.csv** → อัปโหลดไฟล์ลงโฟลเดอร์ (ใช้ชื่อเดิมทับได้)
+- บอทดึงเองทุกชั่วโมงและก่อนส่งสรุปเช้า หรือพิมพ์ `อัปเดตยอด` เพื่อดึงทันที
+- ไฟล์แต่ละรอบจะ **แทนที่ข้อมูลช่วงวันที่เดียวกัน** export ซ้ำทั้งเดือนทุกวันได้ ไม่ซ้ำซ้อน
+
+ชื่อคอลัมน์ยืดหยุ่น เช่น `Invoice Date`/`วันที่`, `Sales Name`/`เซลส์`, `Customer Name`/`ลูกค้า`, `Material`/`สินค้า`,
+`Ton`/`ตัน`/`Qty (KG)` (คอลัมน์ที่มี kg จะหาร 1000 ให้อัตโนมัติ) รองรับ .csv, .xlsx และ Google Sheet
+วันที่แบบ ด/ด/ป หรือ ด/ว/ป (เดาจากข้อมูล), ปี พ.ศ. ก็ได้
+
+**คำสั่ง**: `ยอด` · `ยอด fish4` · `ยอด <ชื่อเซลส์>` · `ยอดเมื่อวาน` · `ยอดเซลส์` · `ยอดลูกค้า` · `ยอดสินค้า` · `อัปเดตยอด`
+
+> ต้องการให้ดึงจาก Power BI อัตโนมัติ 100% (ไม่ต้อง export) ทำได้เมื่อ IT เปิดใช้ Power BI REST API
+> (Azure AD app + service principal) หรือ Power Automate Premium — ข้อมูลยังลงแท็บ SalesData เหมือนเดิม คำสั่งบอทไม่ต้องเปลี่ยน
+
+## ข้อมูลยอดขาย (dashboard.json)
 
 บอทอ่าน `dashboard.json` ที่ root ของ repo นี้ (ไฟล์เดียวกับที่หน้าเว็บใช้) ฟิลด์ที่ใช้:
 `date`, `workingDaysPassed`, `workingDaysTotal`, `status`, `total.{actualTon,budgetTon,achievement,forecastTon,gapTon,currentSpeed,requiredSpeed}`, `fish4`, `fish5`
@@ -116,7 +148,8 @@ npm test
 ```
 src/Main.gs       webhook (doPost) + จัดการคำสั่ง + ข้อความเมนู
 src/Parser.gs     แปลงข้อความ/วันที่/เวลาภาษาไทย
-src/Sales.gs      สรุปยอดจาก dashboard.json
+src/Sales.gs      สรุปยอด (SalesData หรือ dashboard.json)
+src/SalesData.gs  นำเข้ายอดรายวันจาก Power BI + อันดับเซลส์/ลูกค้า/สินค้า
 src/Tasks.gs      งานติดตาม (แท็บ Tasks)
 src/Weekly.gs     งานประจำสัปดาห์ (แท็บ Weekly)
 src/Calendar.gs   Google Calendar / agenda

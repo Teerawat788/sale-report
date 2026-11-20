@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
 const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Store', 'Tasks', 'Weekly',
-  'Calendar', 'Sales', 'Schedule', 'Main'];
+  'Calendar', 'Sales', 'SalesData', 'Schedule', 'Main'];
 
 function makeSheet(name) {
   const data = [];
@@ -15,9 +15,37 @@ function makeSheet(name) {
     appendRow(row) { data.push(row.slice()); },
     setFrozenRows() {},
     getDataRange() { return { getValues: () => data.map((r) => r.slice()) }; },
-    getRange(r, c) { return { setValue(v) { while (data[r - 1].length < c) data[r - 1].push(''); data[r - 1][c - 1] = v; } }; },
+    getRange(r, c, nr, nc) {
+      return {
+        setValue(v) { while (data[r - 1].length < c) data[r - 1].push(''); data[r - 1][c - 1] = v; },
+        setValues(vals) {
+          vals.forEach((row, i) => { data[r - 1 + i] = data[r - 1 + i] || []; row.forEach((v, j) => { data[r - 1 + i][c - 1 + j] = v; }); });
+        },
+      };
+    },
     deleteRow(r) { data.splice(r - 1, 1); },
+    clearContents() { data.length = 0; },
   };
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cur); rows.push(row); row = []; cur = '';
+    } else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows;
 }
 
 function createBot(opts = {}) {
@@ -33,6 +61,13 @@ function createBot(opts = {}) {
     getSheetByName: (n) => sheets[n] || null,
     insertSheet: (n) => (sheets[n] = makeSheet(n)),
   };
+  const driveFiles = []; // { id, name, mime, content (string | 2D array), updated: Date }
+  const fileObj = (f) => ({
+    getId: () => f.id, getName: () => f.name, getMimeType: () => f.mime,
+    getLastUpdated: () => f.updated,
+    getBlob: () => ({ getDataAsString: () => f.content }),
+    setTrashed() { f.trashed = true; },
+  });
 
   const calendar = {
     getEvents(start, end) {
@@ -63,14 +98,26 @@ function createBot(opts = {}) {
     }) },
     CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    Utilities: { base64EncodeWebSafe: (s) => Buffer.from(s).toString('base64url') },
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss },
+    Utilities: { base64EncodeWebSafe: (s) => Buffer.from(s).toString('base64url'), parseCsv },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ss,
+      openById: (id) => {
+        const f = driveFiles.find((x) => x.id === id);
+        if (!f) return ss;
+        return { getSheets: () => [{ getDataRange: () => ({ getValues: () => f.content.map((r) => r.slice()) }) }] };
+      },
+    },
+    DriveApp: {
+      getFolderById: () => ({ getFiles() { const list = driveFiles.filter((f) => !f.trashed); let i = 0; return { hasNext: () => i < list.length, next: () => fileObj(list[i++]) }; } }),
+      getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)),
+    },
     CalendarApp: { getDefaultCalendar: () => calendar, getCalendarById: () => calendar },
     ContentService: {
       createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }),
       MimeType: { JSON: 'json' },
     },
     ScriptApp: {
+      getOAuthToken: () => 'oauth',
       WeekDay: { FRIDAY: 'FRIDAY' },
       getProjectTriggers: () => triggers.slice(),
       deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
@@ -82,6 +129,13 @@ function createBot(opts = {}) {
     },
     UrlFetchApp: {
       fetch(url, o = {}) {
+        const copy = url.match(/drive\/v3\/files\/([^/]+)\/copy/);
+        if (copy) {
+          const src = driveFiles.find((x) => x.id === copy[1]);
+          const id = 'tmp' + driveFiles.length;
+          driveFiles.push({ id, name: JSON.parse(o.payload).name, mime: 'application/vnd.google-apps.spreadsheet', content: src.table, updated: new Date() });
+          return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) };
+        }
         if (url.startsWith('https://api.line.me')) {
           const call = { url, method: o.method, body: o.payload ? JSON.parse(o.payload) : null };
           lineCalls.push(call);
@@ -100,7 +154,7 @@ function createBot(opts = {}) {
   ctx.now_ = () => new Date(now.getTime());
 
   return {
-    ctx, props, sheets, events, lineCalls, triggers,
+    ctx, props, sheets, events, lineCalls, triggers, driveFiles,
     setNow(d) { now = d; },
     setDashboard(d) { dashboard = d; },
     /** จำลองข้อความจากกลุ่ม คืนข้อความที่บอทตอบ (string) หรือ null */
