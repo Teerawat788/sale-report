@@ -109,7 +109,9 @@ function runCommand_(p, ctx) {
     }
 
     case 'importsales': {
-      const r = importSalesFromDrive_(true);
+      const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
+      if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้';
+      const r = importSalesFromDrive_(true, asOf);
       return r.skipped ? 'ℹ️ ' + r.message : r.message;
     }
 
@@ -219,7 +221,7 @@ const HELP_TEXT = [
   '📊 ยอดขาย',
   '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
-  '• อัปเดตยอด — ดึงไฟล์ Power BI ล่าสุดเข้าระบบ',
+  '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
   '📋 งานติดตาม',
   '• งาน — งานค้างทั้งหมด | งานฉัน',

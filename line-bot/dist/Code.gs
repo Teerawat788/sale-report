@@ -167,7 +167,7 @@ const COMMANDS = {
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
 const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
-  'salesprod', 'importsales'];
+  'salesprod'];
 
 const ALIAS_TO_CMD = (function () {
   const m = {};
@@ -211,6 +211,7 @@ function parseCommand_(text) {
   if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 3) return null;
+  if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
       !(args.length && args.every(function (a) { return /^#?\d+$/.test(a); }))) return null;
   return { cmd: cmd, args: args, argText: args.join(' ') };
@@ -933,6 +934,7 @@ function formatSalesShort_(d) {
       lines.push(d.teams.map(function (z) { return z.name + ' ' + fmtNum_(z.forecastPct !== null ? z.forecastPct : z.achievement, 0) + '%' + forecastIcon_(z); }).join(' · '));
     }
     let x = lines.join('\n');
+    if (d.lastDay.unavailable) return x;
     x += '\n📅 วันที่ ' + fmtDate_(d.lastDay.date) + ' ' + fmtNum_(d.lastDay.total) + ' ตัน' + (d.hasAmount ? ' · ' + fmtMoney_(d.lastDay.totalAmt) : '');
     if (d.lastDay.bySales.length) {
       x += ' · ท็อป: ' + d.lastDay.bySales.slice(0, 3).map(function (e) { return e.name + ' ' + fmtNum_(e.ton, 1); }).join(', ');
@@ -987,14 +989,18 @@ const TARGET_SHEET = 'Targets';
 const TARGET_HEADERS = ['เดือน (yyyy-mm)', 'ทีม/เขต', 'เซลส์ (ว่าง = เป้าทั้งเขต)', 'เป้า (ตัน)', 'เป้า (บาท)'];
 
 /** ชื่อคอลัมน์ที่ยอมรับจากไฟล์ export (ไม่สนตัวพิมพ์/ช่องว่าง/วงเล็บ) */
+const MTD_SHEET = 'SalesMTD';
+const MTD_HEADERS = ['ข้อมูล ณ วันที่', 'เขต', 'เซลส์ (PIC_New)', 'รหัสลูกค้า', 'ลูกค้า', 'ตันสะสม (MTD)', 'บาทสะสม (MTD)'];
+
 const COLUMN_ALIASES = {
+  custid: ['soldtopartyid', 'customerid', 'customercode', 'custid', 'รหัสลูกค้า', 'soldtoid', 'soldtocode'],
   date: ['วันที่', 'date', 'วันที่ขาย', 'วันที่เอกสาร', 'invoicedate', 'billingdate', 'docdate', 'documentdate', 'postingdate', 'salesdate', 'day'],
-  team: ['ทีม', 'team', 'salesteam', 'เขต', 'zone', 'region', 'area', 'ภาค', 'division', 'salesgroup', 'salesoffice'],
-  sales: ['เซลส์', 'sales', 'salesname', 'salesman', 'salesperson', 'salesrep', 'rep', 'พนักงานขาย', 'ผู้แทนขาย', 'ชื่อเซลส์', 'ชื่อพนักงานขาย', 'employee'],
-  customer: ['ลูกค้า', 'customer', 'customername', 'ชื่อลูกค้า', 'soldto', 'soldtoname', 'ร้าน', 'ฟาร์ม', 'dealer', 'shipto', 'shiptoname'],
+  team: ['areanew', 'ทีม', 'team', 'salesteam', 'เขต', 'zone', 'region', 'area', 'ภาค', 'division', 'salesgroup', 'salesoffice'],
+  sales: ['picnew', 'pic', 'personincharge', 'เซลส์', 'sales', 'salesname', 'salesman', 'salesperson', 'salesrep', 'rep', 'พนักงานขาย', 'ผู้แทนขาย', 'ชื่อเซลส์', 'ชื่อพนักงานขาย', 'employee'],
+  customer: ['soldtoparty', 'ลูกค้า', 'customer', 'customername', 'ชื่อลูกค้า', 'soldto', 'soldtoname', 'ร้าน', 'ฟาร์ม', 'dealer', 'shipto', 'shiptoname'],
   product: ['สินค้า', 'product', 'productname', 'material', 'materialdescription', 'materialname', 'item', 'itemname', 'sku', 'ชื่อสินค้า', 'brand'],
-  ton: ['ตัน', 'ton', 'tons', 'tonnage', 'qtyton', 'quantityton', 'sumofton', 'ปริมาณตัน', 'ยอดตัน', 'volume', 'kg', 'กก', 'กิโลกรัม', 'qty', 'quantity', 'ปริมาณ'],
-  amount: ['ยอดเงิน', 'amount', 'salesamount', 'netamount', 'netsales', 'revenue', 'value', 'บาท', 'มูลค่า', 'ยอดขายบาท'],
+  ton: ['actualvolumethisyyton', 'actualvolumeton', 'actualvolume', 'ตัน', 'ton', 'tons', 'tonnage', 'qtyton', 'quantityton', 'sumofton', 'ปริมาณตัน', 'ยอดตัน', 'volume', 'kg', 'กก', 'กิโลกรัม', 'qty', 'quantity', 'ปริมาณ'],
+  amount: ['actualvaluethisyybaht', 'actualvaluethisyy', 'actualvalue', 'actualamount', 'salesvalue', 'ยอดเงิน', 'amount', 'salesamount', 'netamount', 'netsales', 'revenue', 'value', 'บาท', 'มูลค่า', 'ยอดขายบาท'],
 };
 
 function normHeader_(s) {
@@ -1006,19 +1012,22 @@ function mapColumns_(header) {
   const h = header.map(normHeader_);
   const map = {};
   const used = {};
-  const keys = ['date', 'ton', 'amount', 'customer', 'product', 'team', 'sales'];
-  // รอบ 1: ตรงทั้งคำ  รอบ 2: มีคำนั้นอยู่ในชื่อคอลัมน์
-  [true, false].forEach(function (exact) {
-    keys.forEach(function (key) {
-      if (map[key] !== undefined) return;
-      const aliases = COLUMN_ALIASES[key].map(normHeader_);
-      const idx = h.findIndex(function (x, i) {
-        if (used[i] || !x) return false;
-        return exact ? aliases.indexOf(x) >= 0
-          : aliases.some(function (a) { return a.length >= 3 && x.indexOf(a) >= 0; });
-      });
-      if (idx >= 0) { map[key] = idx; used[idx] = true; }
+  const keys = ['custid', 'date', 'ton', 'amount', 'customer', 'product', 'team', 'sales'];
+  // รอบ 1: ตรงทั้งคำ (ตามลำดับความสำคัญของชื่อ เช่น PIC_New มาก่อน PIC)  รอบ 2: มีคำนั้นอยู่ในชื่อคอลัมน์
+  keys.forEach(function (key) {
+    const aliases = COLUMN_ALIASES[key].map(normHeader_);
+    for (let a = 0; a < aliases.length; a++) {
+      const idx = h.findIndex(function (x, i) { return !used[i] && x === aliases[a]; });
+      if (idx >= 0) { map[key] = idx; used[idx] = true; return; }
+    }
+  });
+  keys.forEach(function (key) {
+    if (map[key] !== undefined || key === 'custid') return;
+    const aliases = COLUMN_ALIASES[key].map(normHeader_);
+    const idx = h.findIndex(function (x, i) {
+      return !used[i] && x && aliases.some(function (a) { return a.length >= 3 && x.indexOf(a) >= 0; });
     });
+    if (idx >= 0) { map[key] = idx; used[idx] = true; }
   });
   return map;
 }
@@ -1075,43 +1084,119 @@ function parseSheetDate_(v, order) {
 }
 
 function cleanText_(v) {
-  return String(v === null || v === undefined ? '' : v).trim();
+  return String(v === null || v === undefined ? '' : v).replace(/[\s\u00a0]+/g, ' ').trim();
 }
 
-/** ตาราง 2 มิติ (มีหัวตาราง) → { rows, columns, header } */
+/** "TFM Fish3 East" / "Fish 3" / "f3" → "F3"; เขต TFM อื่น (Shrimp, Export ฯลฯ) → "อื่นๆ" */
+function normZone_(v) {
+  const s = cleanText_(v);
+  const m = s.match(/(?:fish|^f|^เขต|^zone)\s*(\d+)/i);
+  if (m) return 'F' + Number(m[1]);
+  if (/^tfm\b/i.test(s)) return 'อื่นๆ';
+  return s;
+}
+
+/** F1..F5 ก่อน แล้วค่อยเขตอื่น / อื่นๆ ท้ายสุด */
+function zoneCompare_(a, b) {
+  const rank = function (z) { return /^F\d+$/.test(z) ? 0 : z === 'อื่นๆ' ? 2 : 1; };
+  return rank(a) - rank(b) || a.localeCompare(b, 'th', { numeric: true });
+}
+
+/** Power BI แสดงค่าว่างเป็น "#" */
+function normPic_(v) {
+  const s = cleanText_(v);
+  return s === '#' || s === '(Blank)' || s === '(ว่าง)' ? '(ไม่ระบุ PIC)' : s;
+}
+
+function isTotalRow_(r) {
+  const first = r.map(cleanText_).find(function (x) { return x; }) || '';
+  return /^(total|grand ?total|รวม|รวมทั้งหมด|ผลรวม)$/i.test(first);
+}
+
+/**
+ * ตาราง 2 มิติ (มีหัวตาราง) → { rows, columns, header, mode }
+ * mode 'daily' = มีคอลัมน์วันที่ (ยอดรายวัน) / 'mtd' = ไม่มีวันที่ (ยอดสะสมทั้งเดือนรายลูกค้า)
+ */
 function rowsFromTable_(table) {
   let headerIdx = -1;
   let map = null;
   for (let i = 0; i < Math.min(table.length, 15); i++) {
     const m = mapColumns_(table[i]);
-    if (m.date !== undefined && m.ton !== undefined) { headerIdx = i; map = m; break; }
+    if (m.ton !== undefined && (m.date !== undefined || m.team !== undefined || m.sales !== undefined)) {
+      headerIdx = i; map = m; break;
+    }
   }
   if (headerIdx < 0) {
     const seen = (table[0] || []).filter(function (x) { return x !== ''; }).join(', ');
-    throw new Error('ไม่พบคอลัมน์ "วันที่" และ "ตัน" ในไฟล์ (คอลัมน์ที่เจอ: ' + truncate_(seen, 200) + ')');
+    throw new Error('ไม่พบคอลัมน์ยอด (ตัน) และเขต/เซลส์/วันที่ในไฟล์ (คอลัมน์ที่เจอ: ' + truncate_(seen, 200) + ')');
   }
+  const mode = map.date !== undefined ? 'daily' : 'mtd';
   const header = table[headerIdx];
   const tonHeader = normHeader_(header[map.ton]);
   const divisor = /kg|กก|กิโล/.test(tonHeader) ? 1000 : 1;
   const body = table.slice(headerIdx + 1);
-  const order = detectDateOrder_(body.map(function (r) { return r[map.date]; }));
+  const order = mode === 'daily' ? detectDateOrder_(body.map(function (r) { return r[map.date]; })) : 'DMY';
+  const col = function (r, k) { return map[k] !== undefined ? cleanText_(r[map[k]]) : ''; };
   const rows = [];
   body.forEach(function (r) {
-    const date = parseSheetDate_(r[map.date], order);
     const ton = parseNumber_(r[map.ton]);
-    if (!date || isNaN(ton)) return; // แถวรวม/แถวว่าง
-    const amount = map.amount !== undefined ? parseNumber_(r[map.amount]) : NaN;
-    rows.push({
+    if (isNaN(ton) || isTotalRow_(r)) return;
+    const date = mode === 'daily' ? parseSheetDate_(r[map.date], order) : null;
+    if (mode === 'daily' && !date) return;
+    const row = {
       date: date,
-      team: map.team !== undefined ? cleanText_(r[map.team]) : '',
-      sales: map.sales !== undefined ? cleanText_(r[map.sales]) : '',
-      customer: map.customer !== undefined ? cleanText_(r[map.customer]) : '',
-      product: map.product !== undefined ? cleanText_(r[map.product]) : '',
+      team: normZone_(col(r, 'team')),
+      sales: normPic_(col(r, 'sales')),
+      custId: col(r, 'custid'),
+      customer: col(r, 'customer'),
+      product: col(r, 'product'),
       ton: ton / divisor,
-      amount: isNaN(amount) ? null : amount,
-    });
+      amount: null,
+    };
+    if (mode === 'mtd' && !row.team && !row.sales && !row.customer) return; // แถวสรุป/หมายเหตุ
+    const amount = map.amount !== undefined ? parseNumber_(r[map.amount]) : NaN;
+    row.amount = isNaN(amount) ? null : amount;
+    rows.push(row);
   });
-  return { rows: rows, columns: map, header: header };
+  return { rows: rows, columns: map, header: header, mode: mode };
+}
+
+/** วันที่ของข้อมูลจากชื่อไฟล์: "data_18.xlsx" → วันที่ 18, "sales 2026-11-18.csv" → 18/11/2026 */
+function asOfFromFileName_(name, ref) {
+  const base = String(name).replace(/\.[^.]+$/, '');
+  const today = startOfDay_(ref);
+  let m = base.match(/(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})/);
+  if (m) return parseSheetDate_(m[1] + '-' + m[2] + '-' + m[3], 'DMY');
+  m = base.match(/(\d{1,2})[-_.](\d{1,2})[-_.](\d{2,4})/);
+  if (m) return parseSheetDate_(m[1] + '/' + m[2] + '/' + m[3], 'DMY');
+  const nums = base.match(/(?:^|\D)(\d{1,2})(?!\d)/g);
+  if (nums) {
+    const day = Number(nums[nums.length - 1].replace(/\D/g, ''));
+    if (day >= 1 && day <= 31) {
+      let d = new Date(today.getFullYear(), today.getMonth(), day);
+      if (d > today || d.getDate() !== day) d = new Date(today.getFullYear(), today.getMonth() - 1, day);
+      return d;
+    }
+  }
+  return addDays_(today, -1); // ไม่มีวันที่ในชื่อ: ถือว่าเป็นข้อมูลถึงเมื่อวาน
+}
+
+/** เก็บยอดสะสม ณ วันที่ asOf (ทับของวันเดิมถ้านำเข้าซ้ำ) */
+function replaceMtdSnapshot_(rows, asOf) {
+  withLock_(function () {
+    const sh = sheet_(MTD_SHEET, MTD_HEADERS);
+    const values = sh.getDataRange().getValues();
+    const keep = values.slice(1).filter(function (r) {
+      if (r[0] === '' || r[0] === null) return false;
+      const d = parseSheetDate_(r[0], 'DMY');
+      return !d || d.getTime() !== asOf.getTime();
+    });
+    const out = [MTD_HEADERS].concat(keep, rows.map(function (r) {
+      return [asOf, r.team, r.sales, r.custId, r.customer, r.ton, r.amount === null ? '' : r.amount];
+    }));
+    sh.clearContents();
+    sh.getRange(1, 1, out.length, MTD_HEADERS.length).setValues(out);
+  });
 }
 
 /** เขียนแถวใหม่ทับช่วงวันที่เดียวกันในแท็บ SalesData (นำเข้าซ้ำได้ไม่ซ้ำซ้อน) */
@@ -1137,17 +1222,36 @@ function replaceSalesRows_(rows) {
   return { count: rows.length, from: from, to: to };
 }
 
-function importTable_(table) {
+function importTable_(table, opts) {
   const parsed = rowsFromTable_(table);
   if (!parsed.rows.length) throw new Error('ไฟล์ไม่มีแถวยอดขายที่อ่านได้');
-  const r = replaceSalesRows_(parsed.rows);
-  r.missing = ['team', 'sales', 'customer', 'product'].filter(function (k) { return parsed.columns[k] === undefined; });
+  let r;
+  if (parsed.mode === 'mtd') {
+    const asOf = (opts && opts.asOf) || addDays_(startOfDay_(now_()), -1);
+    replaceMtdSnapshot_(parsed.rows, asOf);
+    r = { mode: 'mtd', count: parsed.rows.length, from: asOf, to: asOf,
+      total: parsed.rows.reduce(function (a, x) { return a + x.ton; }, 0) };
+  } else {
+    r = replaceSalesRows_(parsed.rows);
+    r.mode = 'daily';
+  }
+  const need = parsed.mode === 'mtd' ? ['team', 'sales', 'customer'] : ['team', 'sales', 'customer', 'product'];
+  r.missing = need.filter(function (k) { return parsed.columns[k] === undefined; });
+  r.hasAmount = parsed.columns.amount !== undefined;
   return r;
 }
 
 const MISSING_LABEL = { team: 'ทีม', sales: 'เซลส์', customer: 'ลูกค้า', product: 'สินค้า' };
 
 function formatImportResult_(r, fileName) {
+  if (r.mode === 'mtd') {
+    let m = '✅ นำเข้ายอดสะสม ณ ' + fmtDateLong_(r.from) + '\n' + fmtNum_(r.count, 0) + ' แถว รวม ' + fmtNum_(r.total) + ' ตัน' +
+      (fileName ? '\n📄 ' + fileName : '') +
+      '\nถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
+    if (r.missing && r.missing.length) m += '\n⚠️ ไฟล์ไม่มีคอลัมน์: ' + r.missing.map(function (k) { return MISSING_LABEL[k]; }).join(', ');
+    if (!r.hasAmount) m += '\nℹ️ ไฟล์ไม่มีคอลัมน์มูลค่า (บาท) — รายงานจะแสดงเฉพาะตัน';
+    return m;
+  }
   let s = '✅ นำเข้ายอดขาย ' + fmtNum_(r.count, 0) + ' แถว (' + fmtDate_(r.from) +
     (r.to - r.from ? ' – ' + fmtDate_(r.to) : '') + ')' + (fileName ? '\n📄 ' + fileName : '');
   if (r.missing && r.missing.length) {
@@ -1188,7 +1292,7 @@ function readDriveTable_(file) {
 }
 
 /** นำเข้าไฟล์ล่าสุดในโฟลเดอร์ IMPORT_FOLDER_ID (ข้ามถ้าไฟล์เดิมเคยนำเข้าแล้ว เว้นแต่ force) */
-function importSalesFromDrive_(force) {
+function importSalesFromDrive_(force, asOfOverride) {
   const folderId = prop_('IMPORT_FOLDER_ID', '');
   if (!folderId) return { skipped: true, message: 'ยังไม่ได้ตั้ง IMPORT_FOLDER_ID (โฟลเดอร์ Google Drive ที่วางไฟล์จาก Power BI)' };
   const it = DriveApp.getFolderById(folderId).getFiles();
@@ -1203,7 +1307,8 @@ function importSalesFromDrive_(force) {
   if (!force && prop_('LAST_IMPORT_KEY', '') === key) {
     return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้ว' };
   }
-  const r = importTable_(readDriveTable_(latest));
+  const asOf = asOfOverride || asOfFromFileName_(latest.getName(), latest.getLastUpdated());
+  const r = importTable_(readDriveTable_(latest), { asOf: asOf });
   setProp_('LAST_IMPORT_KEY', key);
   r.fileName = latest.getName();
   r.message = formatImportResult_(r, latest.getName());
@@ -1223,6 +1328,7 @@ function importSalesHourly() {
 /** สร้างแท็บ SalesData / Targets (รันจาก editor ได้) */
 function setupSalesSheets() {
   sheet_(SALES_SHEET, SALES_HEADERS);
+  sheet_(MTD_SHEET, MTD_HEADERS);
   const t = sheet_(TARGET_SHEET, TARGET_HEADERS);
   // แท็บเก่าที่ยังไม่มีคอลัมน์เป้าบาท
   const head = t.getDataRange().getValues()[0] || [];
@@ -1233,7 +1339,62 @@ function setupSalesSheets() {
 
 // ---------------------------------------------------------------- อ่าน + คำนวณ
 
+/**
+ * ยอดสะสม (MTD) หลายวัน → แถวรายวัน = ยอดสะสมวันนี้ − ยอดสะสมไฟล์ก่อนหน้า (เดือนเดียวกัน)
+ * ไฟล์แรกของเดือนจะเป็นยอดก้อนเดียว (ยังคำนวณยอดรายวันไม่ได้)
+ */
+function mtdToDailyRows_(snaps, now) {
+  const today = startOfDay_(now);
+  const byDate = {};
+  snaps.forEach(function (r) {
+    if (r.date > today) return;
+    (byDate[r.date.getTime()] = byDate[r.date.getTime()] || []).push(r);
+  });
+  const dates = Object.keys(byDate).map(Number).sort(function (a, b) { return a - b; });
+  const out = [];
+  const firstOfMonth = {};
+  let prev = null;
+  let prevMonth = '';
+  dates.forEach(function (t) {
+    const d = new Date(t);
+    const mk = monthKey_(d);
+    if (mk !== prevMonth) { prev = null; prevMonth = mk; firstOfMonth[mk] = t; }
+    const cur = {};
+    byDate[t].forEach(function (r) {
+      const k = [r.team, r.sales, r.custId || r.customer].join('|');
+      const c = cur[k] || (cur[k] = { team: r.team, sales: r.sales, customer: r.customer, ton: 0, amount: 0 });
+      c.ton += r.ton;
+      c.amount += isNaN(r.amount) ? 0 : r.amount;
+    });
+    const keys = Object.keys(cur).concat(prev ? Object.keys(prev).filter(function (k) { return !(k in cur); }) : []);
+    keys.forEach(function (k) {
+      const c = cur[k] || { team: prev[k].team, sales: prev[k].sales, customer: prev[k].customer, ton: 0, amount: 0 };
+      const p = prev && prev[k] ? prev[k] : { ton: 0, amount: 0 };
+      const dt = c.ton - p.ton;
+      const da = c.amount - p.amount;
+      if (Math.abs(dt) < 1e-9 && Math.abs(da) < 1e-9) return;
+      out.push({ date: d, team: c.team, sales: c.sales, customer: c.customer, product: '', ton: dt, amount: da });
+    });
+    prev = cur;
+  });
+  out.meta = { asOf: dates.length ? new Date(dates[dates.length - 1]) : null, firstOfMonth: firstOfMonth,
+    hasAmount: snaps.some(function (r) { return !isNaN(r.amount); }) };
+  return out;
+}
+
 function readSalesRows_() {
+  const mtd = spreadsheet_().getSheetByName(MTD_SHEET);
+  if (mtd) {
+    const snaps = [];
+    mtd.getDataRange().getValues().slice(1).forEach(function (v) {
+      const date = parseSheetDate_(v[0], 'DMY');
+      const ton = parseNumber_(v[5]);
+      if (!date || isNaN(ton)) return;
+      snaps.push({ date: date, team: normZone_(v[1]), sales: cleanText_(v[2]), custId: cleanText_(v[3]),
+        customer: cleanText_(v[4]), ton: ton, amount: parseNumber_(v[6]) });
+    });
+    if (snaps.length) return mtdToDailyRows_(snaps, now_());
+  }
   const ss = spreadsheet_();
   const sh = ss.getSheetByName(SALES_SHEET);
   if (!sh) return [];
@@ -1278,7 +1439,7 @@ function readTargets_(mKey) {
     const ton = parseNumber_(v[3]);
     const amt = parseNumber_(v[4]);
     if (isNaN(ton) && isNaN(amt)) return;
-    const team = cleanText_(v[1]);
+    const team = normZone_(v[1]);
     const sales = cleanText_(v[2]);
     const bucket = sales ? out.sales : out.team;
     const key = sales || team;
@@ -1368,15 +1529,17 @@ function salesMetrics_(name, actualTon, actualAmt, budgetTon, budgetAmt, wd) {
 /** สร้าง snapshot (รวม + รายเขต + รายเซลส์) จากแถวยอดขาย */
 function buildSalesSnapshot_(rows, now, targetsFn) {
   const today = startOfDay_(now);
+  const meta = rows.meta || {};
   const usable = rows.filter(function (r) { return r.date <= today; });
-  if (!usable.length) return null;
-  const asOf = usable.reduce(function (m, r) { return r.date > m ? r.date : m; }, usable[0].date);
+  if (!usable.length && !meta.asOf) return null;
+  const asOf = meta.asOf || usable.reduce(function (m, r) { return r.date > m ? r.date : m; }, usable[0].date);
   const mKey = monthKey_(asOf);
   const monthRows = usable.filter(function (r) { return monthKey_(r.date) === mKey; });
   const lastRows = monthRows.filter(function (r) { return r.date.getTime() === asOf.getTime(); });
   const targets = (targetsFn || readTargets_)(mKey);
   const wd = workingDays_(asOf);
-  const hasAmount = monthRows.some(function (r) { return typeof r.amount === 'number' && !isNaN(r.amount); });
+  const hasAmount = meta.hasAmount !== undefined ? meta.hasAmount
+    : monthRows.some(function (r) { return typeof r.amount === 'number' && !isNaN(r.amount); });
   const tgt = function (o, k, f) { return o[k] && o[k][f] ? o[k][f] : null; };
 
   // ทีมของเซลส์: จากข้อมูลยอด ไม่มีก็จากแท็บ Targets
@@ -1407,7 +1570,7 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
       .reduce(function (a, s) { return a + (s[key] || 0); }, 0) || null;
   };
   const teams = Object.keys(byTeam)
-    .sort(function (a, b) { return a.localeCompare(b, 'th', { numeric: true }); })
+    .sort(zoneCompare_)
     .map(function (t) { return salesMetrics_(t, byTeam[t], byTeamAmt[t] || 0, teamTarget(t, 'ton'), teamTarget(t, 'amt'), wd); });
 
   const sumTarget = function (list, key) { return list.reduce(function (a, x) { return a + (x[key] || 0); }, 0); };
@@ -1432,6 +1595,8 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
     monthRows: monthRows,
     lastDay: {
       date: asOf,
+      // ไฟล์ยอดสะสมไฟล์แรกของเดือน: ยังไม่มีไฟล์ก่อนหน้าให้หักลบ
+      unavailable: !!(meta.firstOfMonth && meta.firstOfMonth[mKey] === asOf.getTime()),
       total: sumField_(lastRows, 'ton'),
       totalAmt: sumField_(lastRows, 'amount'),
       byTeam: sortedEntries_(sumBy_(lastTeamRows, 'team'), sumBy_(lastTeamRows, 'team', 'amount')),
@@ -1503,7 +1668,8 @@ function formatSalesSheet_(snap, team) {
 
   if (team) {
     const lt = ld.byTeam.find(function (e) { return e.name === team.name; });
-    if (lt) out.push('📅 วันล่าสุด ' + fmtNum_(lt.ton) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(lt.amt) : ''));
+    if (ld.unavailable) out.push(DAILY_PENDING_TEXT);
+    else if (lt) out.push('📅 วันล่าสุด ' + fmtNum_(lt.ton) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(lt.amt) : ''));
     out.push('━━━━━━━━━━');
     out.push('📍 ' + team.name + forecastIcon_(team));
     metricsBlock_(team, snap.hasAmount, true).forEach(function (l) { out.push(l); });
@@ -1519,7 +1685,8 @@ function formatSalesSheet_(snap, team) {
     return out.join('\n');
   }
 
-  out.push('📅 วันล่าสุด ' + fmtNum_(ld.total) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(ld.totalAmt) : ''));
+  out.push(ld.unavailable ? DAILY_PENDING_TEXT
+    : '📅 วันล่าสุด ' + fmtNum_(ld.total) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(ld.totalAmt) : ''));
   out.push('━━━━━━━━━━');
   out.push('🏢 รวมทุกเขต' + forecastIcon_(snap.total));
   metricsBlock_(snap.total, snap.hasAmount, true).forEach(function (l) { out.push(l); });
@@ -1560,12 +1727,18 @@ function formatSalesRank_(snap) {
   return lines.join('\n');
 }
 
+const DAILY_PENDING_TEXT = '📅 ยอดรายวัน: จะเริ่มคำนวณเมื่อมีไฟล์ของวันถัดไป (ยอดวันนี้ = ไฟล์วันนี้ − ไฟล์เมื่อวาน)';
+
 function formatLastDay_(snap) {
   const ld = snap.lastDay;
+  if (ld.unavailable) {
+    return DAILY_PENDING_TEXT + '\n\nสะสมเดือนนี้ ถึง ' + fmtDate_(ld.date) + ': ' +
+      tonVsTarget_(snap.total.actualTon, snap.total.budgetTon, snap.total.achievement);
+  }
   const lines = ['📅 ยอดขายวันที่ ' + fmtDate_(ld.date) + ': ' + fmtNum_(ld.total) + ' ตัน' +
     (snap.hasAmount ? ' · ' + fmtMoney_(ld.totalAmt) : '')];
   if (ld.byTeam.length > 1 || (ld.byTeam[0] && ld.byTeam[0].name !== '(ไม่ระบุ)')) {
-    ld.byTeam.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'th', { numeric: true }); }).forEach(function (t) {
+    ld.byTeam.slice().sort(function (a, b) { return zoneCompare_(a.name, b.name); }).forEach(function (t) {
       lines.push('• ' + t.name + ' ' + fmtNum_(t.ton) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(t.amt) : ''));
     });
   }
@@ -1599,7 +1772,7 @@ function formatPersonSales_(snap, person) {
     .reduce(function (a, r) { return a + r.ton; }, 0);
   const lines = ['👤 ' + person.name + (person.team ? ' (' + person.team + ')' : '') + ' — ถึง ' + fmtDate_(snap.asOf),
     'เดือนนี้: ' + tonVsTarget_(person.actualTon, person.budgetTon, person.achievement) + paceIcon_(person.achievement, tg),
-    'วันล่าสุด: ' + fmtNum_(last) + ' ตัน'];
+    snap.lastDay.unavailable ? 'วันล่าสุด: -' : 'วันล่าสุด: ' + fmtNum_(last) + ' ตัน'];
   const remain = snap.workingDaysTotal - snap.workingDaysPassed;
   if (person.budgetTon && remain > 0 && person.actualTon < person.budgetTon) {
     lines.push('🎯 ต้องทำอีก ' + fmtNum_(person.budgetTon - person.actualTon) + ' ตัน ≈ ' +
@@ -1868,7 +2041,9 @@ function runCommand_(p, ctx) {
     }
 
     case 'importsales': {
-      const r = importSalesFromDrive_(true);
+      const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
+      if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้';
+      const r = importSalesFromDrive_(true, asOf);
       return r.skipped ? 'ℹ️ ' + r.message : r.message;
     }
 
@@ -1978,7 +2153,7 @@ const HELP_TEXT = [
   '📊 ยอดขาย',
   '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
-  '• อัปเดตยอด — ดึงไฟล์ Power BI ล่าสุดเข้าระบบ',
+  '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
   '📋 งานติดตาม',
   '• งาน — งานค้างทั้งหมด | งานฉัน',

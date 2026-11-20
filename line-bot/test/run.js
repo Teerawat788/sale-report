@@ -284,7 +284,7 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(total, /ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
   assert.match(total, /วันทำงาน 16\/25 วัน \(เหลือ 9\)/);
   assert.match(total, /🏢 รวมทุกเขต 🔴\nตัน: 63\.00 \/ 700\.00 \(9\.0%\)/);
-  assert.match(total, /📍 Fish 4 🔴\nตัน: 25\.00 \/ 400\.00/);
+  assert.match(total, /📍 F4 🔴\nตัน: 25\.00 \/ 400\.00/);
   assert.match(total, /📅 วันล่าสุด 28\.00 ตัน · 0\.56 ล้าน/);
 
   const day = bot.say('ยอดเมื่อวาน');
@@ -292,15 +292,15 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(day, /1\. วิทย์ รักงาน — 20\.00 ตัน/);
 
   const rank = bot.say('ยอดเซลส์');
-  assert.match(rank, /1\. วิทย์ รักงาน \(Fish 5\) — 35\.00 \/ 150\.00 ตัน \(23\.3%\) 🔴/);
+  assert.match(rank, /1\. วิทย์ รักงาน \(F5\) — 35\.00 \/ 150\.00 ตัน \(23\.3%\) 🔴/);
 
   const me = bot.say('ยอด สมชาย');
-  assert.match(me, /👤 สมชาย ใจดี \(Fish 4\)/);
+  assert.match(me, /👤 สมชาย ใจดี \(F4\)/);
   assert.match(me, /25\.00 \/ 200\.00 ตัน/);
   assert.match(me, /ต้องทำอีก 175\.00 ตัน ≈ 19\.44 ตัน\/วัน/);
   assert.match(me, /1\. ฟาร์ม A — 17\.00 ตัน/);
 
-  assert.match(bot.say('ยอด f5'), /📍 Fish 5[\s\S]*ตัน: 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
+  assert.match(bot.say('ยอด f5'), /📍 F5[\s\S]*ตัน: 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
   assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
   assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ\n1\. อาหารปลา 1 — 32\.00 ตัน\n2\. อาหารปลา 3 — 23\.00/);
   assert.strictEqual(bot.say('ยอด ใครไม่รู้'), null);
@@ -354,6 +354,92 @@ test('Targets แท็บเก่า (4 คอลัมน์) ได้หั
   sh.appendRow(['เดือน (yyyy-mm)', 'ทีม', 'เซลส์', 'เป้า (ตัน)']);
   bot.ctx.setupSalesSheets();
   assert.strictEqual(bot.sheets.Targets.data[0][4], 'เป้า (บาท)');
+});
+
+// ---------- ฟอร์มหลัก: ยอดสะสมรายลูกค้า (PIC_New / Area_New ไม่มีวันที่) ----------
+const MTD_HEAD = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+function mtdTable(extra) {
+  return [MTD_HEAD,
+    ['วุฒิชัย ขันทอง', 'TFM Fish3 East', 'วุฒิชัย ขันทอง', 'TFM Fish3 East', '10036886', 'ร้านบุญสว่าง (2006)', 'Fish', 224],
+    ['วุฒิชัย ขันทอง', 'TFM Fish3 East', 'อัจฉราพรรณ เพ็งเกาะ', 'TFM Fish3 East', '10037893', 'คุณนรินทร์ นฤภัย', 'Fish', 63],
+    ['ณรงค์วิทย์ ช่วยทอง', 'TFM Fish4 Central', 'ณรงค์วิทย์ ช่วยทอง', 'TFM Fish4 Central', '10037014', 'นลินรัตน์ฟาร์ม', 'Fish', 165.6],
+    ['สุทัศน์ โมคภา', 'TFM Fish3 East', 'กลุ่มบัญชี ประโยชน์\u00a0\u00a0โสรัจจกิจ', 'TFM Fish3 East', '10036989', 'อานนท์ฟาร์ม', 'Fish', 20.46],
+    ['ภัทราภรณ์ บัวโรย', 'TFM Fish1 North', 'ภัทราภรณ์ บัวโรย', 'TFM Fish1 North', '10036932', 'นครพันธ์ปลา', 'Fish', 55.2],
+    ['สิทธิ สิงห์ทอง', 'TFM Shrimp1', 'สิทธิ สิงห์ทอง', 'TFM Shrimp1', '10036899', 'R.Y.Fishery', 'Fish', 0.14],
+  ].concat(extra || [], [
+    ['Total', '', '', '', '', '', '', 528.4],
+    ['', '', '', '', '', '', '', ''],
+    ['ตัวกรองที่ใช้:\nPlant เป็น TFM MHC\nMonthL ไม่เป็น January', '', '', '', '', '', '', ''],
+  ]);
+}
+
+function mtdBot() {
+  const bot = createBot({ now: D(2026, 11, 19, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  bot.say('ลงทะเบียน');
+  bot.ctx.setupSalesSheets();
+  [['F1', 300], ['F3', 600], ['F4', 500]].forEach(([z, t]) => bot.sheets.Targets.data.push(['2026-11', z, '', t]));
+  bot.driveFiles.push({ id: 'd18', name: 'data_18.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    table: mtdTable(), updated: D(2026, 11, 19, 8) });
+  return bot;
+}
+
+test('ฟอร์มหลัก: แมปคอลัมน์ PIC_New / Area_New / Sold_to_Party และวันที่จากชื่อไฟล์', () => {
+  const { ctx } = createBot();
+  const m = ctx.mapColumns_(MTD_HEAD);
+  assert.strictEqual(m.sales, 2);
+  assert.strictEqual(m.team, 3);
+  assert.strictEqual(m.custid, 4);
+  assert.strictEqual(m.customer, 5);
+  assert.strictEqual(m.ton, 7);
+  assert.strictEqual(m.date, undefined);
+  assert.strictEqual(ctx.normZone_('TFM Fish3 East'), 'F3');
+  assert.strictEqual(ctx.normZone_('TFM Shrimp1'), 'อื่นๆ');
+  assert.strictEqual(ctx.normZone_('F2'), 'F2');
+  same(ctx.asOfFromFileName_('data_18.xlsx', D(2026, 11, 19, 8)), D(2026, 11, 18));
+  same(ctx.asOfFromFileName_('data_30.xlsx', D(2026, 12, 1, 8)), D(2026, 11, 30));
+  same(ctx.asOfFromFileName_('sales 2026-11-18.csv', D(2026, 11, 20)), D(2026, 11, 18));
+  same(ctx.asOfFromFileName_('export.xlsx', D(2026, 11, 19, 8)), D(2026, 11, 18));
+});
+
+test('ฟอร์มหลัก: นำเข้ายอดสะสม ข้ามแถว Total/ตัวกรอง และสรุปรวม + แยกเขต', () => {
+  const bot = mtdBot();
+  const imp = bot.say('อัปเดตยอด');
+  assert.match(imp, /นำเข้ายอดสะสม ณ พุธ 18 พ\.ย\. 2569\n6 แถว รวม 528\.40 ตัน/);
+  assert.match(imp, /ไม่มีคอลัมน์มูลค่า/);
+  const r = bot.say('ยอด');
+  // ถึง 18 พ.ย. = 15 วันทำงาน (อาทิตย์ 1, 8, 15) จาก 25
+  assert.match(r, /วันทำงาน 15\/25 วัน \(เหลือ 10\)/);
+  assert.match(r, /ยอดรายวัน: จะเริ่มคำนวณเมื่อมีไฟล์ของวันถัดไป/);
+  assert.match(r, /🏢 รวมทุกเขต[^\n]*\nตัน: 528\.40 \/ 1,400\.00 \(37\.7%\)\n   สปีด 35\.23 ตัน\/วัน → ปิดเดือน 880\.67 \(62\.9%\)/);
+  assert.match(r, /📍 F3 🔴\nตัน: 307\.46 \/ 600\.00/);
+  assert.match(r, /📍 อื่นๆ\nตัน: 0\.14/);
+  assert.doesNotMatch(r, /บาท:/);
+  assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ \(F3\)[\s\S]*1\. คุณนรินทร์ นฤภัย — 63\.00 ตัน/);
+  assert.match(bot.say('ยอด กลุ่มบัญชี'), /กลุ่มบัญชี ประโยชน์ โสรัจจกิจ/);
+  assert.match(bot.say('ยอดเมื่อวาน'), /จะเริ่มคำนวณเมื่อมีไฟล์ของวันถัดไป/);
+});
+
+test('ฟอร์มหลัก: ไฟล์วันถัดไป → ยอดรายวัน = ผลต่างยอดสะสม', () => {
+  const bot = mtdBot();
+  bot.say('อัปเดตยอด');
+  const t19 = mtdTable([['ณรงค์วิทย์ ช่วยทอง', 'TFM Fish4 Central', 'ณรงค์วิทย์ ช่วยทอง', 'TFM Fish4 Central', '10099999', 'ฟาร์มใหม่', 'Fish', 10]]);
+  t19[1][7] = 254; // ร้านบุญสว่าง +30
+  bot.setNow(D(2026, 11, 20, 9));
+  bot.driveFiles.push({ id: 'd19', name: 'data_19.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    table: t19, updated: D(2026, 11, 20, 8) });
+  assert.match(bot.say('อัปเดตยอด'), /ณ พฤหัสบดี 19 พ\.ย\. 2569/);
+  const day = bot.say('ยอดเมื่อวาน');
+  assert.match(day, /ยอดขายวันที่ พฤ\. 19 พ\.ย\.: 40\.00 ตัน/);
+  assert.match(day, /• F3 30\.00 ตัน\n• F4 10\.00 ตัน/);
+  assert.match(day, /1\. วุฒิชัย ขันทอง — 30\.00 ตัน/);
+  const r = bot.say('ยอด');
+  assert.match(r, /📅 วันล่าสุด 40\.00 ตัน/);
+  assert.match(r, /วันทำงาน 16\/25/);
+  assert.match(r, /ตัน: 568\.40 \/ 1,400\.00/);
+  // นำเข้าไฟล์เดิมซ้ำโดยระบุวัน: ไม่เกิดยอดซ้ำ
+  assert.match(bot.say('อัปเดตยอด 19/11'), /ณ พฤหัสบดี 19 พ\.ย\. 2569/);
+  assert.match(bot.say('ยอด'), /ตัน: 568\.40 \/ 1,400\.00/);
+  assert.strictEqual(bot.say('อัปเดตยอด พรุ่งนี้ครับ'), null);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
