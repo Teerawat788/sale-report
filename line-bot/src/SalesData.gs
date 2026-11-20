@@ -11,7 +11,7 @@
 const SALES_SHEET = 'SalesData';
 const SALES_HEADERS = ['วันที่', 'ทีม', 'เซลส์', 'ลูกค้า', 'สินค้า', 'ตัน', 'ยอดเงิน'];
 const TARGET_SHEET = 'Targets';
-const TARGET_HEADERS = ['เดือน (yyyy-mm)', 'ทีม', 'เซลส์ (ว่าง = เป้าทั้งทีม)', 'เป้า (ตัน)'];
+const TARGET_HEADERS = ['เดือน (yyyy-mm)', 'ทีม/เขต', 'เซลส์ (ว่าง = เป้าทั้งเขต)', 'เป้า (ตัน)', 'เป้า (บาท)'];
 
 /** ชื่อคอลัมน์ที่ยอมรับจากไฟล์ export (ไม่สนตัวพิมพ์/ช่องว่าง/วงเล็บ) */
 const COLUMN_ALIASES = {
@@ -250,7 +250,12 @@ function importSalesHourly() {
 /** สร้างแท็บ SalesData / Targets (รันจาก editor ได้) */
 function setupSalesSheets() {
   sheet_(SALES_SHEET, SALES_HEADERS);
-  sheet_(TARGET_SHEET, TARGET_HEADERS);
+  const t = sheet_(TARGET_SHEET, TARGET_HEADERS);
+  // แท็บเก่าที่ยังไม่มีคอลัมน์เป้าบาท
+  const head = t.getDataRange().getValues()[0] || [];
+  if (head.length < TARGET_HEADERS.length || head[4] === '' || head[4] === undefined) {
+    t.getRange(1, 5).setValue(TARGET_HEADERS[4]);
+  }
 }
 
 // ---------------------------------------------------------------- อ่าน + คำนวณ
@@ -290,19 +295,25 @@ function normMonthKey_(v) {
   return s;
 }
 
-/** { team: {ชื่อทีม: ตัน}, sales: {ชื่อเซลส์: ตัน}, salesTeam: {ชื่อเซลส์: ทีม} } ของเดือนนั้น */
+/** { team: {ทีม: {ton, amt}}, sales: {เซลส์: {ton, amt}}, salesTeam: {เซลส์: ทีม} } ของเดือนนั้น */
 function readTargets_(mKey) {
   const out = { team: {}, sales: {}, salesTeam: {} };
   const sh = spreadsheet_().getSheetByName(TARGET_SHEET);
   if (!sh) return out;
   sh.getDataRange().getValues().slice(1).forEach(function (v) {
     if (normMonthKey_(v[0]) !== mKey) return;
-    const t = parseNumber_(v[3]);
-    if (isNaN(t)) return;
+    const ton = parseNumber_(v[3]);
+    const amt = parseNumber_(v[4]);
+    if (isNaN(ton) && isNaN(amt)) return;
     const team = cleanText_(v[1]);
     const sales = cleanText_(v[2]);
-    if (sales) { out.sales[sales] = (out.sales[sales] || 0) + t; if (team) out.salesTeam[sales] = team; }
-    else if (team) out.team[team] = (out.team[team] || 0) + t;
+    const bucket = sales ? out.sales : out.team;
+    const key = sales || team;
+    if (!key) return;
+    const cur = bucket[key] || (bucket[key] = { ton: 0, amt: 0 });
+    if (!isNaN(ton)) cur.ton += ton;
+    if (!isNaN(amt)) cur.amt += amt;
+    if (sales && team) out.salesTeam[sales] = team;
   });
   return out;
 }
@@ -333,17 +344,19 @@ function workingDays_(asOf) {
   return { total: total, passed: Math.max(passed, 1) };
 }
 
-function sumBy_(rows, key) {
+function sumBy_(rows, key, field) {
+  const f = field || 'ton';
   const m = {};
   rows.forEach(function (r) {
     const k = r[key] || '(ไม่ระบุ)';
-    m[k] = (m[k] || 0) + r.ton;
+    const v = r[f];
+    m[k] = (m[k] || 0) + (typeof v === 'number' && !isNaN(v) ? v : 0);
   });
   return m;
 }
 
-function sortedEntries_(m) {
-  return Object.keys(m).map(function (k) { return { name: k, ton: m[k] }; })
+function sortedEntries_(m, amtMap) {
+  return Object.keys(m).map(function (k) { return { name: k, ton: m[k], amt: amtMap ? amtMap[k] || 0 : null }; })
     .sort(function (a, b) { return b.ton - a.ton; });
 }
 
@@ -351,7 +364,35 @@ function pctOrNull_(a, b) {
   return b ? (a / b) * 100 : null;
 }
 
-/** สร้าง snapshot แบบเดียวกับ dashboard.json จากแถวยอดขาย */
+function sumField_(rows, f) {
+  return rows.reduce(function (a, r) { return a + (typeof r[f] === 'number' && !isNaN(r[f]) ? r[f] : 0); }, 0);
+}
+
+/** ตัวเลขชุดเดียวกันสำหรับ รวม / เขต / เซลส์ */
+function salesMetrics_(name, actualTon, actualAmt, budgetTon, budgetAmt, wd) {
+  const remain = wd.total - wd.passed;
+  const m = {
+    name: name,
+    actualTon: actualTon,
+    budgetTon: budgetTon || null,
+    achievement: pctOrNull_(actualTon, budgetTon),
+    currentSpeed: actualTon / wd.passed,
+    forecastTon: actualTon / wd.passed * wd.total,
+    actualAmt: actualAmt,
+    budgetAmt: budgetAmt || null,
+    achievementAmt: pctOrNull_(actualAmt, budgetAmt),
+    speedAmt: actualAmt / wd.passed,
+    forecastAmt: actualAmt / wd.passed * wd.total,
+  };
+  m.forecastPct = pctOrNull_(m.forecastTon, budgetTon);
+  m.forecastPctAmt = pctOrNull_(m.forecastAmt, budgetAmt);
+  m.gapTon = budgetTon ? m.forecastTon - budgetTon : undefined;
+  m.requiredSpeed = budgetTon ? (remain > 0 ? Math.max(0, (budgetTon - actualTon) / remain) : 0) : undefined;
+  m.requiredAmt = budgetAmt ? (remain > 0 ? Math.max(0, (budgetAmt - actualAmt) / remain) : 0) : undefined;
+  return m;
+}
+
+/** สร้าง snapshot (รวม + รายเขต + รายเซลส์) จากแถวยอดขาย */
 function buildSalesSnapshot_(rows, now, targetsFn) {
   const today = startOfDay_(now);
   const usable = rows.filter(function (r) { return r.date <= today; });
@@ -362,65 +403,67 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
   const lastRows = monthRows.filter(function (r) { return r.date.getTime() === asOf.getTime(); });
   const targets = (targetsFn || readTargets_)(mKey);
   const wd = workingDays_(asOf);
+  const hasAmount = monthRows.some(function (r) { return typeof r.amount === 'number' && !isNaN(r.amount); });
+  const tgt = function (o, k, f) { return o[k] && o[k][f] ? o[k][f] : null; };
 
   // ทีมของเซลส์: จากข้อมูลยอด ไม่มีก็จากแท็บ Targets
   const salesTeam = {};
   monthRows.forEach(function (r) { if (r.sales && r.team) salesTeam[r.sales] = r.team; });
   Object.keys(targets.salesTeam).forEach(function (s) { if (!salesTeam[s]) salesTeam[s] = targets.salesTeam[s]; });
 
-  const bySales = sumBy_(monthRows.filter(function (r) { return r.sales; }), 'sales');
-  Object.keys(targets.sales).forEach(function (s) { if (!(s in bySales)) bySales[s] = 0; });
+  const salesRows = monthRows.filter(function (r) { return r.sales; });
+  const bySales = sumBy_(salesRows, 'sales');
+  const bySalesAmt = sumBy_(salesRows, 'sales', 'amount');
+  Object.keys(targets.sales).forEach(function (s) { if (!(s in bySales)) { bySales[s] = 0; bySalesAmt[s] = 0; } });
   const salesList = sortedEntries_(bySales).map(function (e) {
-    const budget = targets.sales[e.name] || null;
-    return { name: e.name, team: salesTeam[e.name] || '', actualTon: e.ton, budgetTon: budget, achievement: pctOrNull_(e.ton, budget) };
+    const m = salesMetrics_(e.name, e.ton, bySalesAmt[e.name] || 0,
+      tgt(targets.sales, e.name, 'ton'), tgt(targets.sales, e.name, 'amt'), wd);
+    m.team = salesTeam[e.name] || '';
+    return m;
   });
 
-  const byTeam = sumBy_(monthRows.filter(function (r) { return r.team; }), 'team');
-  Object.keys(targets.team).forEach(function (t) { if (!(t in byTeam)) byTeam[t] = 0; });
-  const teamBudget = {};
-  Object.keys(byTeam).forEach(function (t) {
-    if (targets.team[t]) { teamBudget[t] = targets.team[t]; return; }
-    const sum = salesList.filter(function (s) { return s.team === t && s.budgetTon; })
-      .reduce(function (a, s) { return a + s.budgetTon; }, 0);
-    teamBudget[t] = sum || null;
-  });
-  const teams = Object.keys(byTeam).sort().map(function (t) {
-    return { name: t, actualTon: byTeam[t], budgetTon: teamBudget[t], achievement: pctOrNull_(byTeam[t], teamBudget[t]) };
-  });
+  const teamRows = monthRows.filter(function (r) { return r.team; });
+  const byTeam = sumBy_(teamRows, 'team');
+  const byTeamAmt = sumBy_(teamRows, 'team', 'amount');
+  Object.keys(targets.team).forEach(function (t) { if (!(t in byTeam)) { byTeam[t] = 0; byTeamAmt[t] = 0; } });
+  const teamTarget = function (t, f) {
+    const direct = tgt(targets.team, t, f);
+    if (direct) return direct;
+    const key = f === 'ton' ? 'budgetTon' : 'budgetAmt';
+    return salesList.filter(function (s) { return s.team === t; })
+      .reduce(function (a, s) { return a + (s[key] || 0); }, 0) || null;
+  };
+  const teams = Object.keys(byTeam)
+    .sort(function (a, b) { return a.localeCompare(b, 'th', { numeric: true }); })
+    .map(function (t) { return salesMetrics_(t, byTeam[t], byTeamAmt[t] || 0, teamTarget(t, 'ton'), teamTarget(t, 'amt'), wd); });
 
-  const actual = monthRows.reduce(function (a, r) { return a + r.ton; }, 0);
-  let budget = teams.reduce(function (a, t) { return a + (t.budgetTon || 0); }, 0);
-  if (!budget) budget = salesList.reduce(function (a, s) { return a + (s.budgetTon || 0); }, 0);
-  budget = budget || null;
-  const currentSpeed = actual / wd.passed;
-  const remain = wd.total - wd.passed;
-  const forecast = currentSpeed * wd.total;
+  const sumTarget = function (list, key) { return list.reduce(function (a, x) { return a + (x[key] || 0); }, 0); };
+  const budgetTon = sumTarget(teams, 'budgetTon') || sumTarget(salesList, 'budgetTon') || null;
+  const budgetAmt = sumTarget(teams, 'budgetAmt') || sumTarget(salesList, 'budgetAmt') || null;
+  const total = salesMetrics_('รวมทุกเขต', sumField_(monthRows, 'ton'), sumField_(monthRows, 'amount'), budgetTon, budgetAmt, wd);
 
+  const lastTeamRows = lastRows.filter(function (r) { return r.team; });
+  const lastSalesRows = lastRows.filter(function (r) { return r.sales; });
+  const lastCustRows = lastRows.filter(function (r) { return r.customer; });
   return {
     source: 'sheet',
+    hasAmount: hasAmount,
     date: pad2_(asOf.getDate()) + '/' + pad2_(asOf.getMonth() + 1) + '/' + asOf.getFullYear(),
     asOf: asOf,
     monthKey: mKey,
     workingDaysPassed: wd.passed,
     workingDaysTotal: wd.total,
-    total: {
-      actualTon: actual,
-      budgetTon: budget,
-      achievement: pctOrNull_(actual, budget),
-      forecastTon: forecast,
-      gapTon: budget ? forecast - budget : undefined,
-      currentSpeed: currentSpeed,
-      requiredSpeed: budget ? (remain > 0 ? Math.max(0, (budget - actual) / remain) : 0) : undefined,
-    },
+    total: total,
     teams: teams,
     salesList: salesList,
     monthRows: monthRows,
     lastDay: {
       date: asOf,
-      total: lastRows.reduce(function (a, r) { return a + r.ton; }, 0),
-      byTeam: sortedEntries_(sumBy_(lastRows, 'team')),
-      bySales: sortedEntries_(sumBy_(lastRows.filter(function (r) { return r.sales; }), 'sales')),
-      byCustomer: sortedEntries_(sumBy_(lastRows.filter(function (r) { return r.customer; }), 'customer')),
+      total: sumField_(lastRows, 'ton'),
+      totalAmt: sumField_(lastRows, 'amount'),
+      byTeam: sortedEntries_(sumBy_(lastTeamRows, 'team'), sumBy_(lastTeamRows, 'team', 'amount')),
+      bySales: sortedEntries_(sumBy_(lastSalesRows, 'sales'), sumBy_(lastSalesRows, 'sales', 'amount')),
+      byCustomer: sortedEntries_(sumBy_(lastCustRows, 'customer'), sumBy_(lastCustRows, 'customer', 'amount')),
     },
   };
 }
@@ -436,6 +479,86 @@ function paceIcon_(achievement, timeGone) {
   if (achievement >= timeGone) return ' 🟢';
   if (achievement >= timeGone - 10) return ' 🟡';
   return ' 🔴';
+}
+
+/** 45,600,000 → "45.60 ล้าน" */
+function fmtMoney_(n) {
+  if (n === null || n === undefined || isNaN(n)) return '-';
+  if (Math.abs(n) >= 1e5) return fmtNum_(n / 1e6, 2) + ' ล้าน';
+  return fmtNum_(n, 0) + ' บ.';
+}
+
+function forecastIcon_(m) {
+  const p = m.forecastPct !== null && m.forecastPct !== undefined ? m.forecastPct : m.forecastPctAmt;
+  if (p === null || p === undefined) return '';
+  if (p >= 100) return ' 🟢';
+  if (p >= 95) return ' 🟡';
+  return ' 🔴';
+}
+
+function pctText_(p) {
+  return p === null || p === undefined ? '' : ' (' + fmtNum_(p, 1) + '%)';
+}
+
+/** บล็อกตัวเลขของ รวม/เขต: ตัน + บาท, สปีดต่อวัน, คาดปิดเดือน, ต้องทำต่อวัน */
+function metricsBlock_(m, hasAmount, detailed) {
+  const lines = [];
+  lines.push('ตัน: ' + fmtNum_(m.actualTon) + (m.budgetTon ? ' / ' + fmtNum_(m.budgetTon) : '') + pctText_(m.achievement));
+  lines.push('   สปีด ' + fmtNum_(m.currentSpeed) + ' ตัน/วัน → ปิดเดือน ' + fmtNum_(m.forecastTon) + pctText_(m.forecastPct));
+  if (detailed && m.requiredSpeed !== undefined) {
+    const d = m.currentSpeed - m.requiredSpeed;
+    lines.push('   ต้องทำ ' + fmtNum_(m.requiredSpeed) + ' ตัน/วัน ' + (d >= 0 ? '✅ เกิน +' + fmtNum_(d) : '⚠️ ขาด ' + fmtNum_(-d)));
+  }
+  if (hasAmount || m.budgetAmt) {
+    lines.push('บาท: ' + fmtMoney_(m.actualAmt) + (m.budgetAmt ? ' / ' + fmtMoney_(m.budgetAmt) : '') + pctText_(m.achievementAmt));
+    lines.push('   สปีด ' + fmtMoney_(m.speedAmt) + '/วัน → ปิดเดือน ' + fmtMoney_(m.forecastAmt) + pctText_(m.forecastPctAmt));
+    if (detailed && m.requiredAmt !== undefined) {
+      const d = m.speedAmt - m.requiredAmt;
+      lines.push('   ต้องทำ ' + fmtMoney_(m.requiredAmt) + '/วัน ' + (d >= 0 ? '✅' : '⚠️ ขาด ' + fmtMoney_(-d) + '/วัน'));
+    }
+  }
+  return lines;
+}
+
+/** ข้อความ "ยอด" จากข้อมูล Power BI: รวมทุกเขต + รายเขต (team = เขตเดียว) */
+function formatSalesSheet_(snap, team) {
+  const remain = snap.workingDaysTotal - snap.workingDaysPassed;
+  const tg = timeGonePct_(snap);
+  const ld = snap.lastDay;
+  const out = ['📊 ยอดขายสะสม ถึง ' + fmtDateLong_(snap.asOf),
+    '📆 วันทำงาน ' + snap.workingDaysPassed + '/' + snap.workingDaysTotal + ' วัน (เหลือ ' + remain + ') · Time gone ' + fmtNum_(tg, 1) + '%'];
+
+  if (team) {
+    const lt = ld.byTeam.find(function (e) { return e.name === team.name; });
+    if (lt) out.push('📅 วันล่าสุด ' + fmtNum_(lt.ton) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(lt.amt) : ''));
+    out.push('━━━━━━━━━━');
+    out.push('📍 ' + team.name + forecastIcon_(team));
+    metricsBlock_(team, snap.hasAmount, true).forEach(function (l) { out.push(l); });
+    const members = snap.salesList.filter(function (s) { return s.team === team.name; });
+    if (members.length) {
+      out.push('━━━━━━━━━━');
+      out.push('👥 เซลส์ในเขต (ตัน · คาดปิด)');
+      members.forEach(function (s, i) {
+        out.push((i + 1) + '. ' + s.name + ' ' + fmtNum_(s.actualTon) + pctText_(s.achievement) +
+          ' → ' + fmtNum_(s.forecastTon) + pctText_(s.forecastPct) + forecastIcon_(s));
+      });
+    }
+    return out.join('\n');
+  }
+
+  out.push('📅 วันล่าสุด ' + fmtNum_(ld.total) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(ld.totalAmt) : ''));
+  out.push('━━━━━━━━━━');
+  out.push('🏢 รวมทุกเขต' + forecastIcon_(snap.total));
+  metricsBlock_(snap.total, snap.hasAmount, true).forEach(function (l) { out.push(l); });
+  snap.teams.forEach(function (t) {
+    out.push('━━━━━━━━━━');
+    out.push('📍 ' + t.name + forecastIcon_(t));
+    metricsBlock_(t, snap.hasAmount, false).forEach(function (l) { out.push(l); });
+  });
+  out.push('━━━━━━━━━━');
+  out.push('คาดปิดเดือน 🟢 ≥100% 🟡 95–99% 🔴 <95% ของเป้า');
+  out.push('ดูเพิ่ม: ยอด F1 | ยอดเมื่อวาน | ยอดเซลส์ | ยอด <ชื่อเซลส์>');
+  return out.join('\n');
 }
 
 function tonVsTarget_(actual, budget, achievement) {
@@ -466,14 +589,18 @@ function formatSalesRank_(snap) {
 
 function formatLastDay_(snap) {
   const ld = snap.lastDay;
-  const lines = ['📅 ยอดขายวันที่ ' + fmtDate_(ld.date) + ': ' + fmtNum_(ld.total) + ' ตัน'];
+  const lines = ['📅 ยอดขายวันที่ ' + fmtDate_(ld.date) + ': ' + fmtNum_(ld.total) + ' ตัน' +
+    (snap.hasAmount ? ' · ' + fmtMoney_(ld.totalAmt) : '')];
   if (ld.byTeam.length > 1 || (ld.byTeam[0] && ld.byTeam[0].name !== '(ไม่ระบุ)')) {
-    lines.push(ld.byTeam.map(function (t) { return t.name + ' ' + fmtNum_(t.ton); }).join(' | '));
+    ld.byTeam.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'th', { numeric: true }); }).forEach(function (t) {
+      lines.push('• ' + t.name + ' ' + fmtNum_(t.ton) + ' ตัน' + (snap.hasAmount ? ' · ' + fmtMoney_(t.amt) : ''));
+    });
   }
   if (ld.bySales.length) { lines.push(''); lines.push('🏅 เซลส์'); lines.push(formatTopList_(ld.bySales, 10, true)); }
   if (ld.byCustomer.length) { lines.push(''); lines.push('👥 ลูกค้า'); lines.push(formatTopList_(ld.byCustomer, 5, true)); }
   lines.push('');
-  lines.push('สะสมเดือนนี้ ' + tonVsTarget_(snap.total.actualTon, snap.total.budgetTon, snap.total.achievement));
+  lines.push('สะสมเดือนนี้ ' + tonVsTarget_(snap.total.actualTon, snap.total.budgetTon, snap.total.achievement) +
+    (snap.hasAmount ? ' · ' + fmtMoney_(snap.total.actualAmt) + pctText_(snap.total.achievementAmt) : ''));
   return lines.join('\n');
 }
 

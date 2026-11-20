@@ -281,11 +281,11 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   bot.say('อัปเดตยอด');
   const total = bot.say('ยอด');
   // 63 ตัน จากเป้า 700, วันทำงาน จ-ส: พ.ย. 2026 มี 25 วัน, ถึง 19 พ.ย. = 16 วัน (อาทิตย์ 1,8,15)
-  assert.match(total, /ข้อมูล ณ 19\/11\/2026/);
-  assert.match(total, /วันทำงาน 16\/25/);
-  assert.match(total, /รวม: 63\.00 \/ 700\.00 ตัน \(9\.00%\)/);
-  assert.match(total, /Fish 4: 25\.00 \/ 400\.00/);
-  assert.match(total, /วันล่าสุด \(พฤ\. 19 พ\.ย\.\) 28\.00 ตัน/);
+  assert.match(total, /ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
+  assert.match(total, /วันทำงาน 16\/25 วัน \(เหลือ 9\)/);
+  assert.match(total, /🏢 รวมทุกเขต 🔴\nตัน: 63\.00 \/ 700\.00 \(9\.0%\)/);
+  assert.match(total, /📍 Fish 4 🔴\nตัน: 25\.00 \/ 400\.00/);
+  assert.match(total, /📅 วันล่าสุด 28\.00 ตัน · 0\.56 ล้าน/);
 
   const day = bot.say('ยอดเมื่อวาน');
   assert.match(day, /ยอดขายวันที่ พฤ\. 19 พ\.ย\.: 28\.00 ตัน/);
@@ -300,7 +300,7 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(me, /ต้องทำอีก 175\.00 ตัน ≈ 19\.44 ตัน\/วัน/);
   assert.match(me, /1\. ฟาร์ม A — 17\.00 ตัน/);
 
-  assert.match(bot.say('ยอด f5'), /Fish 5: 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
+  assert.match(bot.say('ยอด f5'), /📍 Fish 5[\s\S]*ตัน: 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
   assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
   assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ\n1\. อาหารปลา 1 — 32\.00 ตัน\n2\. อาหารปลา 3 — 23\.00/);
   assert.strictEqual(bot.say('ยอด ใครไม่รู้'), null);
@@ -310,8 +310,8 @@ test('สรุปเช้านำเข้าไฟล์ใหม่อั�
   const bot = pbiBot();
   bot.ctx.morningBrief();
   const text = bot.pushes()[0].body.messages[0].text;
-  assert.match(text, /📊 ยอด 63\.00\/700\.00 ตัน/);
-  assert.match(text, /ยอดวันที่ พฤ\. 19 พ\.ย\. 28\.00 ตัน · ท็อป: วิทย์ รักงาน 20\.0/);
+  assert.match(text, /📊 ยอดถึง พฤ\. 19 พ\.ย\. \(วันทำงาน 16\/25\)\nตัน 63\.00 \(9\.0%\)/);
+  assert.match(text, /วันที่ พฤ\. 19 พ\.ย\. 28\.00 ตัน · 0\.56 ล้าน · ท็อป: วิทย์ รักงาน 20\.0/);
   bot.setNow(D(2026, 11, 20, 16));
   bot.ctx.weeklyReview();
   assert.match(bot.pushes()[1].body.messages[0].text, /ท็อปเซลส์เดือนนี้\n1\. วิทย์ รักงาน/);
@@ -321,6 +321,39 @@ test('ไม่มี SalesData: คำสั่งยอดรายวัน�
   const bot = createBot({ dashboard });
   assert.match(bot.say('ยอดเซลส์'), /ยังไม่มียอดรายวันจาก Power BI/);
   assert.match(bot.say('อัปเดตยอด'), /ยังไม่ได้ตั้ง IMPORT_FOLDER_ID/);
+});
+
+test('รายงานรวม + แยก F1–F5: ตันและบาท, สปีดต่อวัน, คาดปิดเดือน, % ของเป้า', () => {
+  const rows = ['Invoice Date,Zone,Sales Name,Customer,Product,Ton,Net Amount'];
+  const zones = { F1: 20, F2: 15, F3: 12, F4: 25, F5: 9 };
+  for (let d = 2; d <= 19; d++) {
+    if (new Date(2026, 10, d).getDay() === 0) continue;
+    Object.entries(zones).forEach(([z, t]) => rows.push(`${d}/11/2026,${z},เซลส์ ${z},ลูกค้า ${z},อาหารปลา,${t},${t * 21500}`));
+  }
+  const bot = createBot({ now: D(2026, 11, 20, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  bot.driveFiles.push({ id: 'f', name: 'pbi.csv', mime: 'text/csv', content: rows.join('\n'), updated: D(2026, 11, 20) });
+  bot.ctx.setupSalesSheets();
+  [['F1', 500, 10.5e6], ['F2', 400, 8.6e6], ['F3', 300, 6.4e6], ['F4', 600, 13e6], ['F5', 250, 5.4e6]]
+    .forEach(([z, t, a]) => bot.sheets.Targets.data.push(['2026-11', z, '', t, a]));
+  assert.match(bot.say('อัปเดตยอด'), /80 แถว/);
+  const r = bot.say('ยอด');
+  // 16 วันทำงาน: 81 ตัน/วัน x 25 = 2,025 ตัน = 98.8% ของ 2,050
+  assert.match(r, /🏢 รวมทุกเขต 🟡\nตัน: 1,296\.00 \/ 2,050\.00 \(63\.2%\)\n   สปีด 81\.00 ตัน\/วัน → ปิดเดือน 2,025\.00 \(98\.8%\)\n   ต้องทำ 83\.78 ตัน\/วัน ⚠️ ขาด 2\.78/);
+  assert.match(r, /บาท: 27\.86 ล้าน \/ 43\.90 ล้าน \(63\.5%\)\n   สปีด 1\.74 ล้าน\/วัน → ปิดเดือน 43\.54 ล้าน \(99\.2%\)/);
+  assert.match(r, /📍 F2 🔴\nตัน: 240\.00 \/ 400\.00 \(60\.0%\)\n   สปีด 15\.00 ตัน\/วัน → ปิดเดือน 375\.00 \(93\.8%\)/);
+  assert.match(r, /📍 F4 🟢[\s\S]*ปิดเดือน 13\.44 ล้าน \(103\.4%\)/);
+  assert.ok(r.indexOf('📍 F1') < r.indexOf('📍 F2') && r.indexOf('📍 F4') < r.indexOf('📍 F5'));
+  for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📍 F4 🟢[\s\S]*ต้องทำ 22\.22 ตัน\/วัน ✅/);
+  assert.match(bot.say('ยอดเมื่อวาน'), /81\.00 ตัน · 1\.74 ล้าน\n• F1 20\.00 ตัน · 0\.43 ล้าน/);
+  assert.match(bot.say('สรุปเช้า'), /F1 100% 🟢 · F2 94% 🔴 · F3 100% 🟢 · F4 104% 🟢 · F5 90% 🔴/);
+});
+
+test('Targets แท็บเก่า (4 คอลัมน์) ได้หัวคอลัมน์ "เป้า (บาท)" เพิ่ม', () => {
+  const bot = createBot();
+  const sh = bot.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('Targets');
+  sh.appendRow(['เดือน (yyyy-mm)', 'ทีม', 'เซลส์', 'เป้า (ตัน)']);
+  bot.ctx.setupSalesSheets();
+  assert.strictEqual(bot.sheets.Targets.data[0][4], 'เป้า (บาท)');
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
