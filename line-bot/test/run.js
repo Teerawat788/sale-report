@@ -989,4 +989,19 @@ test('Gemini: ใส่ GEMINI_API_KEY แล้วถามตอบ/วิเ�
   assert.strictEqual(bot.aiCalls.length, 1);
 });
 
+test('Gemini: บอกสาเหตุเมื่อเรียกไม่สำเร็จ และลองรุ่นสำรองเมื่อไม่พบโมเดล', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
+  let n = 0;
+  bot.setGeminiResponse(() => (++n === 1 ? { status: 404, body: { error: { message: 'models/gemini-flash-latest is not found' } } }
+    : { body: { candidates: [{ content: { parts: [{ text: 'ได้ค่ะ' }] } }] } }));
+  assert.strictEqual(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), '🤖 ได้ค่ะ');
+  assert.match(bot.geminiCalls[1].url, /gemini-2\.5-flash/);
+  bot.setGeminiResponse({ status: 400, body: { error: { message: 'API key not valid. Please pass a valid API key.' } } });
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /สาเหตุ: Gemini 400: คีย์ไม่ถูกต้อง/);
+  bot.setGeminiResponse({ status: 403, body: { error: { message: 'Permission denied' } } });
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /สาเหตุ: Gemini 403/);
+  bot.setGeminiResponse({ body: { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] } });
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /ไม่ส่งคำตอบกลับ \(MAX_TOKENS\)/);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

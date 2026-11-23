@@ -2304,37 +2304,68 @@ function callAi_(system, userText) {
   return null;
 }
 
-/** เรียก Google Gemini (generateContent) */
+/** สาเหตุที่เรียก AI ไม่สำเร็จครั้งล่าสุด (ไว้บอกผู้ใช้) */
+let AI_LAST_ERROR = '';
+
+function geminiErrorText_(code, body) {
+  let msg = '';
+  try { msg = (JSON.parse(body).error || {}).message || ''; } catch (e) { msg = String(body || ''); }
+  const hint = code === 400 && /API key/i.test(msg) ? 'คีย์ไม่ถูกต้อง — ตรวจ GEMINI_API_KEY'
+    : code === 403 ? 'คีย์ไม่มีสิทธิ์ใช้ Gemini API (เปิด Generative Language API / ตรวจข้อจำกัดของคีย์)'
+    : code === 404 ? 'ไม่พบโมเดล — ตั้ง GEMINI_MODEL เป็นชื่อรุ่นที่มีใน AI Studio'
+    : code === 429 ? 'ใช้เกินโควตา รอสักครู่หรือเปิด billing'
+    : '';
+  return 'Gemini ' + code + (hint ? ': ' + hint : '') + (msg ? ' (' + truncate_(msg, 140) + ')' : '');
+}
+
+/** เรียก Google Gemini (generateContent) — ถ้าไม่พบโมเดลจะลองรุ่นสำรอง */
 function callGemini_(system, userText) {
   const key = prop_('GEMINI_API_KEY', '');
   if (!key) return null;
-  const model = prop_('GEMINI_MODEL', GEMINI_MODEL);
-  const res = UrlFetchApp.fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': key },
-    payload: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: userText }] }],
-      generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
-    }),
-    muteHttpExceptions: true,
-  });
-  const code = res.getResponseCode();
-  if (code !== 200) {
-    console.error('Gemini API ' + code + ': ' + res.getContentText());
-    return null;
+  const preferred = prop_('GEMINI_MODEL', GEMINI_MODEL);
+  const models = uniq_([preferred, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash']);
+  for (let i = 0; i < models.length; i++) {
+    const res = UrlFetchApp.fetch(GEMINI_API_URL + encodeURIComponent(models[i]) + ':generateContent', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': key },
+      payload: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: userText }] }],
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
+      }),
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    if (code === 404 && i < models.length - 1) continue; // ลองรุ่นถัดไป
+    if (code !== 200) {
+      AI_LAST_ERROR = geminiErrorText_(code, res.getContentText());
+      console.error(AI_LAST_ERROR);
+      return null;
+    }
+    const body = JSON.parse(res.getContentText());
+    if (body.promptFeedback && body.promptFeedback.blockReason) {
+      AI_LAST_ERROR = 'Gemini ปฏิเสธคำถาม (' + body.promptFeedback.blockReason + ')';
+      return null;
+    }
+    const cand = (body.candidates || [])[0];
+    const text = cand && cand.content ? (cand.content.parts || []).filter(function (p) { return p.text && !p.thought; })
+      .map(function (p) { return p.text; }).join('').trim() : '';
+    if (!text) {
+      AI_LAST_ERROR = 'Gemini ไม่ส่งคำตอบกลับ' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : '');
+      return null;
+    }
+    if (models[i] !== preferred) console.log('Gemini ใช้รุ่นสำรอง: ' + models[i]);
+    return text;
   }
-  const body = JSON.parse(res.getContentText());
-  if (body.promptFeedback && body.promptFeedback.blockReason) {
-    console.warn('Gemini blocked: ' + body.promptFeedback.blockReason);
-    return null;
-  }
-  const cand = (body.candidates || [])[0];
-  if (!cand || !cand.content) return null;
-  const text = (cand.content.parts || []).filter(function (p) { return p.text && !p.thought; })
-    .map(function (p) { return p.text; }).join('').trim();
-  return text || null;
+  return null;
+}
+
+/** รันจาก Apps Script เพื่อทดสอบ AI — ดูผลใน "บันทึกการดำเนินการ" */
+function testAi() {
+  console.log('ตัว AI: ' + (aiProvider_() || 'ยังไม่ได้ใส่คีย์'));
+  const t = callAi_('ตอบสั้น ๆ ภาษาไทย', 'สวัสดี ทดสอบระบบ');
+  console.log(t ? '✅ AI ตอบ: ' + t : '❌ ไม่สำเร็จ: ' + AI_LAST_ERROR);
 }
 
 /** เรียก Claude Messages API — คืนข้อความ หรือ null ถ้าไม่มีคีย์/เรียกไม่สำเร็จ */
@@ -2361,7 +2392,8 @@ function callClaude_(system, userText) {
   });
   const code = res.getResponseCode();
   if (code !== 200) {
-    console.error('Claude API ' + code + ': ' + res.getContentText());
+    AI_LAST_ERROR = 'Claude ' + code + ': ' + truncate_(res.getContentText(), 140);
+    console.error(AI_LAST_ERROR);
     return null;
   }
   const body = JSON.parse(res.getContentText());
@@ -2457,12 +2489,15 @@ function askBot_(question, now) {
   try { snap = getSalesSnapshot_(); } catch (e) { /* ignore */ }
   const payload = JSON.stringify(aiQaPayload_(snap, now));
   let text = null;
+  AI_LAST_ERROR = '';
   try {
     text = callAi_(AI_QA_SYSTEM_PROMPT, 'ข้อมูล (JSON):\n' + payload + '\n\nคำถาม: ' + question);
   } catch (e) {
-    console.error('AI Q&A: ' + (e && e.message || e));
+    AI_LAST_ERROR = String(e && e.message || e);
+    console.error('AI Q&A: ' + AI_LAST_ERROR);
   }
-  return text ? '🤖 ' + truncate_(text, 3500) : 'ขออภัยค่ะ ตอนนี้น้องขุนศึกตอบไม่ได้ ลองใหม่อีกครั้งนะคะ';
+  return text ? '🤖 ' + truncate_(text, 3500)
+    : 'ขออภัยค่ะ ตอนนี้น้องขุนศึกตอบไม่ได้ ลองใหม่อีกครั้งนะคะ' + (AI_LAST_ERROR ? '\n(สาเหตุ: ' + AI_LAST_ERROR + ')' : '');
 }
 
 // ---------- Birthdays.gs ----------
