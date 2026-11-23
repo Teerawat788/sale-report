@@ -25,9 +25,21 @@ function isWorkDay_(d) {
 /** Trigger: ทุกเช้า (วันทำงาน) */
 function morningBrief() {
   const now = now_();
-  if (!flag_('BRIEF_ENABLED') || !isWorkDay_(now)) return;
-  importSalesHourly(); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ
-  linePush_(prop_('GROUP_ID', ''), buildMorningBrief_(now));
+  const messages = [];
+  if (flag_('BRIEF_ENABLED') && isWorkDay_(now)) {
+    importSalesHourly(); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ
+    messages.push(buildMorningBrief_(now));
+  }
+  // วันเกิดลูกค้า: แจ้งทุกวันรวมวันหยุด เป็นบับเบิลแยก (push ครั้งเดียว ไม่เปลืองโควตาเพิ่ม)
+  if (flag_('BIRTHDAY_ENABLED')) {
+    try {
+      const bd = buildBirthdayAlert_(now);
+      if (bd) messages.push(bd);
+    } catch (e) {
+      console.error('วันเกิด: ' + (e && e.message || e));
+    }
+  }
+  if (messages.length) linePush_(prop_('GROUP_ID', ''), messages);
 }
 
 /** Trigger: ทุกศุกร์บ่าย */

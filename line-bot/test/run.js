@@ -473,4 +473,84 @@ test('พิมพ์ชื่อลูกค้า / F4 เฉย ๆ ก็ข
   assert.strictEqual(bot.say('F4 ไปไหน'), null);
 });
 
+// ---------- วันเกิดลูกค้า ----------
+const BD_HEAD = ['เขต', 'รหัสลูกค้า', 'ชื่อลูกค้า', 'ชื่อเจ้าของ', 'วัน', 'เดือน', 'ปีเกิด (พ.ศ.)', 'วันเกิด', 'เบอร์โทร'];
+function bdBot(now, extraProps) {
+  const bot = createBot({ now: now || D(2026, 11, 23, 7), props: Object.assign({ GROUP_ID: 'Cgroup1', BRIEF_ENABLED: 'false' }, extraProps) });
+  const sh = bot.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('วันเกิด');
+  [BD_HEAD,
+    ['F5', '1', 'มาลี สิงห์สุวรรณ', 'มาลี สิงห์สุวรรณ', 23, 11, 2520, '23 พ.ย.', '081'],
+    ['F2', '2', 'ฟาร์มภูเขียว', 'นายเฉลิมพล', 26, 11, '', '26 พ.ย.', ''],
+    ['F5', '3', 'เมืองใหม่เจริญการเกษตร', 'เพ็ญศิริ โลหะวิจารณ์', 26, 11, '', '', ''],
+    ['F1', '4', 'นครพันธ์ปลา', 'นายนคร เจริญพร', '', '', '', '3/ส.ค/2505', ''],
+    ['F1', '5', 'นครพันธ์ปลา (ฉวางกร)', 'นายนคร เจริญพร', '', '', '', '3/ส.ค/2505', ''],
+    ['F1', '6', 'จิดาภาฟาร์ม', 'จิดาภา ตุ้มทอง', 27, 11, '', '', ''],
+    ['F2', '7', 'แจใจส่งเสริมการเกษตร', 'นายเมธี อำไพพิศ', 20, 11, '', '', ''],
+    ['F3', '8', 'นายศราวุฒิ ตันเจริญ', 'Non Active', 24, 11, '', '', ''],
+    ['F4', '9', 'ฟาร์มอธิกสุรทิน', 'คุณ ก', 29, 2, '', '', ''],
+    ['F4', '10', 'ฟาร์มธันวา', 'คุณ ข', '', '', '', '1/12', ''],
+  ].forEach((r) => sh.appendRow(r));
+  return bot;
+}
+
+test('วันเกิด: แปลงรูปแบบวันที่หลายแบบ', () => {
+  const { ctx } = createBot();
+  const p = (v) => JSON.parse(JSON.stringify(ctx.parseBirthday_(v)));
+  assert.deepStrictEqual(p('3/ส.ค/2505'), { day: 3, month: 8 });
+  assert.deepStrictEqual(p('17/มิ.ย/2509'), { day: 17, month: 6 });
+  assert.deepStrictEqual(p('24/10'), { day: 24, month: 10 });
+  assert.deepStrictEqual(p('20/11/2508'), { day: 20, month: 11 });
+  assert.deepStrictEqual(p(new Date(2534, 7, 21)), { day: 21, month: 8 });
+  assert.strictEqual(ctx.parseBirthday_('-'), null);
+  assert.strictEqual(ctx.parseBirthday_('หยุดซื้อขาย'), null);
+  assert.strictEqual(ctx.parseBirthday_('31/11'), null);
+  assert.strictEqual(ctx.fmtBirthdayDate_(D(2026, 11, 23)), 'วันจันทร์ที่ 23/11/69');
+});
+
+test('วันเกิด: แจ้งทุกเช้า 7 วันข้างหน้า เรียงตามวัน แยกเดือน (ไม่มียอดขาย)', () => {
+  const bot = bdBot(D(2026, 11, 23, 7), { BIRTHDAY_SHEET_ID: 'sheet', BIRTHDAY_DAYS_AHEAD: '9' });
+  bot.ctx.morningBrief();
+  const msgs = bot.pushes()[0].body.messages;
+  assert.strictEqual(msgs.length, 1, 'ปิดสรุปเช้าไว้ ต้องเหลือแค่วันเกิด');
+  const t = msgs[0].text;
+  assert.match(t, /^🎂 วันเกิดลูกค้า 9 วันข้างหน้า \(5 ราย\)\n\nเดือน พ\.ย\.\n🎂 ลูกค้าราย มาลี สิงห์สุวรรณ ชื่อ มาลี สิงห์สุวรรณ วันเกิด วันจันทร์ที่ 23\/11\/69 🎉 วันนี้! \[F5\]/);
+  assert.match(t, /• ลูกค้าราย ฟาร์มภูเขียว ชื่อ นายเฉลิมพล วันเกิด วันพฤหัสบดีที่ 26\/11\/69 \(อีก 3 วัน\) \[F2\]/);
+  assert.match(t, /จิดาภาฟาร์ม[^\n]*วันศุกร์ที่ 27\/11\/69/);
+  assert.match(t, /\n\nเดือน ธ\.ค\.\n• ลูกค้าราย ฟาร์มธันวา ชื่อ คุณ ข วันเกิด วันอังคารที่ 01\/12\/69/);
+  assert.doesNotMatch(t, /แจใจ|Non Active|ยอด|ตัน/);
+  assert.ok(t.indexOf('ฟาร์มภูเขียว') < t.indexOf('จิดาภาฟาร์ม'));
+});
+
+test('วันเกิด: วันอาทิตย์ก็แจ้ง / ไม่มีใครเกิดก็ไม่ส่ง / ส่งพร้อมสรุปเช้าในครั้งเดียว', () => {
+  const sun = bdBot(D(2026, 11, 22, 7), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true' });
+  sun.ctx.morningBrief();
+  assert.strictEqual(sun.pushes().length, 1);
+  assert.match(sun.pushes()[0].body.messages[0].text, /^🎂 วันเกิดลูกค้า/);
+
+  const mon = bdBot(D(2026, 11, 23, 7), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true' });
+  mon.ctx.morningBrief();
+  assert.strictEqual(mon.pushes().length, 1);
+  const m = mon.pushes()[0].body.messages;
+  assert.strictEqual(m.length, 2);
+  assert.match(m[0].text, /สวัสดีตอนเช้า/);
+  assert.match(m[1].text, /^🎂 วันเกิดลูกค้า/);
+
+  const quiet = bdBot(D(2026, 4, 1, 7), { BIRTHDAY_SHEET_ID: 'sheet' });
+  quiet.ctx.morningBrief();
+  assert.strictEqual(quiet.pushes().length, 0);
+  const off = bdBot(D(2026, 11, 23, 7), { BIRTHDAY_SHEET_ID: 'sheet', BIRTHDAY_ENABLED: 'false' });
+  off.ctx.morningBrief();
+  assert.strictEqual(off.pushes().length, 0);
+});
+
+test('วันเกิด: คำสั่ง วันเกิด / วันเกิด ส.ค. รวมลูกค้าเจ้าของเดียวกัน, 29 ก.พ.', () => {
+  const bot = bdBot(D(2026, 11, 23, 9), { BIRTHDAY_SHEET_ID: 'sheet' });
+  assert.match(bot.say('วันเกิด'), /30 วันข้างหน้า \(5 ราย\)/);
+  const aug = bot.say('วันเกิด ส.ค.');
+  assert.match(aug, /เดือน ส\.ค\. \(1 ราย\)\n\nเดือน ส\.ค\.\n• ลูกค้าราย นครพันธ์ปลา, นครพันธ์ปลา \(ฉวางกร\) ชื่อ นายนคร เจริญพร วันเกิด วันอังคารที่ 03\/08\/70/);
+  assert.match(bot.say('วันเกิด 2'), /ฟาร์มอธิกสุรทิน[^\n]*วันอาทิตย์ที่ 28\/02\/70/);
+  assert.match(bot.say('วันเกิด เดือนนี้'), /แจใจส่งเสริมการเกษตร[^\n]*\(ผ่านมาแล้ว\)/);
+  assert.strictEqual(bot.say('วันเกิด ใครครับ'), null);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

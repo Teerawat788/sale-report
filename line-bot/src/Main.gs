@@ -108,6 +108,9 @@ function runCommand_(p, ctx) {
       return null;
     }
 
+    case 'birthday':
+      return birthdayCommand_(p.argText, now);
+
     case 'customer':
       return formatCustomerSales_(getSalesSnapshot_(), p.argText);
 
@@ -262,6 +265,8 @@ const HELP_TEXT = [
   '• ประจำ — เช็กลิสต์สัปดาห์นี้',
   '• ประจำ+ จันทร์ ส่งรายงานลูกค้าใหม่ @สมชาย',
   '• เช็ค 2 — ติ๊กว่าทำแล้ว | ลบประจำ 2',
+  '',
+  '🎂 วันเกิด — ลูกค้าเกิด 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
   '',
   '☀️ สรุปเช้า | 📈 สรุปสัปดาห์',
   '',

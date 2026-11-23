@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
 const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Store', 'Tasks', 'Weekly',
-  'Calendar', 'Sales', 'SalesData', 'Schedule', 'Main'];
+  'Calendar', 'Sales', 'SalesData', 'Birthdays', 'Schedule', 'Main'];
 
 function makeSheet(name) {
   const data = [];
@@ -60,6 +60,7 @@ function createBot(opts = {}) {
   const ss = {
     getSheetByName: (n) => sheets[n] || null,
     insertSheet: (n) => (sheets[n] = makeSheet(n)),
+    getSheets: () => Object.values(sheets),
   };
   const driveFiles = []; // { id, name, mime, content (string | 2D array), updated: Date }
   const fileObj = (f) => ({
