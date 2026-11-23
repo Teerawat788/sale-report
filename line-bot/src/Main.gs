@@ -100,14 +100,14 @@ function handleEvent_(ev) {
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
 
   // บันทึกเยี่ยมลูกค้า: "เยี่ยม <ลูกค้า> <รายละเอียด>"
-  const visit = !inOtherGroup && parseVisitText_(stripped.text);
+  const visit = !inOtherGroup && parseVisitText_(stripped.multiline);
   if (visit) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
-    const icon = visit.type === 'ติดตาม' ? '📞' : visit.type === 'เข้าพบ' ? '🤝' : '📍';
-    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type + 'ลูกค้าแล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+    const icon = visit.type.indexOf('ติดตาม') === 0 ? '📞' : visit.type.indexOf('เข้าพบ') === 0 ? '🤝' : '📍';
+    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
       '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
-      (visit.note ? '\n🗒️ ' + truncate_(visit.note, 200) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+      (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
     return;
   }
 

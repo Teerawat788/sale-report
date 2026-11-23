@@ -65,7 +65,9 @@ function stripMentions_(text, mention) {
     if (m.isSelf || m.type === 'all') return;
     mentions.unshift({ userId: m.userId || '', name: raw.replace(/^@/, '').trim() });
   });
-  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions, botMentioned: botMentioned };
+  const multiline = out.split(/\r?\n/).map(function (l) { return l.replace(/[ \t\u00a0]+/g, ' ').trim(); })
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { text: out.replace(/\s+/g, ' ').trim(), multiline: multiline, mentions: mentions, botMentioned: botMentioned };
 }
 
 /** คืน { cmd, args: string[], argText } หรือ null ถ้าไม่ใช่คำสั่ง */

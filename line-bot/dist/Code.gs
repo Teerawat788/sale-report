@@ -208,7 +208,9 @@ function stripMentions_(text, mention) {
     if (m.isSelf || m.type === 'all') return;
     mentions.unshift({ userId: m.userId || '', name: raw.replace(/^@/, '').trim() });
   });
-  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions, botMentioned: botMentioned };
+  const multiline = out.split(/\r?\n/).map(function (l) { return l.replace(/[ \t\u00a0]+/g, ' ').trim(); })
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { text: out.replace(/\s+/g, ' ').trim(), multiline: multiline, mentions: mentions, botMentioned: botMentioned };
 }
 
 /** คืน { cmd, args: string[], argText } หรือ null ถ้าไม่ใช่คำสั่ง */
@@ -2848,34 +2850,59 @@ const VISIT_KEYWORDS = [
   { word: 'ติดตาม', type: 'ติดตาม', strict: true }, { word: 'เยี่ยม', type: 'เยี่ยม', strict: true },
 ];
 
-/** "เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่" → { customer, note, type } หรือ null ถ้าเป็นแชทปกติ ("เยี่ยมมาก", "ติดตาม งานนี้ด้วย") */
+/** คำต่อท้ายคำขึ้นต้นที่อนุญาต เช่น "ติดตามลูกค้าใหม่", "เข้าพบลูกค้าเก่า", "ติดตามผล" */
+const VISIT_FILLERS = ['ลูกค้าใหม่', 'ลูกค้าเก่า', 'ลูกค้ารายใหม่', 'ลูกค้า', 'ผล', 'งาน'];
+
+/**
+ * "เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่" → { customer, note, type, isNew }
+ * ข้อความหลายบรรทัด: บรรทัดแรก = คำขึ้นต้น + ชื่อลูกค้า, บรรทัดต่อไป = รายละเอียด
+ * คืน null ถ้าเป็นแชทปกติ ("เยี่ยมมาก", "ติดตาม งานนี้ด้วย")
+ */
 function parseVisitText_(text) {
-  const t = String(text || '').trim();
-  const kw = VISIT_KEYWORDS.find(function (k) { return t.indexOf(k.word) === 0 && /\s/.test(t.charAt(k.word.length)); });
+  const full = String(text || '').trim();
+  const nl = full.indexOf('\n');
+  const firstLine = (nl >= 0 ? full.slice(0, nl) : full).trim();
+  const body = nl >= 0 ? full.slice(nl + 1).trim() : '';
+  let kw = null;
+  let head = '';
+  let filler = '';
+  for (let k = 0; k < VISIT_KEYWORDS.length && !kw; k++) {
+    const w = VISIT_KEYWORDS[k].word;
+    if (firstLine.indexOf(w) !== 0) continue;
+    let after = firstLine.slice(w.length);
+    const f = VISIT_FILLERS.find(function (x) { return after.indexOf(x) === 0; });
+    if (f) { filler = f; after = after.slice(f.length); }
+    if (after && !/^\s/.test(after)) continue;
+    kw = VISIT_KEYWORDS[k];
+    head = after.trim();
+  }
   if (!kw) return null;
-  const rest = t.slice(kw.word.length).trim();
-  if (!rest) return null;
-  const first = rest.split(/\s+/)[0];
-  if (VISIT_STOPWORDS.indexOf(first) >= 0) return null;
-  // หาชื่อลูกค้าที่รู้จักที่ยาวที่สุดที่ขึ้นต้นข้อความ
+  const isNew = /ใหม่/.test(filler) || /ใหม่/.test(kw.word);
+  const type = kw.type + (isNew ? ' (ลูกค้าใหม่)' : '');
+  if (!head) return null;
+  const firstTok = head.split(/\s+/)[0];
+  if (VISIT_STOPWORDS.indexOf(firstTok) >= 0) return null;
+  // หาชื่อลูกค้าที่รู้จักที่ยาวที่สุดที่ขึ้นต้นบรรทัดแรก
   const known = knownCustomerNames_();
-  const nRest = normName_(rest);
+  const nHead = normName_(head);
   let best = '';
   known.forEach(function (name) {
     const n = normName_(name);
-    if (n && nRest.indexOf(n) === 0 && n.length > normName_(best).length) best = name;
+    if (n && nHead.indexOf(n) === 0 && n.length > normName_(best).length) best = name;
   });
   if (best) {
-    // ตัดชื่อออกจากข้อความโดยนับตัวอักษรที่ไม่ใช่ช่องว่าง
     let count = normName_(best).length;
     let i = 0;
-    while (i < rest.length && count > 0) { if (!/\s/.test(rest[i])) count--; i++; }
-    return { customer: best, note: rest.slice(i).trim(), type: kw.type };
+    while (i < head.length && count > 0) { if (!/\s/.test(head[i])) count--; i++; }
+    const rest = head.slice(i).trim();
+    return { customer: best, note: [rest, body].filter(Boolean).join('\n'), type: type, isNew: isNew };
   }
-  const parts = rest.split(/\s+/);
+  // มีรายละเอียดบรรทัดถัดไป → ทั้งบรรทัดแรกคือชื่อลูกค้า
+  if (body) return { customer: head, note: body, type: type, isNew: isNew };
+  const parts = head.split(/\s+/);
   // คำทั่วไป: ลูกค้าที่ไม่รู้จักต้องมีรายละเอียดต่อท้าย (กันแชทปกติ เช่น "ติดตาม ด้วย")
-  if (kw.strict && (parts.length < 2 || kw.type === 'ติดตาม' && !known.length)) return null;
-  return { customer: parts[0], note: parts.slice(1).join(' '), type: kw.type };
+  if (kw.strict && !filler && parts.length < 2) return null;
+  return { customer: parts[0], note: parts.slice(1).join(' '), type: type, isNew: isNew };
 }
 
 function knownCustomerNames_() {
@@ -2933,7 +2960,7 @@ function readVisits_() {
 
 function visitLine_(x) {
   return '• ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' ' + x.type + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
-    '\n   👤 ' + x.sales + (x.note ? ' — ' + truncate_(x.note, 120) : '') +
+    '\n   👤 ' + x.sales + (x.note ? ' — ' + truncate_(x.note.replace(/\n+/g, ' '), 120) : '') +
     (x.lat !== '' && x.lat !== undefined ? '\n   📍 ' + (x.place ? truncate_(x.place, 60) : 'แชร์ตำแหน่งแล้ว') : '');
 }
 
@@ -3289,14 +3316,14 @@ function handleEvent_(ev) {
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
 
   // บันทึกเยี่ยมลูกค้า: "เยี่ยม <ลูกค้า> <รายละเอียด>"
-  const visit = !inOtherGroup && parseVisitText_(stripped.text);
+  const visit = !inOtherGroup && parseVisitText_(stripped.multiline);
   if (visit) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
-    const icon = visit.type === 'ติดตาม' ? '📞' : visit.type === 'เข้าพบ' ? '🤝' : '📍';
-    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type + 'ลูกค้าแล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+    const icon = visit.type.indexOf('ติดตาม') === 0 ? '📞' : visit.type.indexOf('เข้าพบ') === 0 ? '🤝' : '📍';
+    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
       '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
-      (visit.note ? '\n🗒️ ' + truncate_(visit.note, 200) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+      (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
     return;
   }
 
