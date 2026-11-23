@@ -248,11 +248,15 @@ function rowsFromTable_(table) {
  */
 function asOfFromFileName_(name, ref) {
   const base = String(name).replace(/\.[^.]+$/, '');
-  let m = base.match(/(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})/);
-  if (m) { const d = parseSheetDate_(m[1] + '-' + m[2] + '-' + m[3], 'DMY'); if (d) return d; }
+  const lag = Math.max(0, Number(prop_('FILE_DATE_LAG_DAYS', '1')) || 0);
+  let m = base.match(/(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(T\d)?/);
+  if (m) {
+    const d = parseSheetDate_(m[1] + '-' + m[2] + '-' + m[3], 'DMY');
+    // "data - 2026-11-24T053547" = เวลาที่กด export (ยอดถึงเมื่อวาน) ไม่ใช่วันที่ของยอด
+    if (d) return m[4] ? addDays_(d, -lag) : d;
+  }
   m = base.match(/(\d{1,2})[-_.](\d{1,2})[-_.](\d{4}|\d{2}(?!\d))/);
   if (m) { const d = parseSheetDate_(m[1] + '/' + m[2] + '/' + m[3], 'DMY'); if (d) return d; }
-  const lag = Math.max(0, Number(prop_('FILE_DATE_LAG_DAYS', '1')) || 0);
   return addDays_(startOfDay_(ref), -lag);
 }
 
@@ -274,17 +278,23 @@ function importFolder_() {
   return folder;
 }
 
-/** เก็บยอดสะสม ณ วันที่ asOf (ทับของวันเดิมถ้านำเข้าซ้ำ) */
-function replaceMtdSnapshot_(rows, asOf) {
+/**
+ * เก็บยอดสะสม ณ วันที่ asOf — ทับเฉพาะไฟล์ชนิดเดียวกันของวันเดิม
+ * (ไฟล์รายเขต กับ ไฟล์รายลูกค้า ของวันเดียวกันเก็บไว้ทั้งคู่)
+ */
+function replaceMtdSnapshot_(rows, asOf, zoneLevel) {
   withLock_(function () {
     const sh = sheet_(MTD_SHEET, MTD_HEADERS);
     const values = sh.getDataRange().getValues();
     const width = MTD_HEADERS.length;
+    const today = startOfDay_(now_());
     const pad = function (r) { const x = r.slice(0, width); while (x.length < width) x.push(''); return x; };
     const keep = values.slice(1).filter(function (r) {
       if (r[0] === '' || r[0] === null) return false;
       const d = parseSheetDate_(r[0], 'DMY');
-      return !d || d.getTime() !== asOf.getTime();
+      const rowZoneLevel = !cleanText_(r[4]);
+      if (d && d >= today && d > asOf) return false; // ยอดลงวันที่วันนี้/อนาคต (นำเข้าวันที่ผิดเมื่อก่อน) — ลบทิ้ง
+      return !d || d.getTime() !== asOf.getTime() || rowZoneLevel !== !!zoneLevel;
     }).map(pad);
     const out = [MTD_HEADERS].concat(keep, rows.map(function (r) {
       return [asOf, r.team, r.sales, r.custId, r.customer, r.ton, r.amount === null ? '' : r.amount]
@@ -324,7 +334,7 @@ function importTable_(table, opts) {
   let r;
   if (parsed.mode === 'mtd') {
     const asOf = (opts && opts.asOf) || addDays_(startOfDay_(now_()), -1);
-    replaceMtdSnapshot_(parsed.rows, asOf);
+    replaceMtdSnapshot_(parsed.rows, asOf, parsed.zoneLevel);
     r = { mode: 'mtd', count: parsed.rows.length, from: asOf, to: asOf,
       total: parsed.rows.reduce(function (a, x) { return a + x.ton; }, 0) };
   } else {
@@ -347,8 +357,9 @@ function formatImportResult_(r, fileName) {
       (fileName ? '\n📄 ' + fileName : '') +
       '\n(ถือเป็นยอดถึงเมื่อวานของวันที่ส่งไฟล์) ถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" ได้เลยค่ะ เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
     if (r.missing && r.missing.length) m += '\n⚠️ ไฟล์ไม่มีคอลัมน์: ' + r.missing.map(function (k) { return MISSING_LABEL[k]; }).join(', ');
-    if (!r.hasAmount) m += '\nℹ️ ไฟล์ไม่มีคอลัมน์มูลค่า (บาท) — รายงานจะแสดงเฉพาะตัน';
-    if (r.zoneLevel) m += '\nℹ️ ไฟล์รายเขต: ใช้เป้า (Budget) จากไฟล์';
+    if (r.zoneLevel) m += '\nℹ️ ไฟล์รายเขต: ใช้ยอดรวม + เป้า (Budget) จากไฟล์นี้';
+    else m += '\nℹ️ ไฟล์รายลูกค้า: ใช้ดูยอดลูกค้า/เซลส์' + (r.hasAmount ? '' : ' (ตัน)') +
+      ' — ยอดรวมรายเขตใช้ไฟล์รายเขตถ้ามี';
     return m;
   }
   let s = '✅ นำเข้ายอดขาย ' + fmtNum_(r.count, 0) + ' แถว (' + fmtDate_(r.from) +
@@ -484,76 +495,87 @@ function setupSalesSheets() {
  * ยอดสะสม (MTD) หลายวัน → แถวรายวัน = ยอดสะสมวันนี้ − ยอดสะสมไฟล์ก่อนหน้า (เดือนเดียวกัน)
  * ไฟล์แรกของเดือนจะเป็นยอดก้อนเดียว (ยังคำนวณยอดรายวันไม่ได้)
  */
+/**
+ * ยอดสะสม (หลายวัน) → ยอดรายวัน แยก 2 ชุด
+ *  • ชุดเขต (team อย่างเดียว): ใช้คิดยอดรวม/รายเขต — วันไหนมีไฟล์รายเขตใช้ไฟล์นั้น (ครบทุกโรงงาน)
+ *    ไม่มีก็รวมจากไฟล์รายลูกค้า
+ *  • ชุดลูกค้า (detailOnly): ใช้ดูยอดรายลูกค้า/เซลส์ จากไฟล์รายลูกค้าเท่านั้น ไม่นับซ้ำในยอดรวม
+ */
 function mtdToDailyRows_(snaps, now) {
   const today = startOfDay_(now);
-  const byDate = {};
+  const zoneBy = {};
+  const detBy = {};
   snaps.forEach(function (r) {
     if (r.date > today) return;
-    (byDate[r.date.getTime()] = byDate[r.date.getTime()] || []).push(r);
+    const t = r.date.getTime();
+    if (r.customer) (detBy[t] = detBy[t] || []).push(r);
+    else (zoneBy[t] = zoneBy[t] || []).push(r);
   });
-  const dates = Object.keys(byDate).map(Number).sort(function (a, b) { return a - b; });
-  const out = [];
-  const firstOfMonth = {};
-  let prev = null;
-  let prevHasAmt = false;
-  let prevMonth = '';
-  let prevDate = null;
-  let sinceOfLast = null;
-  let lastDetailed = null;
-  dates.forEach(function (t) {
-    const d = new Date(t);
-    const mk = monthKey_(d);
-    if (mk !== prevMonth) { prev = null; prevDate = null; prevMonth = mk; firstOfMonth[mk] = t; }
-    sinceOfLast = prevDate;
-    const curHasAmt = byDate[t].some(function (r) { return !isNaN(r.amount); });
-    // ไฟล์รายเขต (ไม่มีลูกค้า) เทียบกับไฟล์รายลูกค้า → เทียบกันที่ระดับเขต
-    const detailed = byDate[t].some(function (r) { return r.customer; });
-    if (detailed) lastDetailed = t;
-    const zoneOnly = !detailed || (prev && !prev._detailed);
-    if (prev && zoneOnly && prev._detailed) prev = collapseToZones_(prev);
-    const cur = {};
-    Object.defineProperty(cur, '_detailed', { value: detailed && !zoneOnly, enumerable: false });
-    byDate[t].forEach(function (r) {
-      const k = zoneOnly ? r.team + '||' : [r.team, r.sales, r.custId || r.customer].join('|');
-      const c = cur[k] || (cur[k] = { team: r.team, sales: zoneOnly ? '' : r.sales, customer: zoneOnly ? '' : r.customer, ton: 0, amount: 0 });
+  const dates = uniq_(Object.keys(zoneBy).concat(Object.keys(detBy))).map(Number).sort(function (a, b) { return a - b; });
+  const hasAmt = function (rows) { return rows.some(function (r) { return !isNaN(r.amount); }); };
+  const sumRows = function (rows, keyFn, zoneOnly) {
+    const m = {};
+    rows.forEach(function (r) {
+      const k = keyFn(r);
+      const c = m[k] || (m[k] = { team: r.team, sales: zoneOnly ? '' : r.sales || '', customer: zoneOnly ? '' : r.customer || '', ton: 0, amount: 0 });
       c.ton += r.ton;
       c.amount += isNaN(r.amount) ? 0 : r.amount;
     });
-    const keys = Object.keys(cur).concat(prev ? Object.keys(prev).filter(function (k) { return !(k in cur); }) : []);
-    keys.forEach(function (k) {
-      const c = cur[k] || { team: prev[k].team, sales: prev[k].sales, customer: prev[k].customer, ton: 0, amount: 0 };
-      const p = prev && prev[k] ? prev[k] : { ton: 0, amount: 0 };
-      const dt = c.ton - p.ton;
-      const da = curHasAmt ? c.amount - p.amount : NaN;
-      if (Math.abs(dt) < 1e-9 && !(Math.abs(da) > 1e-9)) return;
-      // ไฟล์ก่อนหน้าไม่มีคอลัมน์มูลค่า: มูลค่าของวันนี้เป็นยอดสะสมก้อนเดียว ไม่ใช่ยอดรายวัน
-      out.push({ date: d, team: c.team, sales: c.sales, customer: c.customer, product: '', ton: dt, amount: da,
-        amtLump: !!(prev && curHasAmt && !prevHasAmt) });
+    return m;
+  };
+  const out = [];
+  const firstOfMonth = {};
+  // series: [{ t, map, hasAmt }] ตามวันที่ → ผลต่างจากวันก่อนหน้าในเดือนเดียวกัน
+  const emit = function (series, extra) {
+    let prev = null;
+    let prevHasAmt = false;
+    let prevMonth = '';
+    series.forEach(function (x) {
+      const d = new Date(x.t);
+      const mk = monthKey_(d);
+      if (mk !== prevMonth) { prev = null; prevMonth = mk; }
+      const cur = x.map;
+      const keys = Object.keys(cur).concat(prev ? Object.keys(prev).filter(function (k) { return !(k in cur); }) : []);
+      keys.forEach(function (k) {
+        const c = cur[k] || { team: prev[k].team, sales: prev[k].sales, customer: prev[k].customer, ton: 0, amount: 0 };
+        const p = prev && prev[k] ? prev[k] : { ton: 0, amount: 0 };
+        const dt = c.ton - p.ton;
+        const da = x.hasAmt ? c.amount - p.amount : NaN;
+        if (Math.abs(dt) < 1e-9 && !(Math.abs(da) > 1e-9)) return;
+        // ไฟล์ก่อนหน้าไม่มีคอลัมน์มูลค่า: มูลค่าของวันนี้เป็นยอดสะสมก้อนเดียว ไม่ใช่ยอดรายวัน
+        out.push(Object.assign({ date: d, team: c.team, sales: c.sales, customer: c.customer, product: '', ton: dt, amount: da,
+          amtLump: !!(prev && x.hasAmt && !prevHasAmt) }, extra));
+      });
+      prev = cur;
+      prevHasAmt = x.hasAmt;
     });
-    prev = cur;
-    prevHasAmt = curHasAmt;
-    prevDate = t;
+  };
+  const zoneSeries = dates.map(function (t) {
+    const rows = zoneBy[t] || detBy[t];
+    const mk = monthKey_(new Date(t));
+    if (!(mk in firstOfMonth)) firstOfMonth[mk] = t;
+    return { t: t, hasAmt: hasAmt(rows), map: sumRows(rows, function (r) { return r.team; }, true) };
   });
+  emit(zoneSeries, {});
+  const detDates = dates.filter(function (t) { return detBy[t]; });
+  emit(detDates.map(function (t) {
+    return { t: t, hasAmt: hasAmt(detBy[t]),
+      map: sumRows(detBy[t], function (r) { return [r.team, r.sales, r.custId || r.customer].join('|'); }) };
+  }), { detailOnly: true });
+
   const last = dates.length ? dates[dates.length - 1] : null;
+  const lastDetailed = detDates.length ? detDates[detDates.length - 1] : null;
+  // เป้า/ปีก่อน: จากไฟล์รายเขตล่าสุดของเดือน
+  const zoneDates = dates.filter(function (t) { return zoneBy[t]; });
+  const infoDate = zoneDates.length && last && monthKey_(new Date(zoneDates[zoneDates.length - 1])) === monthKey_(new Date(last))
+    ? zoneDates[zoneDates.length - 1] : null;
+  const since = dates.length > 1 && monthKey_(new Date(dates[dates.length - 2])) === monthKey_(new Date(last)) ? dates[dates.length - 2] : null;
   out.meta = { asOf: last ? new Date(last) : null, firstOfMonth: firstOfMonth,
     hasAmount: snaps.some(function (r) { return !isNaN(r.amount); }),
-    zoneInfo: last ? zoneInfoOf_(byDate[last]) : {},
-    since: sinceOfLast ? new Date(sinceOfLast) : null,
+    zoneInfo: infoDate ? zoneInfoOf_(zoneBy[infoDate]) : {},
+    since: since ? new Date(since) : null,
     detailAsOf: lastDetailed && lastDetailed !== last ? new Date(lastDetailed) : null };
   return out;
-}
-
-function collapseToZones_(m) {
-  const z = {};
-  Object.keys(m).forEach(function (k) {
-    const c = m[k];
-    const zk = c.team + '||';
-    const t = z[zk] || (z[zk] = { team: c.team, sales: '', customer: '', ton: 0, amount: 0 });
-    t.ton += c.ton;
-    t.amount += c.amount;
-  });
-  Object.defineProperty(z, '_detailed', { value: false, enumerable: false });
-  return z;
 }
 
 /** เป้า / Challenge / ปีก่อน รายเขต จากไฟล์ล่าสุด */
@@ -738,7 +760,10 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
   const asOf = meta.asOf || usable.reduce(function (m, r) { return r.date > m ? r.date : m; }, usable[0].date);
   const mKey = monthKey_(asOf);
   const monthRows = usable.filter(function (r) { return monthKey_(r.date) === mKey; });
-  const lastRows = monthRows.filter(function (r) { return r.date.getTime() === asOf.getTime(); });
+  // ยอดรวม/รายเขต ไม่นับแถวรายลูกค้าที่แยกเก็บไว้ (detailOnly) ซ้ำ
+  const zoneRows = monthRows.filter(function (r) { return !r.detailOnly; });
+  const lastAll = monthRows.filter(function (r) { return r.date.getTime() === asOf.getTime(); });
+  const lastRows = lastAll.filter(function (r) { return !r.detailOnly; });
   const targets = (targetsFn || readTargets_)(mKey);
   // เป้าจากไฟล์รายเขต (Budget) ใช้เมื่อแท็บ Targets ไม่ได้กรอกเขตนั้น
   const zoneInfo = meta.zoneInfo || {};
@@ -769,7 +794,7 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
     return m;
   });
 
-  const teamRows = monthRows.filter(function (r) { return r.team; });
+  const teamRows = zoneRows.filter(function (r) { return r.team; });
   const byTeam = sumBy_(teamRows, 'team');
   const byTeamAmt = sumBy_(teamRows, 'team', 'amount');
   Object.keys(targets.team).forEach(function (t) { if (!(t in byTeam)) { byTeam[t] = 0; byTeamAmt[t] = 0; } });
@@ -791,15 +816,15 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
   const budgetTon = sumTarget(teams, 'budgetTon') || sumTarget(salesList, 'budgetTon') || null;
   const budgetAmt = sumTarget(teams, 'budgetAmt') || sumTarget(salesList, 'budgetAmt') || null;
   const total = addZoneExtras_(
-    salesMetrics_('รวมทุกเขต', sumField_(monthRows, 'ton'), sumField_(monthRows, 'amount'), budgetTon, budgetAmt, wd),
+    salesMetrics_('รวมทุกเขต', sumField_(zoneRows, 'ton'), sumField_(zoneRows, 'amount'), budgetTon, budgetAmt, wd),
     Object.keys(zoneInfo).reduce(function (acc, z) {
       EXTRA_FIELDS.forEach(function (f) { if (zoneInfo[z][f]) acc[f] = (acc[f] || 0) + zoneInfo[z][f]; });
       return acc;
     }, {}));
 
   const lastTeamRows = lastRows.filter(function (r) { return r.team; });
-  const lastSalesRows = lastRows.filter(function (r) { return r.sales; });
-  const lastCustRows = lastRows.filter(function (r) { return r.customer; });
+  const lastSalesRows = lastAll.filter(function (r) { return r.sales; });
+  const lastCustRows = lastAll.filter(function (r) { return r.customer; });
   return {
     source: 'sheet',
     hasAmount: hasAmount,

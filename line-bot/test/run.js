@@ -385,7 +385,7 @@ test('ฟอร์มหลัก: นำเข้ายอดสะสม ข�
   const bot = mtdBot();
   const imp = bot.say('อัปเดตยอด');
   assert.match(imp, /นำเข้ายอดสะสม ณ พุธ 18 พ\.ย\. 2569\n5 แถว รวม 528\.26 ตัน/);
-  assert.match(imp, /ไม่มีคอลัมน์มูลค่า/);
+  assert.match(imp, /ไฟล์รายลูกค้า: ใช้ดูยอดลูกค้า\/เซลส์ \(ตัน\)/);
   const r = bot.say('ยอด');
   // ถึง 18 พ.ย. = 15 วันทำงาน (อาทิตย์ 1, 8, 15) จาก 25
   assert.match(r, /วันทำงาน 15\/25 · เหลือ 10 วัน/);
@@ -614,7 +614,7 @@ test('ไฟล์รายเขต: ตัน + ล้านบาท, เป�
   bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 25, 8) });
   const imp = bot.say('อัปเดตยอด');
   assert.match(imp, /ณ อังคาร 24 พ\.ย\. 2569\n2 แถว รวม 504\.32 ตัน/);
-  assert.match(imp, /ไฟล์รายเขต: ใช้เป้า \(Budget\) จากไฟล์/);
+  assert.match(imp, /ไฟล์รายเขต: ใช้ยอดรวม \+ เป้า \(Budget\) จากไฟล์นี้/);
   assert.doesNotMatch(imp, /ไม่มีคอลัมน์: ลูกค้า/);
   const r = bot.say('ยอด');
   assert.match(r, /วันทำงาน 20\/25 · เหลือ 5 วัน/);
@@ -1048,6 +1048,31 @@ test('ห้องสั่งการถาม AI ได้โดยไม่�
   assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmain' }), null);
   assert.match(bot.say('เมนู', { groupId: 'Cmine' }), /คำสั่งบอททีมขาย/); // คำสั่งปกติยังทำงาน
   assert.strictEqual(bot.geminiCalls.length, 1);
+});
+
+test('ไฟล์ export มีเวลาในชื่อ = ยอดถึงเมื่อวาน, ไฟล์รายเขต+รายลูกค้าวันเดียวกันไม่ทับกัน', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head,
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 70.22],
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '2', 'ร้านทดสอบสอง', 'Fish', 102.18],
+    ['เซลส์ ข', 'TFM Fish1 North', 'เซลส์ ข', 'TFM Fish1 North', '3', 'ร้านทดสอบสาม', 'Fish', 114.14],
+    ['Total', '', '', '', '', '', '', 286.54]];
+  for (const order of [['zone', 'cust'], ['cust', 'zone']]) {
+    const bot = createBot({ now: D(2026, 11, 24, 5), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+    // ของเดิมที่เคยนำเข้าผิดเป็นวันที่ 24 (วันนี้) ต้องถูกล้าง
+    bot.sendFile('data - 2026-11-24.xlsx', cust, { groupId: 'Cmine' });
+    for (const k of order) {
+      const r = k === 'zone' ? bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' })
+        : bot.sendFile('data - 2026-11-24T053547.165.xlsx', cust, { groupId: 'Cmine' });
+      assert.match(r, /ณ จันทร์ 23/, order + ' ' + k);
+    }
+    const y = bot.say('ยอดขาย', { groupId: 'Cmine' });
+    assert.match(y, /19\/25/, order.join());
+    assert.match(y, /ทำได้ 512\.72/, order.join()); // ยอดรวมจากไฟล์รายเขต (114.14 + 398.58)
+    assert.match(y, /500/, 'เป้าจากไฟล์รายเขตยังอยู่');
+    assert.match(bot.say('ร้านทดสอบหนึ่ง', { groupId: 'Cmine' }), /ตัน: 70\.22/);
+    assert.match(bot.say('F5', { groupId: 'Cmine' }), /398\.58/);
+  }
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
