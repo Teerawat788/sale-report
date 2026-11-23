@@ -189,7 +189,7 @@ function formatNotVisited_(zoneArg, now) {
   return '📍 ลูกค้าที่ยังไม่ได้เยี่ยม 30 วันขึ้นไป' + (zone ? ' — ' + zone : '') + ' (' + list.length + ' ราย)\nเรียงตามยอดเดือนนี้\n\n' +
     list.slice(0, 25).map(function (c, i) {
       const lv = last[normName_(c.name)];
-      return (i + 1) + '. ' + c.name + ' [' + c.team + '] ' + fmtNum_(c.ton) + ' ตัน\n   ' +
-        (lv ? 'เยี่ยมล่าสุด ' + fmtDate_(lv) : 'ยังไม่มีบันทึก');
-    }).join('\n') + (list.length > 25 ? '\n…และอีก ' + (list.length - 25) + ' ราย' : '');
+      return (i + 1) + '. ' + c.name + '\n   ' + c.team + ' · ' + fmtNum_(c.ton) + ' ตัน' +
+        (lv ? ' · เยี่ยมล่าสุด ' + fmtDate_(lv) : '');
+    }).join('\n') + (list.length > 25 ? '\n\n…และอีก ' + (list.length - 25) + ' ราย' : '');
 }

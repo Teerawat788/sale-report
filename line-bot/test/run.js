@@ -559,7 +559,7 @@ test('AI: ใส่คีย์แล้วรายงานมีบทวิ�
   bot.props.ANTHROPIC_API_KEY = 'sk-test';
   bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• F3 ต้องเร่งอีก 20 ตัน/วัน' }] } });
   const imp = bot.say('อัปเดตยอด');
-  assert.match(imp, /นำเข้ายอดสะสม[\s\S]*🏢 รวมทุกเขต[\s\S]*🤖 วิเคราะห์โดย AI\n• F3 ต้องเร่งอีก 20 ตัน\/วัน/);
+  assert.match(imp, /นำเข้ายอดสะสม[\s\S]*🏢 รวมทุกเขต[\s\S]*🤖 วิเคราะห์โดย AI\n\n• F3 ต้องเร่งอีก 20 ตัน\/วัน/);
   assert.strictEqual(bot.aiCalls.length, 1);
   const call = bot.aiCalls[0];
   assert.strictEqual(call.body.model, 'claude-opus-5-5');
@@ -975,7 +975,7 @@ test('Gemini: ใส่ GEMINI_API_KEY แล้วถามตอบ/วิเ�
   assert.strictEqual(call.headers['x-goog-api-key'], 'g-test');
   assert.doesNotMatch(call.url, /g-test/, 'คีย์ไม่อยู่ใน URL');
   assert.match(call.body.systemInstruction.parts[0].text, /น้องขุนศึก/);
-  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /🤖 วิเคราะห์โดย AI\n• คำตอบจาก Gemini ค่ะ/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /🤖 วิเคราะห์โดย AI\n\n• คำตอบจาก Gemini ค่ะ/);
   assert.strictEqual(bot.aiCalls.length, 0, 'ไม่เรียก Claude');
   // บล็อก/ผิดพลาด → ข้อความขอโทษ
   bot.setGeminiResponse({ body: { promptFeedback: { blockReason: 'SAFETY' } } });
@@ -1073,6 +1073,17 @@ test('ไฟล์ export มีเวลาในชื่อ = ยอดถึ
     assert.match(bot.say('ร้านทดสอบหนึ่ง', { groupId: 'Cmine' }), /ตัน: 70\.22/);
     assert.match(bot.say('F5', { groupId: 'Cmine' }), /398\.58/);
   }
+});
+
+test('AI: จัดข้อความให้อ่านง่าย (ตัด markdown, เว้นบรรทัดหัวข้อ, ตัดบรรทัดยาว)', () => {
+  const { ctx } = createBot();
+  const raw = '**📌 ภาพรวม**\n- คาดปิด 86% ของเป้า\n\n\n\n✅ เขตที่ทำได้ดี\n* F5 คาดปิด 105%\n⚠️ ต้องเร่ง\n• F1 ทำได้ 118.1 ตัน จากเป้า 369.3 ตัน คาดปิดเพียง 42% ต้องเพิ่มยอดอีกวันละ 35.6 ตันจึงจะถึงเป้า';
+  const t = ctx.tidyAiText_(raw);
+  assert.ok(!/\*\*/.test(t));
+  assert.match(t, /^📌 ภาพรวม\n• คาดปิด 86% ของเป้า\n\n✅ เขตที่ทำได้ดี\n• F5 คาดปิด 105%\n\n⚠️ ต้องเร่ง\n• F1/);
+  assert.ok(!/\n\n\n/.test(t));
+  t.split('\n').forEach((l) => assert.ok(l.length <= 48, l));
+  assert.match(t, /\n   \S/); // บรรทัดต่อย่อหน้าเข้าไป
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

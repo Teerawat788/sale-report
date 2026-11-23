@@ -1056,7 +1056,8 @@ function formatSalesRank_(snap) {
   if (!snap.salesList || !snap.salesList.length) return 'ข้อมูลยอดขายไม่มีคอลัมน์เซลส์';
   const tg = timeGonePct_(snap);
   const lines = ['🏆 อันดับเซลส์ เดือนนี้ (ถึง ' + fmtDate_(snap.detailAsOf || snap.asOf) + ')',
-    'Time gone ' + fmtNum_(tg, 0) + '%  🟢 ทันเป้า 🟡 ตามไม่เกิน 10 pts 🔴 ตามเกิน'];
+    '⏱️ Time gone ' + fmtNum_(tg, 0) + '%',
+    '🟢 ทันเป้า  🟡 ช้าไม่เกิน 10%  🔴 ช้ากว่านั้น', ''];
   const anyTarget = snap.salesList.some(function (s) { return s.budgetTon; });
   const list = anyTarget
     ? snap.salesList.slice().sort(function (a, b) { return (b.achievement || -1) - (a.achievement || -1) || b.actualTon - a.actualTon; })
