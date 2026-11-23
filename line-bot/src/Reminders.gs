@@ -12,16 +12,34 @@
 const REMINDER_SHEET = 'แจ้งเตือน';
 const REMINDER_HEADERS = ['วัน', 'เวลา', 'ข้อความ', 'ทุกกี่สัปดาห์', 'เริ่มวันที่', 'ใช้งาน', 'ส่งล่าสุด'];
 const REMINDER_PLACEHOLDER = '(ใส่ข้อความที่ต้องการให้บอทส่ง)';
+const FRIDAY_MEETING_TEXT = '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ';
 const REMINDER_DEFAULTS = [
   ['ส', '16:00', 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ', 1, '', true, ''],
-  ['ศ', '07:00', REMINDER_PLACEHOLDER, 2, new Date(2026, 11, 4), true, ''],
+  ['ศ', '07:00', FRIDAY_MEETING_TEXT, 2, new Date(2026, 11, 4), true, ''],
 ];
 
 function setupReminders() {
   const ss = spreadsheet_();
-  if (ss.getSheetByName(REMINDER_SHEET)) return;
-  const sh = sheet_(REMINDER_SHEET, REMINDER_HEADERS);
-  REMINDER_DEFAULTS.forEach(function (r) { sh.appendRow(r); });
+  if (!ss.getSheetByName(REMINDER_SHEET)) {
+    const sh = sheet_(REMINDER_SHEET, REMINDER_HEADERS);
+    REMINDER_DEFAULTS.forEach(function (r) { sh.appendRow(r); });
+    return;
+  }
+  // แท็บที่สร้างไว้ก่อน: เติมข้อความวันศุกร์แทนข้อความตัวอย่าง
+  const sh = ss.getSheetByName(REMINDER_SHEET);
+  sh.getDataRange().getValues().forEach(function (v, i) {
+    if (i > 0 && cleanText_(v[2]) === REMINDER_PLACEHOLDER) sh.getRange(i + 1, 3).setValue(FRIDAY_MEETING_TEXT);
+  });
+}
+
+/** "@All ..." → ข้อความที่แท็กทุกคนในกลุ่มจริง (LINE textV2) */
+function reminderMessage_(text) {
+  if (!/@all\b/i.test(text)) return text;
+  return {
+    type: 'textV2',
+    text: text.replace(/@all\b/ig, '{everyone}'),
+    substitution: { everyone: { type: 'mention', mentionee: { type: 'all' } } },
+  };
 }
 
 /** "จ-ส", "จ,พ,ศ", "ทุกวัน", "ศุกร์" → [1,3,5] */
@@ -82,6 +100,10 @@ function runReminders_(now) {
     sh.getRange(i + 1, 7).setValue(todayKey);
     due.push(text);
   }
-  if (due.length) linePush_(groupId, due);
+  if (due.length) {
+    const res = linePush_(groupId, due.map(reminderMessage_));
+    // ถ้า LINE ไม่รับแบบแท็กทุกคน ส่งเป็นข้อความธรรมดาแทน
+    if (res && res.code >= 300 && due.some(function (t) { return /@all\b/i.test(t); })) linePush_(groupId, due);
+  }
   return due.length;
 }

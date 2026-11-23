@@ -696,7 +696,6 @@ test('แจ้งเตือนตามวัน: เสาร์ 16:00 ท�
   const bot = createBot({ now: D(2026, 11, 28, 15, 0), props: { GROUP_ID: 'Cgroup1', BRIEF_ENABLED: 'false', BIRTHDAY_ENABLED: 'false' } });
   bot.ctx.setupReminders();
   const sh = bot.sheets['แจ้งเตือน'];
-  sh.data[2][2] = 'อย่าลืมส่งรายงานเยี่ยมลูกค้า 2 สัปดาห์ครับ';
   const at = (d, h, m) => { bot.setNow(D(2026, d[0], d[1], h, m)); bot.ctx.tick(); return bot.pushes().map((p) => p.body.messages[0].text); };
   assert.deepStrictEqual(at([11, 28], 15, 55), []);
   assert.deepStrictEqual(at([11, 28], 16, 3), ['รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ']);
@@ -707,7 +706,10 @@ test('แจ้งเตือนตามวัน: เสาร์ 16:00 ท�
   assert.strictEqual(at([12, 4], 7, 2).length, 2, 'ศุกร์ 4/12 ส่ง');
   assert.strictEqual(at([12, 11], 7, 2).length, 2, 'ศุกร์ 11/12 เว้น');
   assert.strictEqual(at([12, 18], 7, 2).length, 3, 'ศุกร์ 18/12 ส่ง');
-  assert.match(bot.pushes()[2].body.messages[0].text, /รายงานเยี่ยมลูกค้า/);
+  const fri = bot.pushes()[2].body.messages[0];
+  assert.strictEqual(fri.type, 'textV2');
+  assert.strictEqual(fri.text, '{everyone} วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ');
+  assert.deepStrictEqual(fri.substitution, { everyone: { type: 'mention', mentionee: { type: 'all' } } });
   assert.match(sh.data[2][6], /^ส่งแล้ว/);
 });
 
@@ -717,12 +719,20 @@ test('แจ้งเตือน: ข้อความยังไม่กร
   assert.deepStrictEqual(Array.from(ctx.parseReminderDays_('จ,พ,ศ')), [1, 3, 5]);
   assert.deepStrictEqual(Array.from(ctx.parseReminderDays_('ทุกวัน')), [0, 1, 2, 3, 4, 5, 6]);
   const bot = createBot({ now: D(2026, 12, 4, 7, 2), props: { GROUP_ID: 'Cgroup1', BRIEF_ENABLED: 'false', BIRTHDAY_ENABLED: 'false' } });
+  const sh0 = bot.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('แจ้งเตือน');
+  sh0.appendRow(['วัน', 'เวลา', 'ข้อความ', 'ทุกกี่สัปดาห์', 'เริ่มวันที่', 'ใช้งาน', 'ส่งล่าสุด']);
+  sh0.appendRow(['ศ', '07:00', '(ใส่ข้อความที่ต้องการให้บอทส่ง)', 2, D(2026, 12, 4), true, '']);
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 0, 'ข้อความตัวอย่าง ไม่ส่ง');
   bot.ctx.setupReminders();
+  assert.match(sh0.data[1][2], /^@All วันที่มีประชุม Perfomance/, 'แท็บเดิมถูกเติมข้อความศุกร์');
   bot.ctx.tick();
-  assert.strictEqual(bot.pushes().length, 0, 'ข้อความศุกร์ยังเป็นตัวอย่าง ไม่ส่ง');
+  assert.strictEqual(bot.pushes().length, 1);
+  bot.pushes().length = 0;
   bot.sheets['แจ้งเตือน'].data.push(['จ-ส', '07:00', 'ทดสอบ', 1, '', false, '']);
+  const before = bot.pushes().length;
   bot.ctx.tick();
-  assert.strictEqual(bot.pushes().length, 0, 'ใช้งาน = FALSE ไม่ส่ง');
+  assert.strictEqual(bot.pushes().length, before, 'ใช้งาน = FALSE ไม่ส่ง');
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
