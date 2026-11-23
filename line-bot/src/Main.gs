@@ -383,7 +383,12 @@ function lookupCommand_(text) {
   const t = String(text || '').trim();
   if (!t || t.length > 60 || /\n/.test(t)) return null;
   if (/^(?:f|fish|เขต|zone)\s*\d{1,2}$/i.test(t)) return { cmd: 'sales', args: [t], argText: t };
-  const found = findCustomers_(customerIndex_(), t, false);
+  const names = customerIndex_();
+  const exact = findCustomers_(names, t, true);
+  if (exact.length === 1) return { cmd: 'customer', args: [exact[0]], argText: exact[0] };
+  const person = findSalesName_(salesIndex_(), t);
+  if (person) return { cmd: 'sales', args: [person], argText: person };
+  const found = findCustomers_(names, t, false);
   return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
 }
 
@@ -398,6 +403,7 @@ const HELP_TEXT = [
   '• F1–F5 — ยอดเขตนั้น',
   '• ชื่อลูกค้า — ยอดลูกค้ารายนั้น',
   '• ลูกค้า F3 — ลูกค้าทุกรายในเขต',
+  "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
   '• วิเคราะห์ — AI สรุปยอดให้',
   '',

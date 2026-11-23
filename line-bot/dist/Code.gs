@@ -2130,6 +2130,7 @@ function formatTopBy_(snap, key, title, n) {
 // ---------------------------------------------------------------- ลูกค้า
 
 const CUSTOMER_INDEX_KEY = 'cust_index_v1';
+const SALES_INDEX_KEY = 'sales_index_v1';
 
 /** ลูกค้าทุกรายในเขต เรียงตามตัน (แบ่งหลายข้อความถ้ายาว) */
 function formatZoneCustomers_(snap, zone) {
@@ -2175,20 +2176,45 @@ function customerIndex_() {
   const hit = cache.get(CUSTOMER_INDEX_KEY);
   if (hit) return JSON.parse(hit);
   let names = [];
+  let sales = [];
   try {
     const rows = readSalesRows_();
     const snap = rows.length ? buildSalesSnapshot_(rows, now_(), function () { return { team: {}, sales: {}, salesTeam: {} }; }) : null;
-    if (snap) names = customerNames_(snap);
+    if (snap) {
+      names = customerNames_(snap);
+      sales = uniq_(snap.monthRows.map(function (r) { return r.sales; }));
+    }
   } catch (e) {
     console.error(e);
   }
   const json = JSON.stringify(names);
   if (json.length < 90000) cache.put(CUSTOMER_INDEX_KEY, json, names.length ? 21600 : 600);
+  cache.put(SALES_INDEX_KEY, JSON.stringify(sales), sales.length ? 21600 : 600);
   return names;
+}
+
+/** รายชื่อเซลส์ (จากไฟล์รายลูกค้า) */
+function salesIndex_() {
+  const hit = CacheService.getScriptCache().get(SALES_INDEX_KEY);
+  if (hit) return JSON.parse(hit);
+  customerIndex_();
+  const again = CacheService.getScriptCache().get(SALES_INDEX_KEY);
+  return again ? JSON.parse(again) : [];
+}
+
+/** พิมพ์ชื่อเซลส์เฉย ๆ: ตรงทั้งชื่อ-นามสกุล หรือตรงชื่อต้น (ไม่ค้นแบบบางส่วน กันชนแชทปกติ) */
+function findSalesName_(names, q) {
+  const n = normName_(q);
+  if (!n || n.length < 2) return null;
+  const full = names.filter(function (x) { return normName_(x) === n; });
+  if (full.length === 1) return full[0];
+  const first = names.filter(function (x) { return normName_(String(x).split(/\s+/)[0]) === n; });
+  return first.length === 1 ? first[0] : null;
 }
 
 function clearCustomerIndex_() {
   CacheService.getScriptCache().remove(CUSTOMER_INDEX_KEY);
+  CacheService.getScriptCache().remove(SALES_INDEX_KEY);
 }
 
 /** exact: ชื่อตรงทั้งชื่อ (ไม่สนช่องว่าง/ตัวพิมพ์)  ไม่ exact: มีคำค้นอยู่ในชื่อ (อย่างน้อย 3 ตัวอักษร) */
@@ -2258,23 +2284,47 @@ function findSalesPerson_(snap, q) {
 }
 
 function formatPersonSales_(snap, person) {
-  const tg = timeGonePct_(snap);
   const rows = snap.monthRows.filter(function (r) { return r.sales === person.name; });
-  const last = rows.filter(function (r) { return r.date.getTime() === snap.asOf.getTime(); })
-    .reduce(function (a, r) { return a + r.ton; }, 0);
-  const lines = ['👤 ' + person.name + (person.team ? ' (' + person.team + ')' : '') + ' — ถึง ' + fmtDate_(snap.asOf),
-    'เดือนนี้: ' + tonVsTarget_(person.actualTon, person.budgetTon, person.achievement) + paceIcon_(person.achievement, tg),
-    snap.lastDay.unavailable ? 'วันล่าสุด: -' : 'วันล่าสุด: ' + fmtNum_(last) + ' ตัน'];
-  const remain = snap.workingDaysTotal - snap.workingDaysPassed;
-  if (person.budgetTon && remain > 0 && person.actualTon < person.budgetTon) {
-    lines.push('🎯 ต้องทำอีก ' + fmtNum_(person.budgetTon - person.actualTon) + ' ตัน ≈ ' +
-      fmtNum_((person.budgetTon - person.actualTon) / remain) + ' ตัน/วัน');
+  const wd = snap.detailWd || { total: snap.workingDaysTotal, passed: snap.workingDaysPassed };
+  const asOf = snap.detailAsOf || snap.asOf;
+  const zone = person.team ? snap.teams.find(function (t) { return t.name === person.team; }) : null;
+  const lines = ['👤 ' + person.name + (person.team ? ' · ' + person.team : ''),
+    '📆 ถึง ' + fmtDate_(asOf) + ' · วันทำงาน ' + wd.passed + '/' + wd.total,
+    '━━━━━━━━━━',
+    '⚖️ ยอดเดือนนี้ ' + fmtNum_(person.actualTon) + ' ตัน'];
+  if (zone && zone.actualTon) lines.push('• ' + fmtNum_(person.actualTon / zone.actualTon * 100, 0) + '% ของเขต ' + zone.name);
+  lines.push('• สปีด ' + fmtNum_(person.currentSpeed) + ' ตัน/วัน');
+  lines.push('• คาดปิดเดือน ' + fmtNum_(person.forecastTon) + ' ตัน');
+  const remain = wd.total - wd.passed;
+  if (person.budgetTon) {
+    lines.push('• เป้า ' + fmtNum_(person.budgetTon) + ' ตัน (' + fmtNum_(person.achievement, 0) + '%)');
+    if (remain > 0 && person.actualTon < person.budgetTon) {
+      lines.push('• ต้องทำ ' + fmtNum_((person.budgetTon - person.actualTon) / remain) + ' ตัน/วัน');
+    }
   }
-  const cust = sortedEntries_(sumBy_(rows.filter(function (r) { return r.customer; }), 'customer'));
-  if (cust.length) { lines.push(''); lines.push('👥 ลูกค้า (' + cust.length + ')'); lines.push(formatTopList_(cust, 5, true)); }
+  if (!snap.lastDay.unavailable) {
+    const last = rows.filter(function (r) { return r.date.getTime() === snap.asOf.getTime(); })
+      .reduce(function (a, r) { return a + r.ton; }, 0);
+    lines.push('• วันล่าสุด ' + (last >= 0 ? '+' : '') + fmtNum_(last) + ' ตัน');
+  }
+  const cust = sortedEntries_(sumBy_(rows.filter(function (r) { return r.customer; }), 'customer'))
+    .filter(function (e) { return Math.abs(e.ton) > 1e-9; });
+  const msgs = [lines.join('\n')];
+  if (cust.length) {
+    const total = cust.reduce(function (a, e) { return a + e.ton; }, 0);
+    const items = cust.map(function (e, i) {
+      return (i + 1) + '. ' + e.name + '\n   ' + fmtNum_(e.ton) + ' ตัน · ' + fmtNum_(total ? e.ton / total * 100 : 0, 0) + '%';
+    });
+    for (let i = 0; i < items.length && msgs.length < 5; i += 30) {
+      const head = i === 0 ? '👥 ลูกค้า ' + cust.length + ' ราย\n\n' : '';
+      if (i === 0 && items.length <= 15) msgs[0] += '\n\n' + head + items.join('\n');
+      else msgs.push(head + items.slice(i, i + 30).join('\n'));
+      if (i === 0 && items.length <= 15) break;
+    }
+  }
   const prod = sortedEntries_(sumBy_(rows.filter(function (r) { return r.product; }), 'product'));
-  if (prod.length) { lines.push(''); lines.push('📦 สินค้า'); lines.push(formatTopList_(prod, 5, true)); }
-  return lines.join('\n');
+  if (prod.length) msgs[msgs.length - 1] += '\n\n📦 สินค้า\n' + formatTopList_(prod, 5, true);
+  return msgs.length === 1 ? msgs[0] : msgs;
 }
 
 // ---------- Ai.gs ----------
@@ -3907,7 +3957,12 @@ function lookupCommand_(text) {
   const t = String(text || '').trim();
   if (!t || t.length > 60 || /\n/.test(t)) return null;
   if (/^(?:f|fish|เขต|zone)\s*\d{1,2}$/i.test(t)) return { cmd: 'sales', args: [t], argText: t };
-  const found = findCustomers_(customerIndex_(), t, false);
+  const names = customerIndex_();
+  const exact = findCustomers_(names, t, true);
+  if (exact.length === 1) return { cmd: 'customer', args: [exact[0]], argText: exact[0] };
+  const person = findSalesName_(salesIndex_(), t);
+  if (person) return { cmd: 'sales', args: [person], argText: person };
+  const found = findCustomers_(names, t, false);
   return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
 }
 
@@ -3922,6 +3977,7 @@ const HELP_TEXT = [
   '• F1–F5 — ยอดเขตนั้น',
   '• ชื่อลูกค้า — ยอดลูกค้ารายนั้น',
   '• ลูกค้า F3 — ลูกค้าทุกรายในเขต',
+  "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
   '• วิเคราะห์ — AI สรุปยอดให้',
   '',

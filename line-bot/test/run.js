@@ -262,10 +262,10 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(rank, /1\. วิทย์ รักงาน \(F5\) — 35\.00 \/ 150\.00 ตัน \(23\.3%\) 🔴/);
 
   const me = bot.say('ยอด สมชาย');
-  assert.match(me, /👤 สมชาย ใจดี \(F4\)/);
-  assert.match(me, /25\.00 \/ 200\.00 ตัน/);
-  assert.match(me, /ต้องทำอีก 175\.00 ตัน ≈ 19\.44 ตัน\/วัน/);
-  assert.match(me, /1\. ฟาร์ม A — 17\.00 ตัน/);
+  assert.match(me, /👤 สมชาย ใจดี · F4/);
+  assert.match(me, /ยอดเดือนนี้ 25\.00 ตัน[\s\S]*เป้า 200\.00 ตัน \(13%\)/);
+  assert.match(me, /ต้องทำ 19\.44 ตัน\/วัน/);
+  assert.match(me, /1\. ฟาร์ม A\n   17\.00 ตัน/);
 
   assert.match(bot.say('ยอด f5'), /📊 F5 —[\s\S]*ทำได้ 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
   assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
@@ -394,7 +394,7 @@ test('ฟอร์มหลัก: นำเข้ายอดสะสม ข�
   assert.match(r, /🔴 F3 — คาดปิด [\d.]+%\n• ตัน 307\.46 \/ 600\.00/);
   assert.doesNotMatch(r, /อื่นๆ|0\.14/);
   assert.doesNotMatch(r, /มูลค่า:/);
-  assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ \(F3\)[\s\S]*1\. คุณนรินทร์ นฤภัย — 63\.00 ตัน/);
+  assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ · F3[\s\S]*1\. คุณนรินทร์ นฤภัย\n   63\.00 ตัน/);
   assert.match(bot.say('ยอด กลุ่มบัญชี'), /กลุ่มบัญชี ประโยชน์ โสรัจจกิจ/);
   assert.match(bot.say('ยอดเมื่อวาน'), /จะเริ่มคำนวณเมื่อมีไฟล์ของวันถัดไป/);
 });
@@ -1112,6 +1112,22 @@ test('ลูกค้า F5: รายชื่อลูกค้าทั้ง
   assert.strictEqual(bot.say('ยอดลูกค้า fish5', { groupId: 'Cmain' }), r);
   assert.strictEqual(bot.say('ลูกค้า ร้านนี้สั่งเพิ่ม', { groupId: 'Cmain' }), null);
   assert.match(bot.say('ยอดลูกค้า', { groupId: 'Cmain' }), /ดูทั้งเขต พิมพ์: ลูกค้า F3/);
+});
+
+test('พิมพ์ชื่อเซลส์ (ชื่อต้นหรือชื่อเต็ม) → ยอด + ลูกค้าทุกราย', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head,
+    ['สมหญิง ทดสอบ', 'TFM Fish5 South', 'สมหญิง ทดสอบ', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 30],
+    ['สมหญิง ทดสอบ', 'TFM Fish5 South', 'สมหญิง ทดสอบ', 'TFM Fish5 South', '2', 'ร้านทดสอบสอง', 'Fish', 70],
+    ['สมชาย ทดลอง', 'TFM Fish5 South', 'สมชาย ทดลอง', 'TFM Fish5 South', '3', 'ร้านทดสอบสาม', 'Fish', 5]];
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
+  const r = bot.say('สมหญิง', { groupId: 'Cmain' });
+  assert.match(r, /👤 สมหญิง ทดสอบ · F5[\s\S]*ยอดเดือนนี้ 100\.00 ตัน[\s\S]*ลูกค้า 2 ราย[\s\S]*1\. ร้านทดสอบสอง\n   70\.00 ตัน · 70%[\s\S]*2\. ร้านทดสอบหนึ่ง/);
+  assert.ok(!/ร้านทดสอบสาม/.test(r));
+  assert.strictEqual(bot.say('สมหญิง ทดสอบ', { groupId: 'Cmain' }), r);
+  assert.strictEqual(bot.say('สม', { groupId: 'Cmain' }), null); // บางส่วนไม่ตอบ
+  assert.strictEqual(bot.say('สมหญิง ไปไหนมา', { groupId: 'Cmain' }), null);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
