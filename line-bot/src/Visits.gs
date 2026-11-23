@@ -88,7 +88,22 @@ function customerZone_(name) {
     const b = readBirthdays_().find(function (x) { return x.customers.indexOf(name) >= 0; });
     if (b && b.zones.length) return b.zones[0];
   } catch (e) { /* ignore */ }
+  // จากไฟล์ยอด: ชื่อที่พิมพ์ "บุญสว่าง" = ลูกค้า "ร้านบุญสว่าง (2006)"
+  try {
+    const snap = getSalesSnapshot_();
+    if (snap && snap.source === 'sheet') {
+      const k = visitKey_(name);
+      const zones = uniq_(snap.monthRows.filter(function (r) { return r.customer && visitKey_(r.customer) === k; })
+        .map(function (r) { return r.team; }));
+      if (zones.length === 1) return zones[0];
+    }
+  } catch (e) { /* ignore */ }
   return '';
+}
+
+/** คีย์จับคู่ชื่อลูกค้าที่พิมพ์ตอนเยี่ยม กับชื่อในไฟล์ยอด (ตัด ร้าน/บจก./(2006)/ฟาร์ม) */
+function visitKey_(name) {
+  return coreName_(name) || normName_(name);
 }
 
 function logVisit_(sender, visit, now) {
@@ -171,7 +186,7 @@ function formatNotVisited_(zoneArg, now) {
   const zone = zoneArg ? teamKey_(zoneArg).toUpperCase() : '';
   const last = {};
   readVisits_().forEach(function (x) {
-    const k = normName_(x.customer);
+    const k = visitKey_(x.customer);
     if (!last[k] || x.at > last[k]) last[k] = x.at;
   });
   const cust = {};
@@ -182,14 +197,14 @@ function formatNotVisited_(zoneArg, now) {
   });
   const cutoff = addDays_(startOfDay_(now), -30);
   const list = Object.keys(cust).map(function (k) { return cust[k]; })
-    .filter(function (c) { const lv = last[normName_(c.name)]; return !lv || lv < cutoff; })
+    .filter(function (c) { const lv = last[visitKey_(c.name)]; return !lv || lv < cutoff; })
     .sort(function (a, b) { return b.ton - a.ton; });
   if (!Object.keys(cust).length) return 'ยังไม่มีข้อมูลยอดรายลูกค้า' + (zone ? 'ของ ' + zone : '') + 'ค่ะ (ต้องใช้ไฟล์รายลูกค้า)';
   if (!list.length) return '✅ ลูกค้าที่มียอดเดือนนี้' + (zone ? 'ของ ' + zone : '') + ' ได้เยี่ยมครบใน 30 วันแล้วค่ะ';
   return '📍 ลูกค้าที่ยังไม่ได้เยี่ยม 30 วันขึ้นไป' + (zone ? ' — ' + zone : '') + ' (' + list.length + ' ราย)\nเรียงตามยอดเดือนนี้\n\n' +
     list.slice(0, 25).map(function (c, i) {
-      const lv = last[normName_(c.name)];
-      return (i + 1) + '. ' + c.name + '\n   ' + c.team + ' · ' + fmtNum_(c.ton) + ' ตัน' +
+      const lv = last[visitKey_(c.name)];
+      return (i + 1) + '. ' + c.name + '\n   ' + (zone ? '' : c.team + ' · ') + fmtNum_(c.ton) + ' ตัน' +
         (lv ? ' · เยี่ยมล่าสุด ' + fmtDate_(lv) : '');
     }).join('\n') + (list.length > 25 ? '\n\n…และอีก ' + (list.length - 25) + ' ราย' : '');
 }

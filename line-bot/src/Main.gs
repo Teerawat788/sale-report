@@ -69,7 +69,11 @@ function handleEvent_(ev) {
   if (ev.message.type === 'file') {
     if (inOtherGroup || !/\.(xlsx|xls|csv)$/i.test(ev.message.fileName || '')) return;
     const r = importLineFile_(ev.message.id, ev.message.fileName);
-    if (!r) return;
+    if (!r) {
+      // ห้องสั่งการส่งไฟล์ที่ไม่ใช่ไฟล์ยอด → บอกให้รู้ (กลุ่มอื่นเงียบ)
+      if (isControlRoom_(source)) lineReply_(ev.replyToken, 'ℹ️ ไฟล์ "' + ev.message.fileName + '" ไม่ใช่ไฟล์ยอดขายค่ะ (ไม่พบคอลัมน์ตัน/เขต) — ไม่ได้นำเข้านะคะ');
+      return;
+    }
     const snap = getSalesSnapshot_();
     const out = [r.message].concat(salesMessages_(snap, null));
     const ai = aiSalesComment_(snap);
@@ -87,10 +91,14 @@ function handleEvent_(ev) {
   if (ev.message.type !== 'text') return;
 
   // ห้องสั่งการ: "ประกาศ <ข้อความ>" → บอทพูดในกลุ่มหลัก (เก็บบรรทัดใหม่ตามที่พิมพ์)
+  // (กลุ่มอื่นพิมพ์ "พูด..." เป็นแชทปกติ — ไม่ดักไว้)
   const announce = String(ev.message.text || '').match(/^\s*(ประกาศ|พูด)\s+([\s\S]+)$/);
-  if (announce) {
-    if (!isControlRoom_(source)) return;
+  if (announce && isControlRoom_(source)) {
     lineReply_(ev.replyToken, sendToMainGroup_([reminderMessage_(announce[2].trim())], 'ข้อความ'));
+    return;
+  }
+  if (isControlRoom_(source) && /^\s*(ประกาศ|พูด)\s*$/.test(ev.message.text || '')) {
+    lineReply_(ev.replyToken, 'พิมพ์ "ประกาศ" ตามด้วยข้อความนะคะ เช่น\nประกาศ พรุ่งนี้ประชุม 9 โมง @All');
     return;
   }
 
@@ -201,7 +209,10 @@ function runCommand_(p, ctx) {
       try { snap = getSalesSnapshot_(); } catch (e) { return null; }
       const team = findTeam_(snap, p.argText);
       if (team) return salesMessages_(snap, team);
-      if (snap.source !== 'sheet') return null;
+      const zoneAsked = /^(?:f|fish|เขต|zone)\s*\d{1,2}$/i.test(String(p.argText).trim());
+      if (snap.source !== 'sheet') return zoneAsked ? NO_SHEET_SALES_TEXT : null;
+      if (zoneAsked) return 'ไม่มีเขต ' + String(p.argText).trim().toUpperCase() + ' ค่ะ — มีเขต ' +
+        snap.teams.map(function (t) { return t.name; }).join(', ') + ' นะคะ';
       const customers = customerNames_(snap);
       const exact = findCustomers_(customers, p.argText, true);
       if (exact.length === 1) return formatCustomerSales_(snap, exact[0]);
@@ -273,9 +284,15 @@ function runCommand_(p, ctx) {
       if (p.cmd === 'salesday') return formatLastDay_(snap);
       if (p.cmd === 'salesrank') return formatSalesRank_(snap);
       if (p.cmd === 'salescust') {
-        if (!p.args.length) return formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10) + '\n\nดูทั้งเขต พิมพ์: ลูกค้า F3';
+        if (!p.args.length) {
+          const top = formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10);
+          return /^👥/.test(top) ? top + '\n\nดูทั้งเขต พิมพ์: ลูกค้า F3' : top;
+        }
         const zone = teamKey_(p.argText).toUpperCase();
-        if (!/^F\d$/.test(zone)) return null; // "ลูกค้า ..." ที่ไม่ใช่เขต = แชทปกติ
+        if (!/^F\d+$/.test(zone)) return null; // "ลูกค้า ..." ที่ไม่ใช่เขต = แชทปกติ
+        if (!snap.teams.some(function (t) { return t.name === zone; })) {
+          return 'ไม่มีเขต ' + zone + ' ค่ะ — มีเขต ' + snap.teams.map(function (t) { return t.name; }).join(', ') + ' นะคะ';
+        }
         return formatZoneCustomers_(snap, zone);
       }
       return formatTopBy_(snap, 'product', '📦 สินค้าท็อป', 10);

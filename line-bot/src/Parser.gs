@@ -67,7 +67,10 @@ function stripMentions_(text, mention) {
   });
   const multiline = out.split(/\r?\n/).map(function (l) { return l.replace(/[ \t\u00a0]+/g, ' ').trim(); })
     .join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  return { text: out.replace(/\s+/g, ' ').trim(), multiline: multiline, mentions: mentions, botMentioned: botMentioned };
+  // ตัวเลขไทย / ตัวอักษรเต็มความกว้าง (ｆ３) → ตัวปกติ สำหรับจับคำสั่ง
+  const plain = out.replace(/[\uFF01-\uFF5E]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/[๐-๙]/g, function (c) { return String(c.charCodeAt(0) - 0x0E50); });
+  return { text: plain.replace(/\s+/g, ' ').trim(), multiline: multiline, mentions: mentions, botMentioned: botMentioned };
 }
 
 /** คืน { cmd, args: string[], argText } หรือ null ถ้าไม่ใช่คำสั่ง */

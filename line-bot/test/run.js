@@ -875,7 +875,7 @@ test('เยี่ยมลูกค้า: บันทึกในกลุ่
   bot.say('อัปเดตยอด');
   bot.setNow(D(2026, 11, 20, 10, 0));
   const r = bot.say('เยี่ยม นลินรัตน์ฟาร์ม ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า', { userId: 'Usale1' });
-  assert.match(r, /✅ บันทึกเยี่ยมลูกค้าแล้วค่ะ\n📍 นลินรัตน์ฟาร์ม\n👤 ผู้ทดสอบ · ศ\. 20 พ\.ย\. 10:00\n🗒️ ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า/);
+  assert.match(r, /✅ บันทึกเยี่ยมลูกค้าแล้วค่ะ\n📍 นลินรัตน์ฟาร์ม \[F4\]\n👤 ผู้ทดสอบ · ศ\. 20 พ\.ย\. 10:00\n🗒️ ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า/);
   const row = bot.sheets['บันทึกเยี่ยม'].data[1];
   assert.strictEqual(row[3], 'นลินรัตน์ฟาร์ม');
   assert.strictEqual(row[5], 'ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า');
@@ -1184,6 +1184,39 @@ test('ชื่อเซลส์: ใช้ได้แม้ cache ราย�
   cache.remove('sales_index_v1'); // จำลองเวอร์ชันเก่าที่ยังไม่มีรายชื่อเซลส์
   assert.ok(cache.get('cust_index_v1'));
   assert.match(bot.say('วิภา', { groupId: 'Cteam2' }), /👤 วิภา ทดสอบ · F4/);
+});
+
+test('เยี่ยม: ชื่อย่อที่พิมพ์ (ไม่มี ร้าน/(2006)/ฟาร์ม) จับคู่กับลูกค้าในไฟล์ยอด', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head, ['เซลส์ ก', 'TFM Fish3 East', 'เซลส์ ก', 'TFM Fish3 East', '1', 'ร้านทดสอบสว่าง (2006)', 'Fish', 30],
+    ['เซลส์ ก', 'TFM Fish3 East', 'เซลส์ ก', 'TFM Fish3 East', '2', 'ทดสอบสองฟาร์ม', 'Fish', 20]];
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
+  assert.match(bot.say('เยี่ยม ทดสอบสว่าง ส่งของ', { groupId: 'Cmain' }), /📍 ทดสอบสว่าง \[F3\]/);
+  const nv = bot.say('ไม่ได้เยี่ยม F3', { groupId: 'Cmain' });
+  assert.match(nv, /\(1 ราย\)[\s\S]*ทดสอบสองฟาร์ม/);
+  assert.ok(!/ทดสอบสว่าง/.test(nv));
+});
+
+test('ทบทวน: ไฟล์ลูกค้าไฟล์แรกไม่ถูกนับเป็นยอดเมื่อวาน, มูลค่าไม่รู้ไม่โชว์ 0.00, เตือนยอดเก่า, เขตผิด, เลขไทย, ไฟล์ผิด', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head, ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 420]];
+  const bot = createBot({ now: D(2026, 11, 23, 7), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-23T060000.xlsx', zoneTable(390, 13000000), { groupId: 'Cmine' });
+  bot.setNow(D(2026, 11, 24, 7));
+  bot.sendFile('data - 2026-11-24T060000.xlsx', cust, { groupId: 'Cmine' });
+  const y = bot.say('ยอดเมื่อวาน', { groupId: 'Cmain' });
+  assert.ok(!/ล้านบาท/.test(y.split('\n')[0]), 'วันนี้ไม่มีมูลค่า ไม่โชว์ 0.00');
+  assert.ok(!/เซลส์ ก — 420/.test(y), 'ยอดสะสมทั้งก้อนไม่ใช่ยอดเมื่อวาน');
+  assert.ok(!/วันล่าสุด/.test(bot.say('เซลส์ ก', { groupId: 'Cmain' }) || ''));
+  bot.setNow(D(2026, 11, 28, 9));
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmain' }), /⚠️ ยอดยังไม่อัปเดต — ข้อมูลล่าสุดถึง จ\. 23 พ\.ย\. \(5 วันก่อน\)/);
+  assert.match(bot.say('F9', { groupId: 'Cmain' }), /ไม่มีเขต F9 ค่ะ/);
+  assert.match(bot.say('ลูกค้า F9', { groupId: 'Cmain' }), /ไม่มีเขต F9 ค่ะ/);
+  assert.match(bot.say('F๕', { groupId: 'Cmain' }), /📊 F5/);
+  assert.match(bot.sendFile('รายชื่อ.xlsx', [['ชื่อ', 'เบอร์'], ['ก', '1']], { groupId: 'Cmine' }), /ไม่ใช่ไฟล์ยอดขาย/);
+  assert.match(bot.say('ประกาศ', { groupId: 'Cmine' }), /ตามด้วยข้อความ/);
+  assert.strictEqual(bot.pushes().length, 0);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
