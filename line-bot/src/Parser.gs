@@ -26,13 +26,14 @@ const COMMANDS = {
   delweekly: ['ลบประจำ'],
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
+  aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
 const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
-  'salesprod'];
+  'salesprod', 'aisales'];
 
 const ALIAS_TO_CMD = (function () {
   const m = {};

@@ -346,12 +346,32 @@ function importSalesFromDrive_(force, asOfOverride) {
 
 /** Trigger: ทุกชั่วโมง — มีไฟล์ใหม่ก็นำเข้า */
 function importSalesHourly() {
+  importSalesQuietly_(true);
+}
+
+/** report: true = มีไฟล์ใหม่แล้วส่งรายงานเข้ากลุ่ม (สรุปเช้าใช้ false เพราะมียอดอยู่แล้ว) */
+function importSalesQuietly_(report) {
   try {
     const r = importSalesFromDrive_(false);
-    if (!r.skipped) console.log(r.message);
+    if (!r.skipped) {
+      console.log(r.message);
+      if (report) autoReportSales_();
+    }
   } catch (e) {
     console.error('นำเข้ายอดไม่สำเร็จ: ' + (e && e.message || e));
   }
+}
+
+/** มีไฟล์ยอดใหม่เข้ามา → ส่งรายงาน (+ บทวิเคราะห์ AI ถ้ามีคีย์) เข้ากลุ่มเอง */
+function autoReportSales_() {
+  const groupId = prop_('GROUP_ID', '');
+  if (!groupId || !flag_('AUTO_REPORT')) return;
+  const snap = getSalesSnapshot_();
+  if (snap.source !== 'sheet') return;
+  const messages = [formatSales_(snap, null)];
+  const ai = aiSalesComment_(snap);
+  if (ai) messages.push(ai);
+  linePush_(groupId, messages);
 }
 
 /** สร้างแท็บ SalesData / Targets (รันจาก editor ได้) */
@@ -735,7 +755,7 @@ function formatSalesSheet_(snap, team) {
   snap.teams.forEach(function (t) {
     out.push('━━━━━━━━━━');
     out.push('📍 ' + t.name + forecastIcon_(t));
-    metricsBlock_(t, snap.hasAmount, false).forEach(function (l) { out.push(l); });
+    metricsBlock_(t, snap.hasAmount, true).forEach(function (l) { out.push(l); });
   });
   out.push('━━━━━━━━━━');
   out.push('คาดปิดเดือน 🟢 ≥100% 🟡 95–99% 🔴 <95% ของเป้า');

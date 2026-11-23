@@ -88,7 +88,11 @@ function runCommand_(p, ctx) {
       return 'chat: ' + chatId_(ctx.source) + '\nuser: ' + (ctx.source.userId || '-');
 
     case 'sales': {
-      if (!p.argText) return formatSales_(getSalesSnapshot_(), null);
+      if (!p.argText) {
+        const all = getSalesSnapshot_();
+        const ai = aiSalesComment_(all);
+        return ai ? [formatSales_(all, null), ai] : formatSales_(all, null);
+      }
       let snap;
       try { snap = getSalesSnapshot_(); } catch (e) { return null; }
       const team = findTeam_(snap, p.argText);
@@ -106,6 +110,13 @@ function runCommand_(p, ctx) {
           found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
       }
       return null;
+    }
+
+    case 'aisales': {
+      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI — ใส่ ANTHROPIC_API_KEY ใน Script Properties';
+      const snap = getSalesSnapshot_();
+      if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
+      return aiSalesComment_(snap) || 'AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้ง';
     }
 
     case 'birthday':
@@ -130,7 +141,12 @@ function runCommand_(p, ctx) {
       const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
       if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้';
       const r = importSalesFromDrive_(true, asOf);
-      return r.skipped ? 'ℹ️ ' + r.message : r.message;
+      if (r.skipped) return 'ℹ️ ' + r.message;
+      const snap = getSalesSnapshot_();
+      const out = [r.message, formatSales_(snap, null)];
+      const ai = aiSalesComment_(snap);
+      if (ai) out.push(ai);
+      return out;
     }
 
     case 'tasks':
@@ -249,6 +265,7 @@ const HELP_TEXT = [
   '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
   '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
+  '• วิเคราะห์ — ให้ AI สรุปยอดและข้อแนะนำ',
   '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
   '📋 งานติดตาม',

@@ -27,7 +27,7 @@ function morningBrief() {
   const now = now_();
   const messages = [];
   if (flag_('BRIEF_ENABLED') && isWorkDay_(now)) {
-    importSalesHourly(); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ
+    importSalesQuietly_(false); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ (ยอดอยู่ในสรุปเช้าแล้ว)
     messages.push(buildMorningBrief_(now));
   }
   // วันเกิดลูกค้า: แจ้งทุกวันรวมวันหยุด เป็นบับเบิลแยก (push ครั้งเดียว ไม่เปลืองโควตาเพิ่ม)

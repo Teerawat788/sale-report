@@ -17,6 +17,8 @@
  *  REMIND_BEFORE_MIN          เตือนก่อนนัดกี่นาที (ค่าเริ่มต้น 30)
  *  BIRTHDAY_SHEET_ID          Google Sheet วันเกิดลูกค้า (แจ้งทุกเช้า)
  *  BIRTHDAY_DAYS_AHEAD        แจ้งล่วงหน้ากี่วัน (ค่าเริ่มต้น 7) / BIRTHDAY_ENABLED true|false
+ *  AUTO_REPORT                true|false ส่งรายงานยอดเข้ากลุ่มเองเมื่อมีไฟล์ใหม่ (ค่าเริ่มต้น true)
+ *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิดบทวิเคราะห์ยอดด้วย AI (Claude)
  *  IMPORT_FOLDER_ID           โฟลเดอร์ Google Drive ที่วางไฟล์ export จาก Power BI
  *  HOLIDAYS                   วันหยุดที่ไม่นับเป็นวันทำงาน เช่น 5/12,10/12,31/12
  *  DATE_ORDER                 DMY (ค่าเริ่มต้น) หรือ MDY ถ้าเดาจากไฟล์ไม่ได้
@@ -164,13 +166,14 @@ const COMMANDS = {
   delweekly: ['ลบประจำ'],
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
+  aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
 const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
-  'salesprod'];
+  'salesprod', 'aisales'];
 
 const ALIAS_TO_CMD = (function () {
   const m = {};
@@ -1325,12 +1328,32 @@ function importSalesFromDrive_(force, asOfOverride) {
 
 /** Trigger: ทุกชั่วโมง — มีไฟล์ใหม่ก็นำเข้า */
 function importSalesHourly() {
+  importSalesQuietly_(true);
+}
+
+/** report: true = มีไฟล์ใหม่แล้วส่งรายงานเข้ากลุ่ม (สรุปเช้าใช้ false เพราะมียอดอยู่แล้ว) */
+function importSalesQuietly_(report) {
   try {
     const r = importSalesFromDrive_(false);
-    if (!r.skipped) console.log(r.message);
+    if (!r.skipped) {
+      console.log(r.message);
+      if (report) autoReportSales_();
+    }
   } catch (e) {
     console.error('นำเข้ายอดไม่สำเร็จ: ' + (e && e.message || e));
   }
+}
+
+/** มีไฟล์ยอดใหม่เข้ามา → ส่งรายงาน (+ บทวิเคราะห์ AI ถ้ามีคีย์) เข้ากลุ่มเอง */
+function autoReportSales_() {
+  const groupId = prop_('GROUP_ID', '');
+  if (!groupId || !flag_('AUTO_REPORT')) return;
+  const snap = getSalesSnapshot_();
+  if (snap.source !== 'sheet') return;
+  const messages = [formatSales_(snap, null)];
+  const ai = aiSalesComment_(snap);
+  if (ai) messages.push(ai);
+  linePush_(groupId, messages);
 }
 
 /** สร้างแท็บ SalesData / Targets (รันจาก editor ได้) */
@@ -1714,7 +1737,7 @@ function formatSalesSheet_(snap, team) {
   snap.teams.forEach(function (t) {
     out.push('━━━━━━━━━━');
     out.push('📍 ' + t.name + forecastIcon_(t));
-    metricsBlock_(t, snap.hasAmount, false).forEach(function (l) { out.push(l); });
+    metricsBlock_(t, snap.hasAmount, true).forEach(function (l) { out.push(l); });
   });
   out.push('━━━━━━━━━━');
   out.push('คาดปิดเดือน 🟢 ≥100% 🟡 95–99% 🔴 <95% ของเป้า');
@@ -1897,6 +1920,118 @@ function formatPersonSales_(snap, person) {
   const prod = sortedEntries_(sumBy_(rows.filter(function (r) { return r.product; }), 'product'));
   if (prod.length) { lines.push(''); lines.push('📦 สินค้า'); lines.push(formatTopList_(prod, 5, true)); }
   return lines.join('\n');
+}
+
+// ---------- Ai.gs ----------
+/**
+ * วิเคราะห์ยอดขายด้วย Claude (ไม่บังคับ)
+ *
+ * เปิดใช้: Script Property ANTHROPIC_API_KEY = API key จาก console.anthropic.com
+ * ไม่มีคีย์ = ข้ามส่วนนี้ บอทยังรายงานตัวเลขตามปกติ
+ * ผลวิเคราะห์ถูก cache ตามวันที่ของข้อมูล — ไฟล์เดิมถามซ้ำไม่เสียเงินซ้ำ
+ */
+
+const AI_MODEL = 'claude-opus-5-5';
+const AI_API_URL = 'https://api.anthropic.com/v1/messages';
+
+const AI_SYSTEM_PROMPT = [
+  'คุณเป็นผู้ช่วยผู้จัดการฝ่ายขายอาหารปลา (ทีม Fish เขต F1–F5) ของบริษัทอาหารสัตว์ในประเทศไทย',
+  'อ่านตัวเลขยอดขายสะสมของเดือนที่ได้รับ แล้วเขียนบทวิเคราะห์สั้น ๆ ภาษาไทยสำหรับส่งในกลุ่ม LINE ของทีมขาย',
+  'ใช้ตัวเลขจากข้อมูลที่ให้เท่านั้น ห้ามสมมติตัวเลขเพิ่ม ถ้าไม่มีเป้าก็พูดถึงสปีดและแนวโน้มแทน',
+  'เขียน 4–6 บรรทัด แต่ละบรรทัดขึ้นต้นด้วย "• " ไม่ใช้ markdown ไม่ใช้หัวข้อ:',
+  'ภาพรวมจะปิดเดือนได้ตามเป้าหรือไม่, เขตที่ทำได้ดี, เขตที่ต้องเร่งพร้อมจำนวนตันต่อวันที่ต้องเพิ่ม,',
+  'ความเคลื่อนไหวของยอดวันล่าสุด (ถ้ามี) และข้อแนะนำ 1 ข้อที่ทีมทำได้ทันที',
+].join('\n');
+
+/** ตัวเลขย่อสำหรับส่งให้ AI (ไม่มีข้อมูลลูกค้ารายตัว) */
+function aiSalesPayload_(snap) {
+  const r = function (n) { return n === null || n === undefined || isNaN(n) ? null : Math.round(n * 100) / 100; };
+  const m = function (x) {
+    return {
+      ton: r(x.actualTon), targetTon: r(x.budgetTon), achievementPct: r(x.achievement),
+      speedTonPerDay: r(x.currentSpeed), forecastTon: r(x.forecastTon), forecastPct: r(x.forecastPct),
+      requiredTonPerDay: r(x.requiredSpeed),
+      valueMB: snap.hasAmount ? r(x.actualAmt / 1e6) : undefined,
+      forecastValueMB: snap.hasAmount ? r(x.forecastAmt / 1e6) : undefined,
+      forecastValuePct: snap.hasAmount ? r(x.forecastPctAmt) : undefined,
+    };
+  };
+  const out = {
+    asOf: fmtDateLong_(snap.asOf),
+    workingDays: { passed: snap.workingDaysPassed, total: snap.workingDaysTotal },
+    total: m(snap.total),
+    zones: snap.teams.map(function (t) { return Object.assign({ zone: t.name }, m(t)); }),
+  };
+  if (!snap.lastDay.unavailable) {
+    out.lastDay = {
+      ton: r(snap.lastDay.total),
+      byZone: snap.lastDay.byTeam.map(function (e) { return { zone: e.name, ton: r(e.ton) }; }),
+    };
+  }
+  return out;
+}
+
+/** เรียก Claude Messages API — คืนข้อความ หรือ null ถ้าไม่มีคีย์/เรียกไม่สำเร็จ */
+function callClaude_(system, userText) {
+  const key = prop_('ANTHROPIC_API_KEY', '');
+  if (!key) return null;
+  const res = UrlFetchApp.fetch(AI_API_URL, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2026-10-21',
+      'anthropic-beta': 'server-side-fallback-2026-07-01',
+    },
+    payload: JSON.stringify({
+      model: prop_('AI_MODEL', AI_MODEL),
+      max_tokens: 16000,
+      output_config: { effort: 'low' },
+      fallbacks: 'default',
+      system: system,
+      messages: [{ role: 'user', content: userText }],
+    }),
+    muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code !== 200) {
+    console.error('Claude API ' + code + ': ' + res.getContentText());
+    return null;
+  }
+  const body = JSON.parse(res.getContentText());
+  if (body.stop_reason === 'refusal') {
+    console.warn('Claude refused: ' + JSON.stringify(body.stop_details || {}));
+    return null;
+  }
+  const text = (body.content || []).filter(function (b) { return b.type === 'text'; })
+    .map(function (b) { return b.text; }).join('\n').trim();
+  return text || null;
+}
+
+function hashString_(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + '_' + s.length;
+}
+
+/** บทวิเคราะห์ยอดจาก AI (cache ตามข้อมูลชุดเดียวกัน 6 ชม.) */
+function aiSalesComment_(snap) {
+  if (!snap || snap.source !== 'sheet' || !prop_('ANTHROPIC_API_KEY', '')) return null;
+  const payload = JSON.stringify(aiSalesPayload_(snap));
+  const cache = CacheService.getScriptCache();
+  const key = 'ai_sales_' + hashString_(payload);
+  const hit = cache.get(key);
+  if (hit) return hit;
+  let text = null;
+  try {
+    text = callClaude_(AI_SYSTEM_PROMPT, 'ข้อมูลยอดขาย (JSON):\n' + payload);
+  } catch (e) {
+    console.error('AI: ' + (e && e.message || e));
+  }
+  if (!text) return null;
+  const msg = '🤖 วิเคราะห์โดย AI\n' + truncate_(text, 3000);
+  cache.put(key, msg, 21600);
+  return msg;
 }
 
 // ---------- Birthdays.gs ----------
@@ -2116,7 +2251,7 @@ function morningBrief() {
   const now = now_();
   const messages = [];
   if (flag_('BRIEF_ENABLED') && isWorkDay_(now)) {
-    importSalesHourly(); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ
+    importSalesQuietly_(false); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ (ยอดอยู่ในสรุปเช้าแล้ว)
     messages.push(buildMorningBrief_(now));
   }
   // วันเกิดลูกค้า: แจ้งทุกวันรวมวันหยุด เป็นบับเบิลแยก (push ครั้งเดียว ไม่เปลืองโควตาเพิ่ม)
@@ -2333,7 +2468,11 @@ function runCommand_(p, ctx) {
       return 'chat: ' + chatId_(ctx.source) + '\nuser: ' + (ctx.source.userId || '-');
 
     case 'sales': {
-      if (!p.argText) return formatSales_(getSalesSnapshot_(), null);
+      if (!p.argText) {
+        const all = getSalesSnapshot_();
+        const ai = aiSalesComment_(all);
+        return ai ? [formatSales_(all, null), ai] : formatSales_(all, null);
+      }
       let snap;
       try { snap = getSalesSnapshot_(); } catch (e) { return null; }
       const team = findTeam_(snap, p.argText);
@@ -2351,6 +2490,13 @@ function runCommand_(p, ctx) {
           found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
       }
       return null;
+    }
+
+    case 'aisales': {
+      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI — ใส่ ANTHROPIC_API_KEY ใน Script Properties';
+      const snap = getSalesSnapshot_();
+      if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
+      return aiSalesComment_(snap) || 'AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้ง';
     }
 
     case 'birthday':
@@ -2375,7 +2521,12 @@ function runCommand_(p, ctx) {
       const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
       if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้';
       const r = importSalesFromDrive_(true, asOf);
-      return r.skipped ? 'ℹ️ ' + r.message : r.message;
+      if (r.skipped) return 'ℹ️ ' + r.message;
+      const snap = getSalesSnapshot_();
+      const out = [r.message, formatSales_(snap, null)];
+      const ai = aiSalesComment_(snap);
+      if (ai) out.push(ai);
+      return out;
     }
 
     case 'tasks':
@@ -2494,6 +2645,7 @@ const HELP_TEXT = [
   '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
   '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
+  '• วิเคราะห์ — ให้ AI สรุปยอดและข้อแนะนำ',
   '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
   '📋 งานติดตาม',

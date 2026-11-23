@@ -553,4 +553,58 @@ test('วันเกิด: คำสั่ง วันเกิด / วั�
   assert.strictEqual(bot.say('วันเกิด ใครครับ'), null);
 });
 
+// ---------- รายงานเอง + AI ----------
+test('มีไฟล์ใหม่ → บอทส่งรายงานเข้ากลุ่มเอง (ครั้งเดียวต่อไฟล์) และทุกเขตมีสปีดที่ต้องทำ', () => {
+  const bot = mtdBot();
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.pushes().length, 1);
+  const t = bot.pushes()[0].body.messages[0].text;
+  assert.match(t, /🏢 รวมทุกเขต/);
+  assert.match(t, /📍 F1[\s\S]*ต้องทำ [\d.,]+ ตัน\/วัน/);
+  assert.match(t, /📍 F3[\s\S]*ต้องทำ [\d.,]+ ตัน\/วัน/);
+  assert.strictEqual(bot.pushes()[0].body.messages.length, 1, 'ไม่มีคีย์ AI ต้องไม่มีบทวิเคราะห์');
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.pushes().length, 1, 'ไฟล์เดิมไม่ส่งซ้ำ');
+  bot.props.AUTO_REPORT = 'false';
+  bot.driveFiles.push({ id: 'd19', name: 'data_19.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    table: mtdTable(), updated: D(2026, 11, 19, 9) });
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.pushes().length, 1, 'ปิด AUTO_REPORT แล้วต้องไม่ส่ง');
+});
+
+test('AI: ใส่คีย์แล้วรายงานมีบทวิเคราะห์ / cache / ไม่ส่งชื่อลูกค้า / refusal ข้ามไป', () => {
+  const bot = mtdBot();
+  bot.props.ANTHROPIC_API_KEY = 'sk-test';
+  bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• F3 ต้องเร่งอีก 20 ตัน/วัน' }] } });
+  const imp = bot.say('อัปเดตยอด');
+  assert.match(imp, /นำเข้ายอดสะสม[\s\S]*🏢 รวมทุกเขต[\s\S]*🤖 วิเคราะห์โดย AI\n• F3 ต้องเร่งอีก 20 ตัน\/วัน/);
+  assert.strictEqual(bot.aiCalls.length, 1);
+  const call = bot.aiCalls[0];
+  assert.strictEqual(call.body.model, 'claude-opus-5-5');
+  assert.strictEqual(call.body.fallbacks, 'default');
+  assert.strictEqual(call.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+  assert.strictEqual(call.headers['x-api-key'], 'sk-test');
+  const sent = JSON.stringify(call.body);
+  assert.match(sent, /F3/);
+  assert.doesNotMatch(sent, /ร้านบุญสว่าง|วุฒิชัย/);
+  assert.match(bot.say('ยอด'), /🤖 วิเคราะห์โดย AI/);
+  assert.match(bot.say('วิเคราะห์'), /^🤖 วิเคราะห์โดย AI/);
+  assert.strictEqual(bot.aiCalls.length, 1, 'ข้อมูลชุดเดิมใช้ cache ไม่เรียก AI ซ้ำ');
+
+  const r2 = mtdBot();
+  r2.props.ANTHROPIC_API_KEY = 'sk-test';
+  r2.setAiResponse({ body: { stop_reason: 'refusal', content: [] } });
+  r2.say('อัปเดตยอด');
+  assert.doesNotMatch(r2.say('ยอด'), /🤖/);
+  r2.setAiResponse({ status: 500, body: { error: 'x' } });
+  assert.match(r2.say('วิเคราะห์'), /AI วิเคราะห์ไม่สำเร็จ/);
+});
+
+test('AI: ไม่มีคีย์ → คำสั่งวิเคราะห์บอกวิธีเปิด และไม่เรียก API', () => {
+  const bot = mtdBot();
+  bot.say('อัปเดตยอด');
+  assert.match(bot.say('วิเคราะห์'), /ANTHROPIC_API_KEY/);
+  assert.strictEqual(bot.aiCalls.length, 0);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

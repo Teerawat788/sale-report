@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
 const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Store', 'Tasks', 'Weekly',
-  'Calendar', 'Sales', 'SalesData', 'Birthdays', 'Schedule', 'Main'];
+  'Calendar', 'Sales', 'SalesData', 'Ai', 'Birthdays', 'Schedule', 'Main'];
 
 function makeSheet(name) {
   const data = [];
@@ -62,6 +62,8 @@ function createBot(opts = {}) {
     insertSheet: (n) => (sheets[n] = makeSheet(n)),
     getSheets: () => Object.values(sheets),
   };
+  const aiCalls = [];
+  let aiResponse = opts.aiResponse || { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• ทดสอบบทวิเคราะห์' }] } };
   const driveFiles = []; // { id, name, mime, content (string | 2D array), updated: Date }
   const fileObj = (f) => ({
     getId: () => f.id, getName: () => f.name, getMimeType: () => f.mime,
@@ -137,6 +139,11 @@ function createBot(opts = {}) {
           driveFiles.push({ id, name: JSON.parse(o.payload).name, mime: 'application/vnd.google-apps.spreadsheet', content: src.table, updated: new Date() });
           return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) };
         }
+        if (url.startsWith('https://api.anthropic.com')) {
+          aiCalls.push({ url, headers: o.headers, body: JSON.parse(o.payload) });
+          const r = typeof aiResponse === 'function' ? aiResponse() : aiResponse;
+          return { getResponseCode: () => r.status || 200, getContentText: () => JSON.stringify(r.body) };
+        }
         if (url.startsWith('https://api.line.me')) {
           const call = { url, method: o.method, body: o.payload ? JSON.parse(o.payload) : null };
           lineCalls.push(call);
@@ -155,7 +162,8 @@ function createBot(opts = {}) {
   ctx.now_ = () => new Date(now.getTime());
 
   return {
-    ctx, props, sheets, events, lineCalls, triggers, driveFiles,
+    ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls,
+    setAiResponse(r) { aiResponse = r; },
     setNow(d) { now = d; },
     setDashboard(d) { dashboard = d; },
     /** จำลองข้อความจากกลุ่ม คืนข้อความที่บอทตอบ (string) หรือ null */
