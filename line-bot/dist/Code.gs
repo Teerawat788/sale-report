@@ -2172,9 +2172,9 @@ function customerNames_(snap) {
 }
 
 /** รายชื่อลูกค้าเดือนล่าสุด (cache 6 ชม. ล้างทุกครั้งที่นำเข้าไฟล์) — ใช้เช็กข้อความในกลุ่มแบบเร็ว */
-function customerIndex_() {
+function customerIndex_(force) {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get(CUSTOMER_INDEX_KEY);
+  const hit = force ? null : cache.get(CUSTOMER_INDEX_KEY);
   if (hit) return JSON.parse(hit);
   let names = [];
   let sales = [];
@@ -2198,7 +2198,7 @@ function customerIndex_() {
 function salesIndex_() {
   const hit = CacheService.getScriptCache().get(SALES_INDEX_KEY);
   if (hit) return JSON.parse(hit);
-  customerIndex_();
+  customerIndex_(true); // รายชื่อลูกค้ายังอยู่ใน cache แต่รายชื่อเซลส์ไม่มี → สร้างใหม่ทั้งคู่
   const again = CacheService.getScriptCache().get(SALES_INDEX_KEY);
   return again ? JSON.parse(again) : [];
 }

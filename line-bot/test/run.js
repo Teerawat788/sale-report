@@ -1174,4 +1174,16 @@ test('กลุ่มอื่นที่มีน้องขุนศึก: 
   assert.strictEqual(bot.say('ยอดขาย', { groupId: 'Cteam2' }), null);
 });
 
+test('ชื่อเซลส์: ใช้ได้แม้ cache รายชื่อลูกค้ามีอยู่ก่อนแล้ว (อัปเดตจากเวอร์ชันเก่า)', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head, ['วิภา ทดสอบ', 'TFM Fish4 Central', 'วิภา ทดสอบ', 'TFM Fish4 Central', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 30]];
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
+  bot.say('ร้านทดสอบหนึ่ง', { groupId: 'Cmain' }); // สร้าง cache
+  const cache = bot.ctx.CacheService.getScriptCache();
+  cache.remove('sales_index_v1'); // จำลองเวอร์ชันเก่าที่ยังไม่มีรายชื่อเซลส์
+  assert.ok(cache.get('cust_index_v1'));
+  assert.match(bot.say('วิภา', { groupId: 'Cteam2' }), /👤 วิภา ทดสอบ · F4/);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
