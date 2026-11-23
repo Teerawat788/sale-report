@@ -1,36 +1,67 @@
 /**
- * งานตั้งเวลา: สรุปเช้า, เตือนก่อนนัด, สรุปประจำสัปดาห์
- * รัน setupTriggers() ครั้งเดียวหลังติดตั้ง (หรือทุกครั้งที่เปลี่ยนเวลา)
+ * งานตั้งเวลา
+ *  - tick() ทุก 5 นาที: ข้อความเช้า (MORNING_TIME, วัน MORNING_DAYS) + แจ้งเตือนตามแท็บ "แจ้งเตือน"
+ *  - importSalesHourly() ทุกชั่วโมง: ดึงไฟล์ยอดจากโฟลเดอร์ Drive
+ * รัน setupTriggers() ครั้งเดียวหลังติดตั้ง/อัปเดต
  */
 
 function setupTriggers() {
-  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview', 'importSalesHourly'];
+  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview', 'importSalesHourly', 'tick'];
   setupSalesSheets();
+  setupReminders();
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (handlers.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
-  const hour = Number(prop_('MORNING_HOUR', CONFIG.MORNING_HOUR));
-  ScriptApp.newTrigger('morningBrief').timeBased().everyDays(1).atHour(hour).nearMinute(0).create();
-  ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY)
-    .atHour(CONFIG.REVIEW_HOUR).create();
-  ScriptApp.newTrigger('eventReminder').timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger('tick').timeBased().everyMinutes(5).create();
   ScriptApp.newTrigger('importSalesHourly').timeBased().everyHours(1).create();
-  console.log('ตั้ง trigger แล้ว: สรุปเช้า ' + hour + ':00, สรุปสัปดาห์ ศุกร์ ' + CONFIG.REVIEW_HOUR + ':00, เตือนนัดทุก 10 นาที, นำเข้ายอด Power BI ทุกชั่วโมง');
+  console.log('ตั้ง trigger แล้ว: ข้อความเช้า ' + prop_('MORNING_TIME', '07:30') + ' (จ.–ส.), แจ้งเตือนตามแท็บ "แจ้งเตือน", นำเข้าไฟล์ยอดทุกชั่วโมง');
 }
 
 function isWorkDay_(d) {
   return String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number).indexOf(d.getDay()) >= 0;
 }
 
-/** Trigger: ทุกเช้า (วันทำงาน) */
-function morningBrief() {
+/** Trigger: ทุก 5 นาที */
+function tick() {
   const now = now_();
+  try { runMorning_(now); } catch (e) { console.error('ข้อความเช้า: ' + (e && e.message || e)); }
+  try { runReminders_(now); } catch (e) { console.error('แจ้งเตือน: ' + (e && e.message || e)); }
+}
+
+/** ส่งข้อความเช้าวันละครั้ง เมื่อถึง MORNING_TIME (ค่าเริ่มต้น 07:30) ในวัน MORNING_DAYS (จ.–ส.) */
+function runMorning_(now) {
+  const days = String(prop_('MORNING_DAYS', '1,2,3,4,5,6')).split(',').map(Number);
+  if (days.indexOf(now.getDay()) < 0) return false;
+  const clock = parseClock_(prop_('MORNING_TIME', '07:30')) || { h: 7, m: 30 };
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), clock.h, clock.m);
+  if (now < at || now - at > 3 * 3600000) return false;
+  const key = fmtDate_(now) + ' ' + now.getFullYear();
+  if (prop_('LAST_MORNING', '') === key) return false;
+  setProp_('LAST_MORNING', key);
+  return morningBrief();
+}
+
+/** ข้อความเช้า: ยอดขาย (รวม + F1–F5) + วันเกิดลูกค้า — ส่งเข้ากลุ่มหลักครั้งเดียว */
+function morningBrief() {
+  const messages = buildMorningMessages_(now_());
+  if (!messages.length) return false;
+  linePush_(prop_('GROUP_ID', ''), messages);
+  return true;
+}
+
+function buildMorningMessages_(now) {
   const messages = [];
-  if (flag_('BRIEF_ENABLED') && isWorkDay_(now)) {
-    importSalesQuietly_(false); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ (ยอดอยู่ในสรุปเช้าแล้ว)
-    messages.push(buildMorningBrief_(now));
+  if (flag_('BRIEF_ENABLED')) {
+    importSalesQuietly_(false); // ใช้ไฟล์ล่าสุดในโฟลเดอร์ (ถ้ามี)
+    try {
+      const snap = getSalesSnapshot_();
+      messages.push('☀️ สวัสดีตอนเช้าครับ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
+      const ai = aiSalesComment_(snap);
+      if (ai) messages.push(ai);
+    } catch (e) {
+      console.error('ยอดเช้า: ' + (e && e.message || e));
+    }
   }
-  // วันเกิดลูกค้า: แจ้งทุกวันรวมวันหยุด เป็นบับเบิลแยก (push ครั้งเดียว ไม่เปลืองโควตาเพิ่ม)
   if (flag_('BIRTHDAY_ENABLED')) {
     try {
       const bd = buildBirthdayAlert_(now);
@@ -39,7 +70,7 @@ function morningBrief() {
       console.error('วันเกิด: ' + (e && e.message || e));
     }
   }
-  if (messages.length) linePush_(prop_('GROUP_ID', ''), messages);
+  return messages;
 }
 
 /** Trigger: ทุกศุกร์บ่าย */

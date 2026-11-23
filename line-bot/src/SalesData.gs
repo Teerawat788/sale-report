@@ -445,7 +445,7 @@ function importSalesQuietly_(report) {
 /** มีไฟล์ยอดใหม่เข้ามา → ส่งรายงาน (+ บทวิเคราะห์ AI ถ้ามีคีย์) เข้ากลุ่มเอง */
 function autoReportSales_() {
   const groupId = prop_('GROUP_ID', '');
-  if (!groupId || !flag_('AUTO_REPORT')) return;
+  if (!groupId || !flag_('AUTO_REPORT', false)) return;
   const snap = getSalesSnapshot_();
   if (snap.source !== 'sheet') return;
   const messages = [formatSales_(snap, null)];

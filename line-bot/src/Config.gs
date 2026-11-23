@@ -14,7 +14,9 @@
  *  REMIND_BEFORE_MIN          เตือนก่อนนัดกี่นาที (ค่าเริ่มต้น 30)
  *  BIRTHDAY_SHEET_ID          Google Sheet วันเกิดลูกค้า (แจ้งทุกเช้า)
  *  BIRTHDAY_DAYS_AHEAD        แจ้งล่วงหน้ากี่วัน (ค่าเริ่มต้น 7) / BIRTHDAY_ENABLED true|false
- *  AUTO_REPORT                true|false ส่งรายงานยอดเข้ากลุ่มเองเมื่อมีไฟล์ใหม่ (ค่าเริ่มต้น true)
+ *  MORNING_TIME / MORNING_DAYS ข้อความเช้า (ค่าเริ่มต้น 07:30 / 1,2,3,4,5,6 = จ.–ส.)
+ *  UPLOAD_GROUP_ID            กลุ่มสำหรับส่งไฟล์ยอด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")
+ *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิดบทวิเคราะห์ยอดด้วย AI (Claude)
  *  IMPORT_FOLDER_ID           โฟลเดอร์ Google Drive ที่วางไฟล์ export จาก Power BI
  *  HOLIDAYS                   วันหยุดที่ไม่นับเป็นวันทำงาน เช่น 5/12,10/12,31/12

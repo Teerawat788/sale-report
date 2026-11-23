@@ -155,38 +155,6 @@ test('งานประจำสัปดาห์: เพิ่ม/เช็�
   assert.match(bot.say('ประจำ'), /ทำแล้ว 0\/2/);
 });
 
-test('สรุปเช้า (วันจันทร์มีแผนสัปดาห์) และสรุปสัปดาห์ ส่งเข้ากลุ่ม', () => {
-  const bot = createBot({ dashboard, now: D(2026, 11, 23, 7) });
-  bot.say('ลงทะเบียน');
-  bot.say('งาน+ ส่งใบเสนอราคา วันนี้');
-  bot.say('งาน+ โทรตามลูกค้า พฤหัส');
-  bot.say('ประจำ+ จันทร์ ส่งรายงาน');
-  bot.say('นัด+ วันนี้ 10:00 ประชุมเช้า');
-  bot.ctx.morningBrief();
-  const brief = bot.pushes()[0];
-  assert.strictEqual(brief.body.to, 'Cgroup1');
-  const text = brief.body.messages[0].text;
-  assert.match(text, /สวัสดีตอนเช้า.*จันทร์ 23 พ\.ย\. 2569/);
-  assert.match(text, /แผนสัปดาห์นี้[\s\S]*ส่งรายงาน/);
-  assert.match(text, /10:00–11:00 ประชุมเช้า/);
-  assert.match(text, /ส่งใบเสนอราคา/);
-  assert.doesNotMatch(text, /โทรตามลูกค้า/);
-  assert.match(text, /📊 ยอด 538\.84/);
-
-  bot.setNow(D(2026, 11, 22, 7)); // อาทิตย์ = ไม่ใช่วันทำงาน
-  bot.ctx.morningBrief();
-  assert.strictEqual(bot.pushes().length, 1);
-
-  bot.setNow(D(2026, 11, 27, 16));
-  bot.say('เสร็จ 1');
-  bot.ctx.weeklyReview();
-  const review = bot.pushes()[1].body.messages[0].text;
-  assert.match(review, /สรุปประจำสัปดาห์ จ\. 23 พ\.ย\. – อา\. 29 พ\.ย\./);
-  assert.match(review, /ปิดงานสัปดาห์นี้ 1 งาน\n• #1 ส่งใบเสนอราคา/);
-  assert.match(review, /งานค้าง 1 งาน \(เลยกำหนด 1\)/);
-  assert.match(review, /งานประจำ ทำแล้ว 0\/1/);
-});
-
 test('เตือนก่อนนัด ครั้งเดียวต่อนัด', () => {
   const bot = createBot({ now: D(2026, 11, 19, 13, 40) });
   bot.say('ลงทะเบียน');
@@ -199,13 +167,12 @@ test('เตือนก่อนนัด ครั้งเดียวต่�
   assert.doesNotMatch(bot.pushes()[0].body.messages[0].text, /ประชุม/);
 });
 
-test('ปิดการแจ้งเตือนด้วย Script Properties และตั้ง trigger', () => {
-  const bot = createBot({ props: { BRIEF_ENABLED: 'false', GROUP_ID: 'Cgroup1' } });
-  bot.ctx.morningBrief();
-  assert.strictEqual(bot.pushes().length, 0);
+test('ตั้ง trigger: tick ทุก 5 นาที + นำเข้าไฟล์ทุกชั่วโมง (ไม่มีเตือนนัด/สรุปสัปดาห์)', () => {
+  const bot = createBot({ props: { GROUP_ID: 'Cgroup1' } });
   bot.ctx.setupTriggers();
   bot.ctx.setupTriggers();
-  assert.deepStrictEqual(bot.triggers.map((t) => t.fn).sort(), ['eventReminder', 'importSalesHourly', 'morningBrief', 'weeklyReview']);
+  assert.deepStrictEqual(bot.triggers.map((t) => t.fn).sort(), ['importSalesHourly', 'tick']);
+  assert.ok(bot.sheets['แจ้งเตือน'], 'สร้างแท็บแจ้งเตือน');
 });
 
 test('ข้อความยาวถูกแบ่งเป็นหลายบับเบิล', () => {
@@ -306,15 +273,28 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.strictEqual(bot.say('ยอด ใครไม่รู้'), null);
 });
 
-test('สรุปเช้านำเข้าไฟล์ใหม่อัตโนมัติ และแสดงยอดวันล่าสุด + ท็อปเซลส์', () => {
-  const bot = pbiBot();
-  bot.ctx.morningBrief();
+test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไฟล์ใหม่ + ยอดรวมและรายเขต, ไม่มีนัด/งาน, ส่งวันละครั้ง, อาทิตย์ไม่ส่ง', () => {
+  const bot = pbiBot(); // พ.ย. 20 (ศุกร์) 09:00, มีไฟล์ใหม่ในโฟลเดอร์
+  bot.say('งาน+ ส่งใบเสนอราคา วันนี้');
+  bot.say('นัด+ วันนี้ 10:00 ประชุมเช้า');
+  bot.setNow(D(2026, 11, 20, 7, 25));
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 0, 'ก่อน 7:30 ยังไม่ส่ง');
+  bot.setNow(D(2026, 11, 20, 7, 31));
+  bot.ctx.tick();
+  bot.setNow(D(2026, 11, 20, 7, 36));
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 1, 'ส่งครั้งเดียวต่อวัน');
   const text = bot.pushes()[0].body.messages[0].text;
-  assert.match(text, /📊 ยอดถึง พฤ\. 19 พ\.ย\. \(วันทำงาน 16\/25\)\nตัน 63\.00 \(9\.0%\)/);
-  assert.match(text, /วันที่ พฤ\. 19 พ\.ย\. 28\.00 ตัน · 0\.56 ล้านบาท · ท็อป: วิทย์ รักงาน 20\.0/);
-  bot.setNow(D(2026, 11, 20, 16));
-  bot.ctx.weeklyReview();
-  assert.match(bot.pushes()[1].body.messages[0].text, /ท็อปเซลส์เดือนนี้\n1\. วิทย์ รักงาน/);
+  assert.match(text, /^☀️ สวัสดีตอนเช้าครับ — ศุกร์ 20 พ\.ย\. 2569\n\n📊 ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
+  assert.match(text, /🏢 รวมทุกเขต[\s\S]*📍 F4[\s\S]*📍 F5/);
+  assert.doesNotMatch(text, /ประชุมเช้า|ใบเสนอราคา|นัด|งานค้าง/);
+  bot.setNow(D(2026, 11, 22, 7, 31)); // อาทิตย์
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 1, 'วันอาทิตย์ไม่ส่ง');
+  bot.setNow(D(2026, 11, 23, 7, 32)); // จันทร์
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 2);
 });
 
 test('ไม่มี SalesData: คำสั่งยอดรายวันแนะนำวิธีตั้งค่า', () => {
@@ -345,7 +325,7 @@ test('รายงานรวม + แยก F1–F5: ตันและบา�
   assert.ok(r.indexOf('📍 F1') < r.indexOf('📍 F2') && r.indexOf('📍 F4') < r.indexOf('📍 F5'));
   for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📍 F4 🟢[\s\S]*ต้องทำ 22\.22 ตัน\/วัน ✅/);
   assert.match(bot.say('ยอดเมื่อวาน'), /81\.00 ตัน · 1\.74 ล้านบาท\n• F1 20\.00 ตัน · 0\.43 ล้านบาท/);
-  assert.match(bot.say('สรุปเช้า'), /F1 100% 🟢 · F2 94% 🔴 · F3 100% 🟢 · F4 104% 🟢 · F5 90% 🔴/);
+  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*📍 F4 🟢/);
 });
 
 test('Targets แท็บเก่า (4 คอลัมน์) ได้หัวคอลัมน์ "เป้า (ล้านบาท)" เพิ่ม', () => {
@@ -521,26 +501,24 @@ test('วันเกิด: แจ้งทุกเช้า 7 วันข้
   assert.ok(t.indexOf('ฟาร์มภูเขียว') < t.indexOf('จิดาภาฟาร์ม'));
 });
 
-test('วันเกิด: วันอาทิตย์ก็แจ้ง / ไม่มีใครเกิดก็ไม่ส่ง / ส่งพร้อมสรุปเช้าในครั้งเดียว', () => {
-  const sun = bdBot(D(2026, 11, 22, 7), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true' });
-  sun.ctx.morningBrief();
-  assert.strictEqual(sun.pushes().length, 1);
-  assert.match(sun.pushes()[0].body.messages[0].text, /^🎂 วันเกิดลูกค้า/);
+test('วันเกิด: ส่งพร้อมข้อความเช้าในครั้งเดียว / อาทิตย์ไม่ส่ง / ไม่มีใครเกิดก็ไม่มีบับเบิลวันเกิด', () => {
+  const sun = bdBot(D(2026, 11, 22, 7, 31), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true' });
+  sun.ctx.tick();
+  assert.strictEqual(sun.pushes().length, 0);
 
-  const mon = bdBot(D(2026, 11, 23, 7), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true' });
-  mon.ctx.morningBrief();
+  const mon = bdBot(D(2026, 11, 23, 7, 31), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true', DASHBOARD_URL: 'x' });
+  mon.setDashboard(dashboard);
+  mon.ctx.tick();
   assert.strictEqual(mon.pushes().length, 1);
   const m = mon.pushes()[0].body.messages;
   assert.strictEqual(m.length, 2);
   assert.match(m[0].text, /สวัสดีตอนเช้า/);
   assert.match(m[1].text, /^🎂 วันเกิดลูกค้า/);
 
-  const quiet = bdBot(D(2026, 4, 1, 7), { BIRTHDAY_SHEET_ID: 'sheet' });
-  quiet.ctx.morningBrief();
-  assert.strictEqual(quiet.pushes().length, 0);
-  const off = bdBot(D(2026, 11, 23, 7), { BIRTHDAY_SHEET_ID: 'sheet', BIRTHDAY_ENABLED: 'false' });
-  off.ctx.morningBrief();
-  assert.strictEqual(off.pushes().length, 0);
+  const quiet = bdBot(D(2026, 4, 1, 9), { BIRTHDAY_SHEET_ID: 'sheet' });
+  assert.strictEqual(quiet.ctx.buildMorningMessages_(D(2026, 4, 1, 9)).length, 0);
+  const off = bdBot(D(2026, 11, 23, 9), { BIRTHDAY_SHEET_ID: 'sheet', BIRTHDAY_ENABLED: 'false' });
+  assert.strictEqual(off.ctx.buildMorningMessages_(D(2026, 11, 23, 9)).length, 0);
 });
 
 test('วันเกิด: คำสั่ง วันเกิด / วันเกิด ส.ค. รวมลูกค้าเจ้าของเดียวกัน, 29 ก.พ.', () => {
@@ -556,6 +534,10 @@ test('วันเกิด: คำสั่ง วันเกิด / วั�
 // ---------- รายงานเอง + AI ----------
 test('มีไฟล์ใหม่ → บอทส่งรายงานเข้ากลุ่มเอง (ครั้งเดียวต่อไฟล์) และทุกเขตมีสปีดที่ต้องทำ', () => {
   const bot = mtdBot();
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.pushes().length, 0, 'ค่าเริ่มต้นไม่ส่งเข้ากลุ่มหลักเอง');
+  bot.props.AUTO_REPORT = 'true';
+  bot.props.LAST_IMPORT_KEY = '';
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 1);
   const t = bot.pushes()[0].body.messages[0].text;
@@ -690,6 +672,57 @@ test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทน�
   assert.strictEqual(bot.driveFiles.filter((f) => !f.trashed).length, 1, 'ไฟล์ที่ไม่ใช่ยอดขายถูกลบทิ้ง');
   assert.strictEqual(bot.sendFile('รูป.pdf', []), null);
   assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cother' }), null);
+});
+
+// ---------- กลุ่มอัปโหลด + แจ้งเตือนตามวัน ----------
+test('กลุ่มอัปโหลด: ส่งไฟล์ในกลุ่มเล็ก → กลุ่มใหญ่พิมพ์ยอดขายได้ข้อมูลใหม่, ไม่ push เข้ากลุ่มใหญ่', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
+  bot.ctx.setupSalesSheets();
+  assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cgroup1' }), /เป็นกลุ่มหลักอยู่แล้ว/);
+  assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cmine' }), /ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว/);
+  assert.strictEqual(bot.props.UPLOAD_GROUP_ID, 'Cmine');
+  const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
+  assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24/);
+  assert.strictEqual(bot.pushes().length, 0);
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.pushes().length, 0);
+  assert.match(bot.say('ยอดขาย'), /ตัน: 504\.32/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /ตัน: 504\.32/);
+  assert.strictEqual(bot.say('ยอดขาย', { groupId: 'Cstranger' }), null);
+  assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cstranger' }), null);
+});
+
+test('แจ้งเตือนตามวัน: เสาร์ 16:00 ทุกสัปดาห์, ศุกร์เว้นศุกร์ 7:00 เริ่ม 4/12/69', () => {
+  const bot = createBot({ now: D(2026, 11, 28, 15, 0), props: { GROUP_ID: 'Cgroup1', BRIEF_ENABLED: 'false', BIRTHDAY_ENABLED: 'false' } });
+  bot.ctx.setupReminders();
+  const sh = bot.sheets['แจ้งเตือน'];
+  sh.data[2][2] = 'อย่าลืมส่งรายงานเยี่ยมลูกค้า 2 สัปดาห์ครับ';
+  const at = (d, h, m) => { bot.setNow(D(2026, d[0], d[1], h, m)); bot.ctx.tick(); return bot.pushes().map((p) => p.body.messages[0].text); };
+  assert.deepStrictEqual(at([11, 28], 15, 55), []);
+  assert.deepStrictEqual(at([11, 28], 16, 3), ['รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ']);
+  assert.strictEqual(at([11, 28], 16, 8).length, 1, 'ไม่ส่งซ้ำวันเดียวกัน');
+  assert.strictEqual(at([11, 28], 17, 30).length, 1);
+  assert.strictEqual(at([11, 29], 16, 3).length, 1, 'อาทิตย์ไม่ส่ง');
+  assert.strictEqual(at([11, 27], 7, 2).length, 1, 'ศุกร์ 27/11 ก่อนวันเริ่ม');
+  assert.strictEqual(at([12, 4], 7, 2).length, 2, 'ศุกร์ 4/12 ส่ง');
+  assert.strictEqual(at([12, 11], 7, 2).length, 2, 'ศุกร์ 11/12 เว้น');
+  assert.strictEqual(at([12, 18], 7, 2).length, 3, 'ศุกร์ 18/12 ส่ง');
+  assert.match(bot.pushes()[2].body.messages[0].text, /รายงานเยี่ยมลูกค้า/);
+  assert.match(sh.data[2][6], /^ส่งแล้ว/);
+});
+
+test('แจ้งเตือน: ข้อความยังไม่กรอกไม่ส่ง, ปิดได้, วันแบบช่วง จ-ส', () => {
+  const { ctx } = createBot();
+  assert.deepStrictEqual(Array.from(ctx.parseReminderDays_('จ-ส')), [1, 2, 3, 4, 5, 6]);
+  assert.deepStrictEqual(Array.from(ctx.parseReminderDays_('จ,พ,ศ')), [1, 3, 5]);
+  assert.deepStrictEqual(Array.from(ctx.parseReminderDays_('ทุกวัน')), [0, 1, 2, 3, 4, 5, 6]);
+  const bot = createBot({ now: D(2026, 12, 4, 7, 2), props: { GROUP_ID: 'Cgroup1', BRIEF_ENABLED: 'false', BIRTHDAY_ENABLED: 'false' } });
+  bot.ctx.setupReminders();
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 0, 'ข้อความศุกร์ยังเป็นตัวอย่าง ไม่ส่ง');
+  bot.sheets['แจ้งเตือน'].data.push(['จ-ส', '07:00', 'ทดสอบ', 1, '', false, '']);
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 0, 'ใช้งาน = FALSE ไม่ส่ง');
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

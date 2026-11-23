@@ -42,7 +42,9 @@ function handleEvent_(ev) {
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
-  const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') && chatId_(source) !== registered;
+  const uploadGroup = prop_('UPLOAD_GROUP_ID', '');
+  const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') &&
+    chatId_(source) !== registered && chatId_(source) !== uploadGroup;
 
   // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
   if (ev.message.type === 'file') {
@@ -65,8 +67,7 @@ function handleEvent_(ev) {
 
   // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
   const isGroupChat = source.type === 'group' || source.type === 'room';
-  if (registered && isGroupChat && chatId_(source) !== registered &&
-      parsed.cmd !== 'whoami' && parsed.cmd !== 'register') return;
+  if (inOtherGroup && parsed.cmd !== 'whoami' && parsed.cmd !== 'register' && parsed.cmd !== 'registerupload') return;
 
   const ctx = {
     now: now_(),
@@ -97,6 +98,15 @@ function runCommand_(p, ctx) {
       if (current) return '⚠️ บอทลงทะเบียนกับกลุ่มอื่นอยู่แล้ว — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อน';
       setProp_('GROUP_ID', id);
       return '✅ ลงทะเบียนกลุ่มนี้แล้ว บอทจะส่งสรุปเช้า เตือนนัด และสรุปสัปดาห์เข้ากลุ่มนี้\nพิมพ์ "เมนู" เพื่อดูคำสั่ง';
+    }
+
+    case 'registerupload': {
+      const id = chatId_(ctx.source);
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอด';
+      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อน (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
+      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้ว — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับบอท';
+      setProp_('UPLOAD_GROUP_ID', id);
+      return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว\nส่งไฟล์ Excel ยอดขายที่นี่ → บอทอัปเดตข้อมูล (ไม่ส่งอะไรเข้ากลุ่มหลัก)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุด';
     }
 
     case 'whoami':
@@ -252,8 +262,10 @@ function runCommand_(p, ctx) {
       return w ? '🗑️ ลบงานประจำ #' + w.id + ' ' + w.text : 'ไม่พบงานประจำนี้';
     }
 
-    case 'brief':
-      return buildMorningBrief_(now);
+    case 'brief': {
+      const msgs = buildMorningMessages_(now);
+      return msgs.length ? msgs : 'ไม่มีข้อความเช้า (ปิดอยู่)';
+    }
 
     case 'review':
       return buildWeeklyReview_(now);
@@ -277,31 +289,13 @@ const HELP_TEXT = [
   '🤖 คำสั่งบอททีมขาย',
   '',
   '📊 ยอดขาย',
-  '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
-  '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
-  '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
-  '• วิเคราะห์ — ให้ AI สรุปยอดและข้อแนะนำ',
-    '• ส่งไฟล์ Excel ยอดขายเข้ากลุ่ม = อัปเดตยอดทันที',
-  '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
+  '• ยอดขาย — ยอดรวมทุกเขต + F1–F5 (ตัน, ล้านบาท, สปีด, คาดปิดเดือน)',
+  '• พิมพ์ F1–F5 = ยอดเขตนั้น | พิมพ์ชื่อลูกค้า = ยอดลูกค้า',
+  '• ยอดเมื่อวาน | ยอดเซลส์ | ยอดลูกค้า | วิเคราะห์ (AI)',
   '',
-  '📋 งานติดตาม',
-  '• งาน — งานค้างทั้งหมด | งานฉัน',
-  '• งาน+ ส่งใบเสนอราคาฟาร์ม A พรุ่งนี้ @สมชาย',
-  '• เสร็จ 3  (ปิดหลายงาน: เสร็จ 3 5)',
-  '• เลื่อน 3 ศุกร์ | ลบงาน 3',
+  '🎂 วันเกิด — ลูกค้าเกิดใน 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
   '',
-  '📅 นัด / ปฏิทิน',
-  '• วันนี้ | พรุ่งนี้ | สัปดาห์นี้',
-  '• นัด+ 25/11 14:00-15:00 เยี่ยมฟาร์มคุณสมชาย @ทีม',
+  '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',
   '',
-  '🔁 งานประจำสัปดาห์',
-  '• ประจำ — เช็กลิสต์สัปดาห์นี้',
-  '• ประจำ+ จันทร์ ส่งรายงานลูกค้าใหม่ @สมชาย',
-  '• เช็ค 2 — ติ๊กว่าทำแล้ว | ลบประจำ 2',
-  '',
-  '🎂 วันเกิด — ลูกค้าเกิด 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
-  '',
-  '☀️ สรุปเช้า | 📈 สรุปสัปดาห์',
-  '',
-  'วันที่ใช้ได้: วันนี้ พรุ่งนี้ มะรืน จันทร์…อาทิตย์ ศุกร์หน้า 25/11 25/11/69',
+  '📤 อัปเดตยอด: ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")',
 ].join('\n');

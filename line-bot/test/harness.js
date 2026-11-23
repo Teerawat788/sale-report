@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
 const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Store', 'Tasks', 'Weekly',
-  'Calendar', 'Sales', 'SalesData', 'Ai', 'Birthdays', 'Schedule', 'Main'];
+  'Calendar', 'Sales', 'SalesData', 'Ai', 'Birthdays', 'Reminders', 'Schedule', 'Main'];
 
 function makeSheet(name) {
   const data = [];

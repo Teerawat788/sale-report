@@ -17,7 +17,9 @@
  *  REMIND_BEFORE_MIN          เตือนก่อนนัดกี่นาที (ค่าเริ่มต้น 30)
  *  BIRTHDAY_SHEET_ID          Google Sheet วันเกิดลูกค้า (แจ้งทุกเช้า)
  *  BIRTHDAY_DAYS_AHEAD        แจ้งล่วงหน้ากี่วัน (ค่าเริ่มต้น 7) / BIRTHDAY_ENABLED true|false
- *  AUTO_REPORT                true|false ส่งรายงานยอดเข้ากลุ่มเองเมื่อมีไฟล์ใหม่ (ค่าเริ่มต้น true)
+ *  MORNING_TIME / MORNING_DAYS ข้อความเช้า (ค่าเริ่มต้น 07:30 / 1,2,3,4,5,6 = จ.–ส.)
+ *  UPLOAD_GROUP_ID            กลุ่มสำหรับส่งไฟล์ยอด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")
+ *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิดบทวิเคราะห์ยอดด้วย AI (Claude)
  *  IMPORT_FOLDER_ID           โฟลเดอร์ Google Drive ที่วางไฟล์ export จาก Power BI
  *  HOLIDAYS                   วันหยุดที่ไม่นับเป็นวันทำงาน เช่น 5/12,10/12,31/12
@@ -143,6 +145,7 @@ function truncate_(s, max) {
 const COMMANDS = {
   help: ['เมนู', 'คำสั่ง', 'ช่วยเหลือ', 'help', '?'],
   register: ['ลงทะเบียน', 'register'],
+  registerupload: ['กลุ่มอัปโหลด', 'ลงทะเบียนอัปโหลด'],
   whoami: ['ไอดี', 'myid'],
   sales: ['ยอด', 'สรุปยอด', 'ยอดขาย', 'sales'],
   salesday: ['ยอดเมื่อวาน', 'ยอดล่าสุด', 'ยอดรายวัน'],
@@ -171,7 +174,7 @@ const COMMANDS = {
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['help', 'register', 'registerupload', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
   'salesprod', 'aisales'];
 
@@ -1438,7 +1441,7 @@ function importSalesQuietly_(report) {
 /** มีไฟล์ยอดใหม่เข้ามา → ส่งรายงาน (+ บทวิเคราะห์ AI ถ้ามีคีย์) เข้ากลุ่มเอง */
 function autoReportSales_() {
   const groupId = prop_('GROUP_ID', '');
-  if (!groupId || !flag_('AUTO_REPORT')) return;
+  if (!groupId || !flag_('AUTO_REPORT', false)) return;
   const snap = getSalesSnapshot_();
   if (snap.source !== 'sheet') return;
   const messages = [formatSales_(snap, null)];
@@ -2408,40 +2411,160 @@ function birthdayCommand_(arg, now) {
   return formatBirthdays_('🎂 วันเกิดลูกค้า เดือน ' + TH_MONTHS_SHORT[month - 1], entries, today, 'ไม่มีวันเกิดในเดือนนี้');
 }
 
+// ---------- Reminders.gs ----------
+/**
+ * ข้อความแจ้งเตือนตามวัน/เวลา (แก้ได้ในแท็บ "แจ้งเตือน" ของชีทบอท)
+ *
+ * คอลัมน์: วัน | เวลา | ข้อความ | ทุกกี่สัปดาห์ | เริ่มวันที่ | ใช้งาน | ส่งล่าสุด
+ *  - วัน: จ อ พ พฤ ศ ส อา, หลายวันคั่นด้วย , (เช่น จ,พ,ศ), ช่วง จ-ส, หรือ ทุกวัน
+ *  - เวลา: 16:00
+ *  - ทุกกี่สัปดาห์: 1 = ทุกสัปดาห์, 2 = เว้นสัปดาห์ (นับจาก "เริ่มวันที่")
+ *  - ใช้งาน: TRUE / FALSE
+ * บอทเช็กทุก 5 นาที จึงส่งช้ากว่าเวลาที่ตั้งได้ไม่เกิน ~5 นาที และส่งวันละครั้งต่อแถว
+ */
+
+const REMINDER_SHEET = 'แจ้งเตือน';
+const REMINDER_HEADERS = ['วัน', 'เวลา', 'ข้อความ', 'ทุกกี่สัปดาห์', 'เริ่มวันที่', 'ใช้งาน', 'ส่งล่าสุด'];
+const REMINDER_PLACEHOLDER = '(ใส่ข้อความที่ต้องการให้บอทส่ง)';
+const REMINDER_DEFAULTS = [
+  ['ส', '16:00', 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ', 1, '', true, ''],
+  ['ศ', '07:00', REMINDER_PLACEHOLDER, 2, new Date(2026, 11, 4), true, ''],
+];
+
+function setupReminders() {
+  const ss = spreadsheet_();
+  if (ss.getSheetByName(REMINDER_SHEET)) return;
+  const sh = sheet_(REMINDER_SHEET, REMINDER_HEADERS);
+  REMINDER_DEFAULTS.forEach(function (r) { sh.appendRow(r); });
+}
+
+/** "จ-ส", "จ,พ,ศ", "ทุกวัน", "ศุกร์" → [1,3,5] */
+function parseReminderDays_(v) {
+  const s = cleanText_(v).replace(/\s/g, '');
+  if (!s || s === 'ทุกวัน' || /^daily$/i.test(s)) return [0, 1, 2, 3, 4, 5, 6];
+  const out = [];
+  s.split(/[,،、]/).forEach(function (part) {
+    const range = part.split('-');
+    if (range.length === 2) {
+      const a = parseDayName_(range[0], true);
+      const b = parseDayName_(range[1], true);
+      if (a && b) {
+        for (let d = a.dow; ; d = (d + 1) % 7) { out.push(d); if (d === b.dow) break; }
+      }
+      return;
+    }
+    const d = parseDayName_(part, true);
+    if (d) out.push(d.dow);
+  });
+  return out;
+}
+
+function parseClock_(v) {
+  if (v && typeof v.getTime === 'function') return { h: v.getHours(), m: v.getMinutes() };
+  const t = parseTimeToken_(String(v || '').trim());
+  return t ? { h: t.h, m: t.m } : null;
+}
+
+/** ส่งแจ้งเตือนที่ถึงเวลา (ภายใน 1 ชม. หลังเวลาที่ตั้ง และยังไม่ส่งวันนี้) */
+function runReminders_(now) {
+  const groupId = prop_('GROUP_ID', '');
+  const sh = groupId ? spreadsheet_().getSheetByName(REMINDER_SHEET) : null;
+  if (!sh) return 0;
+  const today = startOfDay_(now);
+  const todayKey = 'ส่งแล้ว ' + fmtDate_(today) + ' ' + (today.getFullYear() + 543);
+  const values = sh.getDataRange().getValues();
+  const due = [];
+  for (let i = 1; i < values.length; i++) {
+    const v = values[i];
+    const text = cleanText_(v[2]);
+    if (!text || text === REMINDER_PLACEHOLDER) continue;
+    if (String(v[5]).toUpperCase() === 'FALSE' || v[5] === false) continue;
+    if (parseReminderDays_(v[0]).indexOf(now.getDay()) < 0) continue;
+    const clock = parseClock_(v[1]);
+    if (!clock) continue;
+    const at = new Date(today.getFullYear(), today.getMonth(), today.getDate(), clock.h, clock.m);
+    if (now < at || now - at > 3600000) continue;
+    const every = Math.max(1, Number(v[3]) || 1);
+    const start = v[4] ? parseSheetDate_(v[4], 'DMY') : null;
+    if (start && today < startOfDay_(start)) continue;
+    if (every > 1) {
+      const base = startOfWeek_(start || today);
+      const weeks = Math.round((startOfWeek_(today) - base) / (7 * 86400000));
+      if (weeks % every !== 0) continue;
+    }
+    if (cleanText_(v[6]) === todayKey) continue;
+    sh.getRange(i + 1, 7).setValue(todayKey);
+    due.push(text);
+  }
+  if (due.length) linePush_(groupId, due);
+  return due.length;
+}
+
 // ---------- Schedule.gs ----------
 /**
- * งานตั้งเวลา: สรุปเช้า, เตือนก่อนนัด, สรุปประจำสัปดาห์
- * รัน setupTriggers() ครั้งเดียวหลังติดตั้ง (หรือทุกครั้งที่เปลี่ยนเวลา)
+ * งานตั้งเวลา
+ *  - tick() ทุก 5 นาที: ข้อความเช้า (MORNING_TIME, วัน MORNING_DAYS) + แจ้งเตือนตามแท็บ "แจ้งเตือน"
+ *  - importSalesHourly() ทุกชั่วโมง: ดึงไฟล์ยอดจากโฟลเดอร์ Drive
+ * รัน setupTriggers() ครั้งเดียวหลังติดตั้ง/อัปเดต
  */
 
 function setupTriggers() {
-  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview', 'importSalesHourly'];
+  const handlers = ['morningBrief', 'eventReminder', 'weeklyReview', 'importSalesHourly', 'tick'];
   setupSalesSheets();
+  setupReminders();
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (handlers.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
-  const hour = Number(prop_('MORNING_HOUR', CONFIG.MORNING_HOUR));
-  ScriptApp.newTrigger('morningBrief').timeBased().everyDays(1).atHour(hour).nearMinute(0).create();
-  ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY)
-    .atHour(CONFIG.REVIEW_HOUR).create();
-  ScriptApp.newTrigger('eventReminder').timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger('tick').timeBased().everyMinutes(5).create();
   ScriptApp.newTrigger('importSalesHourly').timeBased().everyHours(1).create();
-  console.log('ตั้ง trigger แล้ว: สรุปเช้า ' + hour + ':00, สรุปสัปดาห์ ศุกร์ ' + CONFIG.REVIEW_HOUR + ':00, เตือนนัดทุก 10 นาที, นำเข้ายอด Power BI ทุกชั่วโมง');
+  console.log('ตั้ง trigger แล้ว: ข้อความเช้า ' + prop_('MORNING_TIME', '07:30') + ' (จ.–ส.), แจ้งเตือนตามแท็บ "แจ้งเตือน", นำเข้าไฟล์ยอดทุกชั่วโมง');
 }
 
 function isWorkDay_(d) {
   return String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number).indexOf(d.getDay()) >= 0;
 }
 
-/** Trigger: ทุกเช้า (วันทำงาน) */
-function morningBrief() {
+/** Trigger: ทุก 5 นาที */
+function tick() {
   const now = now_();
+  try { runMorning_(now); } catch (e) { console.error('ข้อความเช้า: ' + (e && e.message || e)); }
+  try { runReminders_(now); } catch (e) { console.error('แจ้งเตือน: ' + (e && e.message || e)); }
+}
+
+/** ส่งข้อความเช้าวันละครั้ง เมื่อถึง MORNING_TIME (ค่าเริ่มต้น 07:30) ในวัน MORNING_DAYS (จ.–ส.) */
+function runMorning_(now) {
+  const days = String(prop_('MORNING_DAYS', '1,2,3,4,5,6')).split(',').map(Number);
+  if (days.indexOf(now.getDay()) < 0) return false;
+  const clock = parseClock_(prop_('MORNING_TIME', '07:30')) || { h: 7, m: 30 };
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), clock.h, clock.m);
+  if (now < at || now - at > 3 * 3600000) return false;
+  const key = fmtDate_(now) + ' ' + now.getFullYear();
+  if (prop_('LAST_MORNING', '') === key) return false;
+  setProp_('LAST_MORNING', key);
+  return morningBrief();
+}
+
+/** ข้อความเช้า: ยอดขาย (รวม + F1–F5) + วันเกิดลูกค้า — ส่งเข้ากลุ่มหลักครั้งเดียว */
+function morningBrief() {
+  const messages = buildMorningMessages_(now_());
+  if (!messages.length) return false;
+  linePush_(prop_('GROUP_ID', ''), messages);
+  return true;
+}
+
+function buildMorningMessages_(now) {
   const messages = [];
-  if (flag_('BRIEF_ENABLED') && isWorkDay_(now)) {
-    importSalesQuietly_(false); // ให้สรุปเช้าใช้ไฟล์ล่าสุดเสมอ (ยอดอยู่ในสรุปเช้าแล้ว)
-    messages.push(buildMorningBrief_(now));
+  if (flag_('BRIEF_ENABLED')) {
+    importSalesQuietly_(false); // ใช้ไฟล์ล่าสุดในโฟลเดอร์ (ถ้ามี)
+    try {
+      const snap = getSalesSnapshot_();
+      messages.push('☀️ สวัสดีตอนเช้าครับ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
+      const ai = aiSalesComment_(snap);
+      if (ai) messages.push(ai);
+    } catch (e) {
+      console.error('ยอดเช้า: ' + (e && e.message || e));
+    }
   }
-  // วันเกิดลูกค้า: แจ้งทุกวันรวมวันหยุด เป็นบับเบิลแยก (push ครั้งเดียว ไม่เปลืองโควตาเพิ่ม)
   if (flag_('BIRTHDAY_ENABLED')) {
     try {
       const bd = buildBirthdayAlert_(now);
@@ -2450,7 +2573,7 @@ function morningBrief() {
       console.error('วันเกิด: ' + (e && e.message || e));
     }
   }
-  if (messages.length) linePush_(prop_('GROUP_ID', ''), messages);
+  return messages;
 }
 
 /** Trigger: ทุกศุกร์บ่าย */
@@ -2609,7 +2732,9 @@ function handleEvent_(ev) {
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
-  const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') && chatId_(source) !== registered;
+  const uploadGroup = prop_('UPLOAD_GROUP_ID', '');
+  const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') &&
+    chatId_(source) !== registered && chatId_(source) !== uploadGroup;
 
   // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
   if (ev.message.type === 'file') {
@@ -2632,8 +2757,7 @@ function handleEvent_(ev) {
 
   // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
   const isGroupChat = source.type === 'group' || source.type === 'room';
-  if (registered && isGroupChat && chatId_(source) !== registered &&
-      parsed.cmd !== 'whoami' && parsed.cmd !== 'register') return;
+  if (inOtherGroup && parsed.cmd !== 'whoami' && parsed.cmd !== 'register' && parsed.cmd !== 'registerupload') return;
 
   const ctx = {
     now: now_(),
@@ -2664,6 +2788,15 @@ function runCommand_(p, ctx) {
       if (current) return '⚠️ บอทลงทะเบียนกับกลุ่มอื่นอยู่แล้ว — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อน';
       setProp_('GROUP_ID', id);
       return '✅ ลงทะเบียนกลุ่มนี้แล้ว บอทจะส่งสรุปเช้า เตือนนัด และสรุปสัปดาห์เข้ากลุ่มนี้\nพิมพ์ "เมนู" เพื่อดูคำสั่ง';
+    }
+
+    case 'registerupload': {
+      const id = chatId_(ctx.source);
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอด';
+      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อน (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
+      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้ว — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับบอท';
+      setProp_('UPLOAD_GROUP_ID', id);
+      return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว\nส่งไฟล์ Excel ยอดขายที่นี่ → บอทอัปเดตข้อมูล (ไม่ส่งอะไรเข้ากลุ่มหลัก)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุด';
     }
 
     case 'whoami':
@@ -2819,8 +2952,10 @@ function runCommand_(p, ctx) {
       return w ? '🗑️ ลบงานประจำ #' + w.id + ' ' + w.text : 'ไม่พบงานประจำนี้';
     }
 
-    case 'brief':
-      return buildMorningBrief_(now);
+    case 'brief': {
+      const msgs = buildMorningMessages_(now);
+      return msgs.length ? msgs : 'ไม่มีข้อความเช้า (ปิดอยู่)';
+    }
 
     case 'review':
       return buildWeeklyReview_(now);
@@ -2844,31 +2979,13 @@ const HELP_TEXT = [
   '🤖 คำสั่งบอททีมขาย',
   '',
   '📊 ยอดขาย',
-  '• ยอด — สรุปยอดเดือนนี้ | ยอด fish4 | ยอด <ชื่อเซลส์>',
-  '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
-  '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
-  '• วิเคราะห์ — ให้ AI สรุปยอดและข้อแนะนำ',
-    '• ส่งไฟล์ Excel ยอดขายเข้ากลุ่ม = อัปเดตยอดทันที',
-  '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
+  '• ยอดขาย — ยอดรวมทุกเขต + F1–F5 (ตัน, ล้านบาท, สปีด, คาดปิดเดือน)',
+  '• พิมพ์ F1–F5 = ยอดเขตนั้น | พิมพ์ชื่อลูกค้า = ยอดลูกค้า',
+  '• ยอดเมื่อวาน | ยอดเซลส์ | ยอดลูกค้า | วิเคราะห์ (AI)',
   '',
-  '📋 งานติดตาม',
-  '• งาน — งานค้างทั้งหมด | งานฉัน',
-  '• งาน+ ส่งใบเสนอราคาฟาร์ม A พรุ่งนี้ @สมชาย',
-  '• เสร็จ 3  (ปิดหลายงาน: เสร็จ 3 5)',
-  '• เลื่อน 3 ศุกร์ | ลบงาน 3',
+  '🎂 วันเกิด — ลูกค้าเกิดใน 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
   '',
-  '📅 นัด / ปฏิทิน',
-  '• วันนี้ | พรุ่งนี้ | สัปดาห์นี้',
-  '• นัด+ 25/11 14:00-15:00 เยี่ยมฟาร์มคุณสมชาย @ทีม',
+  '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',
   '',
-  '🔁 งานประจำสัปดาห์',
-  '• ประจำ — เช็กลิสต์สัปดาห์นี้',
-  '• ประจำ+ จันทร์ ส่งรายงานลูกค้าใหม่ @สมชาย',
-  '• เช็ค 2 — ติ๊กว่าทำแล้ว | ลบประจำ 2',
-  '',
-  '🎂 วันเกิด — ลูกค้าเกิด 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
-  '',
-  '☀️ สรุปเช้า | 📈 สรุปสัปดาห์',
-  '',
-  'วันที่ใช้ได้: วันนี้ พรุ่งนี้ มะรืน จันทร์…อาทิตย์ ศุกร์หน้า 25/11 25/11/69',
+  '📤 อัปเดตยอด: ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")',
 ].join('\n');

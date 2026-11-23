@@ -3,6 +3,7 @@
 const COMMANDS = {
   help: ['เมนู', 'คำสั่ง', 'ช่วยเหลือ', 'help', '?'],
   register: ['ลงทะเบียน', 'register'],
+  registerupload: ['กลุ่มอัปโหลด', 'ลงทะเบียนอัปโหลด'],
   whoami: ['ไอดี', 'myid'],
   sales: ['ยอด', 'สรุปยอด', 'ยอดขาย', 'sales'],
   salesday: ['ยอดเมื่อวาน', 'ยอดล่าสุด', 'ยอดรายวัน'],
@@ -31,7 +32,7 @@ const COMMANDS = {
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['help', 'register', 'registerupload', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
   'salesprod', 'aisales'];
 
