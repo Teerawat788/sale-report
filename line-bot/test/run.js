@@ -607,4 +607,74 @@ test('AI: ไม่มีคีย์ → คำสั่งวิเครา�
   assert.strictEqual(bot.aiCalls.length, 0);
 });
 
+// ---------- ไฟล์รายเขต (Actual/Budget/Challenge/ปีก่อน ฿ + Ton) ----------
+const ZONE_HEAD = ['Area', 'PIC', 'Actual 26 (฿)', 'Budget 26 (฿)', 'Challenge 26 (฿)', 'Actual 25 (฿)', 'Budget VS ACT.',
+  'Actual 26 (Ton)', 'Budget 26 (Ton)', 'Challenge 26 (Ton)', 'Actual 25 (Ton)', 'Budget VS ACT'];
+function zoneTable(f5ton, f5amt) {
+  return [ZONE_HEAD,
+    ['TFM Fish1 North', 'Total', 3641289.61, 10901712.36, 11991883.59, 4855749.98, 0.33, 114.14, 369.3, 406.23, 155.1, 0.31],
+    ['TFM Fish5 South', 'Total', f5amt, 15638458.92, 17202304.81, 16756127.43, 0.87, f5ton, 500, 550, 521.32, 0.78],
+    ['Total', '', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [],
+    ['ตัวกรองที่ใช้:\nGroup_OEM เป็น Fish'],
+  ];
+}
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+test('ไฟล์รายเขต: ตัน + ล้านบาท, เป้าจากไฟล์, Challenge, ปีก่อน', () => {
+  const { ctx } = createBot();
+  const m = ctx.detectMetricColumns_(ZONE_HEAD);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m)),
+    { ton: 7, amount: 2, budgetTon: 8, budgetAmt: 3, challengeTon: 9, challengeAmt: 4, lastTon: 10, lastAmt: 5 });
+
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 24, 8) });
+  const imp = bot.say('อัปเดตยอด');
+  assert.match(imp, /ณ อังคาร 24 พ\.ย\. 2569\n2 แถว รวม 504\.32 ตัน/);
+  assert.match(imp, /ไฟล์รายเขต: ใช้เป้า \(Budget\) จากไฟล์/);
+  assert.doesNotMatch(imp, /ไม่มีคอลัมน์: ลูกค้า/);
+  const r = bot.say('ยอด');
+  assert.match(r, /วันทำงาน 20\/25 วัน \(เหลือ 5\)/);
+  assert.match(r, /🏢 รวมทุกเขต[^\n]*\nตัน: 504\.32 \/ 869\.30/);
+  assert.match(r, /มูลค่า: 17\.22 \/ 26\.54 ล้านบาท/);
+  assert.match(r, /🎯 Challenge: 956\.23 ตัน → คาดปิด [\d.]+% · 29\.19 ล้านบาท → คาดปิด [\d.]+%/);
+  assert.match(r, /📍 F5 🟡\nตัน: 390\.18 \/ 500\.00 \(78\.0%\)\n   สปีด 19\.51 ตัน\/วัน → ปิดเดือน 487\.73 \(97\.5%\)/);
+  const f5 = bot.say('F5');
+  assert.match(f5, /มูลค่า: 13\.58 \/ 15\.64 ล้านบาท \(86\.9%\)\n   สปีด 0\.68 ล้านบาท\/วัน → ปิดเดือน 16\.98 ล้านบาท \(108\.6%\)/);
+  assert.match(f5, /🎯 Challenge: 550\.00 ตัน → คาดปิด 88\.7% · 17\.20 ล้านบาท → คาดปิด 98\.7%\n📅 ปีก่อน: 521\.32 ตัน · 16\.76 ล้านบาท/);
+  // แท็บ Targets ที่กรอกเองมีผลเหนือเป้าในไฟล์
+  bot.sheets.Targets.data.push(['2026-11', 'F5', '', 400, 14]);
+  assert.match(bot.say('F5'), /ตัน: 390\.18 \/ 400\.00/);
+});
+
+test('ไฟล์รายเขตวันถัดไป → ยอดรายวันต่อเขต (ทั้งตันและบาท); ไฟล์ห่างหลายวันบอกช่วงวัน', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  bot.driveFiles.push({ id: 'z20', name: 'data_20.xlsx', mime: XLSX, table: zoneTable(300, 10000000), updated: D(2026, 11, 21, 8) });
+  bot.say('อัปเดตยอด');
+  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 24, 8) });
+  bot.say('อัปเดตยอด');
+  const d = bot.say('ยอดเมื่อวาน');
+  assert.match(d, /📅 ยอด 21–24 พ\.ย\.: 90\.18 ตัน · 3\.58 ล้านบาท/);
+  assert.match(d, /• F5 90\.18 ตัน · 3\.58 ล้านบาท/);
+  assert.doesNotMatch(d, /F1/);
+});
+
+test('ไฟล์รายลูกค้าแล้วตามด้วยไฟล์รายเขต: ยอดเขตถูก, ลูกค้าบอกวันที่ข้อมูลเดิม', () => {
+  const bot = mtdBot(); // data_18 รายลูกค้า (F1 55.2, F3 307.46, F4 165.6)
+  bot.say('อัปเดตยอด');
+  bot.setNow(D(2026, 11, 24, 9));
+  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 24, 8) });
+  bot.say('อัปเดตยอด');
+  const d = bot.say('ยอดเมื่อวาน');
+  assert.match(d, /📅 ยอด 19–24 พ\.ย\./);
+  assert.match(d, /• F1 58\.94 ตัน/); // 114.14 − 55.2
+  assert.match(d, /• F5 390\.18 ตัน/);
+  assert.match(bot.say('ยอด'), /ตัน: 504\.32/);
+  const c = bot.say('นลินรัตน์ฟาร์ม');
+  assert.match(c, /สะสมถึง พ\. 18 พ\.ย\. · วันทำงาน 15\/25/);
+  assert.doesNotMatch(c, /มูลค่า|คิดเป็น/);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

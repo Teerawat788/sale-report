@@ -29,6 +29,9 @@ function aiSalesPayload_(snap) {
       valueMB: snap.hasAmount ? r(x.actualAmt / 1e6) : undefined,
       forecastValueMB: snap.hasAmount ? r(x.forecastAmt / 1e6) : undefined,
       forecastValuePct: snap.hasAmount ? r(x.forecastPctAmt) : undefined,
+      challengeTon: r(x.challengeTon), forecastVsChallengePct: r(x.challengePct),
+      lastYearSameMonthTon: r(x.lastTon),
+      lastYearSameMonthValueMB: x.lastAmt ? r(x.lastAmt / 1e6) : undefined,
     };
   };
   const out = {
