@@ -27,6 +27,8 @@ const COMMANDS = {
   delweekly: ['ลบประจำ'],
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
+  sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
+  sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
   review: ['สรุปสัปดาห์', 'review'],
 };
@@ -78,7 +80,7 @@ function parseCommand_(text) {
   if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 6) return null;
-  if (cmd === 'birthday' && args.length > 1) return null;
+  if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
       !(args.length && args.every(function (a) { return /^#?\d+$/.test(a); }))) return null;

@@ -170,6 +170,8 @@ const COMMANDS = {
   delweekly: ['ลบประจำ'],
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
+  sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
+  sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
   review: ['สรุปสัปดาห์', 'review'],
 };
@@ -221,7 +223,7 @@ function parseCommand_(text) {
   if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 6) return null;
-  if (cmd === 'birthday' && args.length > 1) return null;
+  if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
       !(args.length && args.every(function (a) { return /^#?\d+$/.test(a); }))) return null;
@@ -2852,6 +2854,22 @@ function doPost(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/** ห้องสั่งการ = กลุ่มอัปโหลด (มีแค่ผู้ดูแลกับบอท) */
+function isControlRoom_(source) {
+  const up = prop_('UPLOAD_GROUP_ID', '');
+  return !!up && (source.groupId === up || source.roomId === up);
+}
+
+/** ส่งข้อความเข้ากลุ่มหลัก แล้วคืนข้อความยืนยันสำหรับตอบในห้องสั่งการ */
+function sendToMainGroup_(messages, what) {
+  const groupId = prop_('GROUP_ID', '');
+  if (!groupId) return 'ยังไม่ได้ลงทะเบียนกลุ่มหลักค่ะ (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่ก่อนนะคะ)';
+  const res = linePush_(groupId, messages.slice(0, 5));
+  const label = /[A-Za-z0-9]$/.test(what) ? what + ' ' : what;
+  if (res && res.code >= 300) return '⚠️ ส่ง' + label + 'เข้ากลุ่มหลักไม่สำเร็จค่ะ (' + res.code + ')';
+  return '✅ ส่ง' + label + 'เข้ากลุ่มหลักแล้วค่ะ';
+}
+
 function chatId_(source) {
   return source.groupId || source.roomId || source.userId;
 }
@@ -2885,6 +2903,14 @@ function handleEvent_(ev) {
     return;
   }
   if (ev.message.type !== 'text') return;
+
+  // ห้องสั่งการ: "ประกาศ <ข้อความ>" → บอทพูดในกลุ่มหลัก (เก็บบรรทัดใหม่ตามที่พิมพ์)
+  const announce = String(ev.message.text || '').match(/^\s*(ประกาศ|พูด)\s+([\s\S]+)$/);
+  if (announce) {
+    if (!isControlRoom_(source)) return;
+    lineReply_(ev.replyToken, sendToMainGroup_([reminderMessage_(announce[2].trim())], 'ข้อความ'));
+    return;
+  }
 
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
@@ -2972,6 +2998,28 @@ function runCommand_(p, ctx) {
 
     case 'birthday':
       return birthdayCommand_(p.argText, now);
+
+    case 'sendsales': {
+      if (!isControlRoom_(ctx.source)) return null; // ในกลุ่มอื่น "ส่งยอด" เป็นแชทปกติ
+      const snap = getSalesSnapshot_();
+      if (snap.source === 'none') return NO_SHEET_SALES_TEXT;
+      let msgs;
+      if (p.argText) {
+        const team = findTeam_(snap, p.argText);
+        if (!team) return 'ไม่พบเขต ' + p.argText + ' ค่ะ (ใช้ F1–F5)';
+        msgs = salesMessages_(snap, team);
+      } else {
+        msgs = salesMessages_(snap, null);
+      }
+      return sendToMainGroup_(msgs, 'ยอด' + (p.argText ? ' ' + p.argText.toUpperCase() : ''));
+    }
+
+    case 'sendbirthday': {
+      if (!isControlRoom_(ctx.source)) return null;
+      const text = birthdayCommand_(p.argText, now);
+      if (!text) return null;
+      return sendToMainGroup_([text], 'วันเกิดลูกค้า');
+    }
 
     case 'customer':
       return formatCustomerSales_(getSalesSnapshot_(), p.argText);
@@ -3125,4 +3173,8 @@ const HELP_TEXT = [
   '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',
   '',
   '📤 อัปเดตยอด: ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")',
+  '',
+  '📣 สั่งจากกลุ่มอัปโหลด ให้บอทพูดในกลุ่มหลัก:',
+  '• ประกาศ <ข้อความ> (ใส่ @All ได้)',
+  '• ส่งยอด | ส่งยอด F4 | ส่งวันเกิด',
 ].join('\n');

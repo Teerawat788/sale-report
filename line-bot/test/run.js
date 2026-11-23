@@ -784,4 +784,37 @@ test('ยังไม่มีไฟล์ยอด: ยอดขายบอก
   assert.strictEqual(bot.ctx.buildMorningMessages_(D(2026, 11, 23, 7, 30)).length, 0);
 });
 
+test('ห้องสั่งการ: ประกาศ / ส่งยอด / ส่งวันเกิด จากกลุ่มอัปโหลด → บอทพูดในกลุ่มหลัก, กลุ่มอื่นเงียบ', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 21), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', BIRTHDAY_SHEET_ID: 's' } });
+  bot.ctx.setupSalesSheets();
+  bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
+  const bd = bot.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('วันเกิด');
+  bd.appendRow(['เขต', 'รหัสลูกค้า', 'ชื่อลูกค้า', 'ชื่อเจ้าของ', 'วัน', 'เดือน']);
+  bd.appendRow(['F5', '1', 'บำรุงการเกษตร', 'นายธีรวุฒิ ตรีบำรุง', 26, 11]);
+  assert.strictEqual(bot.pushes().length, 0, 'ส่งไฟล์ในห้องสั่งการ ไม่ส่งไปกลุ่มหลักเอง');
+
+  const r1 = bot.say('ประกาศ @All พรุ่งนี้ประชุม 9 โมงนะคะ\nห้องประชุมใหญ่', { groupId: 'Cmine' });
+  assert.strictEqual(r1, '✅ ส่งข้อความเข้ากลุ่มหลักแล้วค่ะ');
+  let p = bot.pushes()[0].body;
+  assert.strictEqual(p.to, 'Cmain');
+  assert.strictEqual(p.messages[0].type, 'textV2');
+  assert.strictEqual(p.messages[0].text, '{everyone} พรุ่งนี้ประชุม 9 โมงนะคะ\nห้องประชุมใหญ่');
+
+  assert.strictEqual(bot.say('ส่งยอด', { groupId: 'Cmine' }), '✅ ส่งยอดเข้ากลุ่มหลักแล้วค่ะ');
+  p = bot.pushes()[1].body;
+  assert.strictEqual(p.to, 'Cmain');
+  assert.strictEqual(p.messages.length, 2);
+  assert.match(p.messages[0].text, /🏢 รวมทุกเขต/);
+  assert.match(bot.say('ส่งยอด f5', { groupId: 'Cmine' }), /ส่งยอด F5 เข้ากลุ่มหลักแล้วค่ะ/);
+  assert.match(bot.pushes()[2].body.messages[0].text, /📊 F5 —/);
+  assert.match(bot.say('ส่งวันเกิด', { groupId: 'Cmine' }), /ส่งวันเกิดลูกค้าเข้ากลุ่มหลักแล้วค่ะ/);
+  assert.match(bot.pushes()[3].body.messages[0].text, /บำรุงการเกษตร/);
+
+  // ในกลุ่มหลักหรือกลุ่มอื่น คำเหล่านี้เป็นแชทปกติ บอทเงียบ
+  assert.strictEqual(bot.say('ส่งยอด', { groupId: 'Cmain' }), null);
+  assert.strictEqual(bot.say('ประกาศ ทดสอบ', { groupId: 'Cmain' }), null);
+  assert.strictEqual(bot.say('ประกาศ ทดสอบ', { groupId: 'Cstranger' }), null);
+  assert.strictEqual(bot.pushes().length, 4);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
