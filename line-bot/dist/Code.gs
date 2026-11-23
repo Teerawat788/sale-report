@@ -2317,64 +2317,137 @@ function geminiErrorText_(code, body) {
   let msg = '';
   try { msg = (JSON.parse(body).error || {}).message || ''; } catch (e) { msg = String(body || ''); }
   const hint = code === 400 && /API key/i.test(msg) ? 'คีย์ไม่ถูกต้อง — ตรวจ GEMINI_API_KEY'
-    : code === 403 ? 'คีย์ไม่มีสิทธิ์ใช้ Gemini API (เปิด Generative Language API / ตรวจข้อจำกัดของคีย์)'
-    : code === 404 ? 'ไม่พบโมเดล — ตั้ง GEMINI_MODEL เป็นชื่อรุ่นที่มีใน AI Studio'
-    : code === 429 ? 'ใช้เกินโควตา รอสักครู่หรือเปิด billing'
-    : code >= 500 ? 'เซิร์ฟเวอร์ Gemini คนใช้เยอะชั่วคราว ลองใหม่อีกครั้งค่ะ'
+    : code === 403 ? 'คีย์ไม่มีสิทธิ์ใช้ Gemini API (สร้างคีย์ใหม่ใน AI Studio)'
+    : code === 404 ? 'ไม่พบโมเดล'
+    : code === 429 ? 'ใช้เกินโควตาฟรี รอสักครู่แล้วลองใหม่ค่ะ'
+    : code >= 500 ? 'Gemini คนใช้เยอะชั่วคราว รอสักครู่แล้วลองใหม่ค่ะ'
     : '';
-  return 'Gemini ' + code + (hint ? ': ' + hint : '') + (msg ? ' (' + truncate_(msg, 140) + ')' : '');
+  return 'Gemini ' + code + (hint ? ': ' + hint : '') + (msg && code < 429 ? ' (' + truncate_(msg, 120) + ')' : '');
 }
 
-/** เรียก Google Gemini (generateContent) — ถ้าไม่พบโมเดลจะลองรุ่นสำรอง */
+/**
+ * รายชื่อรุ่น Gemini Flash ที่คีย์นี้ใช้ได้จริง (ถาม Google ตรง ๆ แล้วจำไว้ 6 ชม.)
+ * Google เปลี่ยน/ปลดรุ่นบ่อย จึงไม่ฝังชื่อรุ่นตายตัว — เรียงรุ่นใหม่สุดก่อน, ตัวเต็มก่อน lite, ตัวจริงก่อน preview
+ */
+function geminiModels_(key, refresh) {
+  const cache = CacheService.getScriptCache();
+  if (!refresh) {
+    const hit = cache.get('gemini_models');
+    if (hit) return JSON.parse(hit);
+  }
+  let names = [];
+  try {
+    const res = UrlFetchApp.fetch(GEMINI_API_URL.replace(/\/$/, '') + '?pageSize=200', {
+      method: 'get', headers: { 'x-goog-api-key': key }, muteHttpExceptions: true,
+    });
+    if (res.getResponseCode() === 200) {
+      names = (JSON.parse(res.getContentText()).models || [])
+        .filter(function (m) {
+          const n = String(m.name || '').replace(/^models\//, '');
+          return /^gemini-/.test(n) && /flash/.test(n) &&
+            !/image|tts|audio|live|embed|vision|learnlm|computer|robotics|exp/.test(n) &&
+            (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0;
+        })
+        .map(function (m) { return String(m.name).replace(/^models\//, ''); });
+    }
+  } catch (e) { console.warn('list Gemini models: ' + e); }
+  const ver = function (n) { const m = n.match(/gemini-(\d+(?:\.\d+)?)/); return m ? Number(m[1]) : 0; };
+  const rank = function (n) { return (/latest/.test(n) ? 0 : ver(n) * 10) - (/lite/.test(n) ? 3 : 0) - (/preview/.test(n) ? 1 : 0); };
+  names.sort(function (x, y) { return rank(y) - rank(x); });
+  names = uniq_(names).slice(0, 4);
+  cache.put('gemini_models', JSON.stringify(names), 6 * 3600);
+  return names;
+}
+
+function geminiFetch_(key, model, system, userText) {
+  return UrlFetchApp.fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
+    }),
+    muteHttpExceptions: true,
+  });
+}
+
+/**
+ * เรียก Google Gemini (ตัวฟรี) — ลองรุ่นที่ใช้ได้ทีละตัว
+ * 404 (รุ่นถูกปลด) / 429 (โควตารุ่นนี้หมด) / 5xx (คนใช้เยอะ) → ข้ามไปรุ่นถัดไป
+ * รุ่นที่ตอบได้จะถูกจำไว้ใช้ก่อนในครั้งหน้า
+ */
 function callGemini_(system, userText) {
   const key = prop_('GEMINI_API_KEY', '');
   if (!key) return null;
-  const preferred = prop_('GEMINI_MODEL', GEMINI_MODEL);
-  const models = uniq_([preferred, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
-  for (let i = 0; i < models.length; i++) {
-    const res = UrlFetchApp.fetch(GEMINI_API_URL + encodeURIComponent(models[i]) + ':generateContent', {
-      method: 'post',
-      contentType: 'application/json',
-      headers: { 'x-goog-api-key': key },
-      payload: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: 'user', parts: [{ text: userText }] }],
-        generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
-      }),
-      muteHttpExceptions: true,
-    });
+  const cache = CacheService.getScriptCache();
+  const userModel = prop_('GEMINI_MODEL', '');
+  const queue = uniq_([cache.get('gemini_ok'), userModel].concat(geminiModels_(key), [GEMINI_MODEL, 'gemini-flash-lite-latest'])
+    .filter(function (m) { return m; }));
+  const tried = {};
+  let err = '';
+  let busy = [];
+  let refreshed = false;
+  for (let i = 0; i < queue.length && i < 8; i++) {
+    const model = queue[i];
+    if (tried[model]) continue;
+    tried[model] = true;
+    const res = geminiFetch_(key, model, system, userText);
     const code = res.getResponseCode();
-    // ไม่พบโมเดล / คนใช้เยอะ / โควตารุ่นนี้หมด → ลองรุ่นถัดไป
-    if ((code === 404 || code === 429 || code >= 500) && i < models.length - 1) {
-      console.warn('Gemini ' + models[i] + ' → ' + code + ' ลองรุ่นถัดไป');
-      continue;
-    }
     if (code !== 200) {
-      AI_LAST_ERROR = geminiErrorText_(code, res.getContentText());
+      const body = res.getContentText();
+      console.warn('Gemini ' + model + ' → ' + code);
+      if (code === 404) {
+        // Google มักบอกชื่อรุ่นใหม่มาในข้อความ เช่น "use models/gemini-x.y-flash"
+        const sug = String(body).match(/models\/(gemini-[\w.\-]+)/g) || [];
+        sug.forEach(function (x) { const n = x.replace('models/', ''); if (!tried[n]) queue.splice(i + 1, 0, n); });
+        if (!refreshed) { refreshed = true; geminiModels_(key, true).forEach(function (n) { if (!tried[n]) queue.push(n); }); }
+        if (cache.get('gemini_ok') === model) cache.remove('gemini_ok');
+        if (!err) err = geminiErrorText_(code, body);
+        continue;
+      }
+      if (code === 429 || code >= 500) { busy.push(model); err = geminiErrorText_(code, body); continue; }
+      AI_LAST_ERROR = geminiErrorText_(code, body); // คีย์ผิด/ไม่มีสิทธิ์ — ลองรุ่นอื่นก็ไม่ช่วย
       console.error(AI_LAST_ERROR);
       return null;
     }
-    const body = JSON.parse(res.getContentText());
-    if (body.promptFeedback && body.promptFeedback.blockReason) {
-      AI_LAST_ERROR = 'Gemini ปฏิเสธคำถาม (' + body.promptFeedback.blockReason + ')';
-      return null;
-    }
-    const cand = (body.candidates || [])[0];
-    const text = cand && cand.content ? (cand.content.parts || []).filter(function (p) { return p.text && !p.thought; })
-      .map(function (p) { return p.text; }).join('').trim() : '';
-    if (!text) {
-      AI_LAST_ERROR = 'Gemini ไม่ส่งคำตอบกลับ' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : '');
-      return null;
-    }
-    if (models[i] !== preferred) console.log('Gemini ใช้รุ่นสำรอง: ' + models[i]);
-    return text;
+    const text = geminiText_(res.getContentText());
+    if (text) { cache.put('gemini_ok', model, 6 * 3600); return text; }
   }
+  // ทุกรุ่นยุ่งพร้อมกัน → พักสั้น ๆ แล้วลองรุ่นแรกที่ยังมีอยู่อีกครั้ง
+  if (busy.length) {
+    Utilities.sleep(2000);
+    const res = geminiFetch_(key, busy[0], system, userText);
+    if (res.getResponseCode() === 200) {
+      const text = geminiText_(res.getContentText());
+      if (text) { cache.put('gemini_ok', busy[0], 6 * 3600); return text; }
+    } else err = geminiErrorText_(res.getResponseCode(), res.getContentText());
+  }
+  AI_LAST_ERROR = AI_LAST_ERROR || err || 'Gemini ไม่ตอบ';
+  console.error(AI_LAST_ERROR);
   return null;
+}
+
+/** ดึงข้อความคำตอบ (ตัดส่วน "คิด" ออก) — ไม่มีคำตอบ → null + เก็บสาเหตุ */
+function geminiText_(raw) {
+  const body = JSON.parse(raw);
+  if (body.promptFeedback && body.promptFeedback.blockReason) {
+    AI_LAST_ERROR = 'Gemini ปฏิเสธคำถาม (' + body.promptFeedback.blockReason + ')';
+    return null;
+  }
+  const cand = (body.candidates || [])[0];
+  const text = cand && cand.content ? (cand.content.parts || []).filter(function (p) { return p.text && !p.thought; })
+    .map(function (p) { return p.text; }).join('').trim() : '';
+  if (!text) AI_LAST_ERROR = 'Gemini ไม่ส่งคำตอบกลับ' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : '');
+  return text || null;
 }
 
 /** รันจาก Apps Script เพื่อทดสอบ AI — ดูผลใน "บันทึกการดำเนินการ" */
 function testAi() {
   console.log('ตัว AI: ' + (aiProvider_() || 'ยังไม่ได้ใส่คีย์'));
+  if (prop_('GEMINI_API_KEY', '')) console.log('รุ่น Gemini ที่ใช้ได้: ' + geminiModels_(prop_('GEMINI_API_KEY', ''), true).join(', '));
+  AI_LAST_ERROR = '';
   const t = callAi_('ตอบสั้น ๆ ภาษาไทย', 'สวัสดี ทดสอบระบบ');
   console.log(t ? '✅ AI ตอบ: ' + t : '❌ ไม่สำเร็จ: ' + AI_LAST_ERROR);
 }

@@ -213,7 +213,8 @@ Power BI → Export data (.csv) → โฟลเดอร์ Google Drive → �
 ## เลือกตัว AI (Gemini / Claude)
 
 - **Gemini (แนะนำเริ่มต้น มีแบบฟรี):** aistudio.google.com → Get API key → ใส่ Script Property `GEMINI_API_KEY`
-  ใช้โมเดล `gemini-flash-latest` (เปลี่ยนได้ด้วย `GEMINI_MODEL` เช่น `gemini-2.5-flash`)
+  บอทถาม Google เองว่าคีย์นี้ใช้รุ่น Flash ไหนได้บ้าง แล้วใช้รุ่นใหม่สุดก่อน ถ้ารุ่นไหนยุ่ง (503), โควตาหมด (429) หรือถูกปลด (404) จะข้ามไปรุ่นถัดไปเอง
+  ไม่ต้องตั้ง `GEMINI_MODEL` (ถ้าตั้งไว้แล้วรุ่นนั้นถูกปลด ระบบจะข้ามให้เอง) — ทดสอบได้ด้วยการรันฟังก์ชัน `testAi` ใน Apps Script
 - **Claude:** ใส่ `ANTHROPIC_API_KEY`
 - มีทั้งสองคีย์: ตั้ง `AI_PROVIDER` = `gemini` หรือ `claude` (ไม่ตั้ง = ใช้ Gemini)
 - ⚠️ Gemini แบบฟรี Google อาจนำข้อมูลที่ส่งไปใช้พัฒนาบริการ — ถ้ากังวลเรื่องข้อมูลยอดขาย/ชื่อลูกค้า ให้เปิด billing (แบบเสียเงิน)

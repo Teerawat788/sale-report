@@ -989,31 +989,48 @@ test('Gemini: ใส่ GEMINI_API_KEY แล้วถามตอบ/วิเ�
   assert.strictEqual(bot.aiCalls.length, 1);
 });
 
-test('Gemini: บอกสาเหตุเมื่อเรียกไม่สำเร็จ และลองรุ่นสำรองเมื่อไม่พบโมเดล', () => {
-  const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
-  let n = 0;
-  bot.setGeminiResponse(() => (++n === 1 ? { status: 404, body: { error: { message: 'models/gemini-flash-latest is not found' } } }
-    : { body: { candidates: [{ content: { parts: [{ text: 'ได้ค่ะ' }] } }] } }));
+test('Gemini: หารุ่นที่ใช้ได้จาก Google เอง, ข้ามรุ่นที่ยุ่ง/ถูกปลด, จำรุ่นที่ตอบได้', () => {
+  const models = [
+    { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+    { name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.8-flash-image', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.8-pro', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
+  ];
+  const bot = createBot({ now: D(2026, 11, 23, 23), geminiModels: models, props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
+  const used = () => bot.geminiCalls.map((c) => c.url.match(/models\/([^:]+):/)[1]);
+  // รุ่นใหม่สุดยุ่ง → ไปตัว lite
+  bot.setGeminiResponse(() => (/3\.8-flash:/.test(bot.geminiCalls[bot.geminiCalls.length - 1].url)
+    ? { status: 503, body: { error: { message: 'high demand' } } }
+    : { body: { candidates: [{ content: { parts: [{ text: 'thinking', thought: true }, { text: 'ได้ค่ะ' }] } }] } }));
   assert.strictEqual(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), '🤖 ได้ค่ะ');
-  assert.match(bot.geminiCalls[1].url, /gemini-2\.5-flash/);
-  bot.setGeminiResponse({ status: 400, body: { error: { message: 'API key not valid. Please pass a valid API key.' } } });
-  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /สาเหตุ: Gemini 400: คีย์ไม่ถูกต้อง/);
-  bot.setGeminiResponse({ status: 403, body: { error: { message: 'Permission denied' } } });
-  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /สาเหตุ: Gemini 403/);
-  bot.setGeminiResponse({ body: { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] } });
-  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /ไม่ส่งคำตอบกลับ \(MAX_TOKENS\)/);
+  assert.deepStrictEqual(used(), ['gemini-3.8-flash', 'gemini-3.8-flash-lite']);
+  assert.strictEqual(bot.geminiListCalls.length, 1);
+  // ครั้งต่อไปใช้รุ่นที่ตอบได้ก่อน และไม่ต้องถามรายชื่อรุ่นซ้ำ
+  bot.say('ถาม อีกข้อ', { groupId: 'Cmine' });
+  assert.strictEqual(used()[2], 'gemini-3.8-flash-lite');
+  assert.strictEqual(bot.geminiListCalls.length, 1);
 });
 
-test('Gemini 503 → ลองรุ่นถัดไป และห้องสั่งการถามได้โดยไม่ต้องพิมพ์ "ถาม"', () => {
+test('Gemini: รุ่นที่ตั้งไว้ถูกปลด → ใช้รุ่นที่ Google แนะนำในข้อความ', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g', GEMINI_MODEL: 'gemini-2.0-flash' } });
+  bot.setGeminiResponse(() => (/2\.0-flash/.test(bot.geminiCalls[bot.geminiCalls.length - 1].url)
+    ? { status: 404, body: { error: { message: 'This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-3.8-flash for the latest features' } } }
+    : { body: { candidates: [{ content: { parts: [{ text: 'ได้ค่ะ' }] } }] } }));
+  assert.strictEqual(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), '🤖 ได้ค่ะ');
+  assert.match(bot.geminiCalls[1].url, /gemini-3\.8-flash:/);
+});
+
+test('Gemini: บอกสาเหตุเมื่อเรียกไม่สำเร็จ', () => {
   const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
-  let n = 0;
-  bot.setGeminiResponse(() => (++n <= 2 ? { status: 503, body: { error: { message: 'high demand' } } }
-    : { body: { candidates: [{ content: { parts: [{ text: 'ปิดได้ค่ะ' }] } }] } }));
-  assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmine' }), '🤖 ปิดได้ค่ะ');
-  assert.strictEqual(bot.geminiCalls.length, 3);
+  bot.setGeminiResponse({ status: 400, body: { error: { message: 'API key not valid. Please pass a valid API key.' } } });
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /สาเหตุ: Gemini 400: คีย์ไม่ถูกต้อง/);
+  assert.strictEqual(bot.geminiCalls.length, 1); // คีย์ผิด ไม่ต้องลองรุ่นอื่น
   bot.setGeminiResponse({ status: 503, body: { error: { message: 'high demand' } } });
-  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /คนใช้เยอะชั่วคราว/);
-  assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /สาเหตุ: Gemini 503: Gemini คนใช้เยอะชั่วคราว/);
+  bot.setGeminiResponse({ body: { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] } });
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /ไม่ส่งคำตอบกลับ \(MAX_TOKENS\)/);
 });
 
 test('AI: ตัวหลักล่ม → ใช้อีกเจ้าเป็นตัวสำรอง', () => {
@@ -1023,6 +1040,14 @@ test('AI: ตัวหลักล่ม → ใช้อีกเจ้าเ�
   bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'จาก Claude ค่ะ' }] } });
   bot.setGeminiResponse({ status: 503, body: {} });
   assert.strictEqual(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), '🤖 จาก Claude ค่ะ');
+});
+
+test('ห้องสั่งการถาม AI ได้โดยไม่ต้องพิมพ์ "ถาม" (กลุ่มใหญ่ต้องแท็ก)', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
+  assert.match(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmine' }), /^🤖/);
+  assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('เมนู', { groupId: 'Cmine' }), /คำสั่งบอททีมขาย/); // คำสั่งปกติยังทำงาน
+  assert.strictEqual(bot.geminiCalls.length, 1);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
