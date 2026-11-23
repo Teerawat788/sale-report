@@ -411,6 +411,17 @@ function linePush_(to, messages) {
   return lineFetch_('/message/push', 'post', { to: to, messages: toMessages_(messages) });
 }
 
+/** ไฟล์ที่ส่งในแชท (ดาวน์โหลดได้ภายในเวลาจำกัดหลังส่ง) */
+function lineContent_(messageId) {
+  const res = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + messageId + '/content', {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', '') },
+    muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error('ดาวน์โหลดไฟล์จาก LINE ไม่ได้ (' + res.getResponseCode() + ')');
+  return res.getBlob();
+}
+
 /** ชื่อที่แสดงของผู้ส่ง (cache 6 ชม.) */
 function lineDisplayName_(source) {
   if (!source || !source.userId) return 'ไม่ทราบชื่อ';
@@ -1374,12 +1385,36 @@ function importSalesFromDrive_(force, asOfOverride) {
   if (!force && prop_('LAST_IMPORT_KEY', '') === key) {
     return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้ว' };
   }
-  const asOf = asOfOverride || asOfFromFileName_(latest.getName(), latest.getLastUpdated());
-  const r = importTable_(readDriveTable_(latest), { asOf: asOf });
-  setProp_('LAST_IMPORT_KEY', key);
-  r.fileName = latest.getName();
-  r.message = formatImportResult_(r, latest.getName());
+  return importDriveFile_(latest, asOfOverride);
+}
+
+function importDriveFile_(file, asOfOverride) {
+  const asOf = asOfOverride || asOfFromFileName_(file.getName(), file.getLastUpdated());
+  const r = importTable_(readDriveTable_(file), { asOf: asOf });
+  setProp_('LAST_IMPORT_KEY', file.getId() + '@' + file.getLastUpdated().getTime());
+  r.fileName = file.getName();
+  r.message = formatImportResult_(r, file.getName());
   return r;
+}
+
+/**
+ * ไฟล์ Excel/CSV ที่ส่งเข้ากลุ่ม LINE → เก็บลงโฟลเดอร์นำเข้า แล้วนำเข้าทันที
+ * คืน null ถ้าไม่ใช่ไฟล์ยอดขาย (ลบไฟล์ทิ้ง บอทไม่ตอบ)
+ */
+function importLineFile_(messageId, fileName) {
+  const folderId = prop_('IMPORT_FOLDER_ID', '');
+  if (!folderId) throw new Error('ยังไม่ได้ตั้ง IMPORT_FOLDER_ID (โฟลเดอร์ Google Drive สำหรับเก็บไฟล์ยอด)');
+  const blob = lineContent_(messageId).setName(fileName);
+  const file = DriveApp.getFolderById(folderId).createFile(blob);
+  try {
+    return importDriveFile_(file);
+  } catch (e) {
+    if (/ไม่พบคอลัมน์|ไม่มีแถวยอดขาย/.test(String(e && e.message))) {
+      file.setTrashed(true);
+      return null;
+    }
+    throw e;
+  }
 }
 
 /** Trigger: ทุกชั่วโมง — มีไฟล์ใหม่ก็นำเข้า */
@@ -2573,7 +2608,22 @@ function handleEvent_(ev) {
       'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมด', ['ลงทะเบียน', 'เมนู']));
     return;
   }
-  if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
+  if (ev.type !== 'message' || !ev.message) return;
+  const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') && chatId_(source) !== registered;
+
+  // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
+  if (ev.message.type === 'file') {
+    if (inOtherGroup || !/\.(xlsx|xls|csv)$/i.test(ev.message.fileName || '')) return;
+    const r = importLineFile_(ev.message.id, ev.message.fileName);
+    if (!r) return;
+    const snap = getSalesSnapshot_();
+    const out = [r.message, formatSales_(snap, null)];
+    const ai = aiSalesComment_(snap);
+    if (ai) out.push(ai);
+    lineReply_(ev.replyToken, out);
+    return;
+  }
+  if (ev.message.type !== 'text') return;
 
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
@@ -2798,6 +2848,7 @@ const HELP_TEXT = [
   '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
   '• วิเคราะห์ — ให้ AI สรุปยอดและข้อแนะนำ',
+    '• ส่งไฟล์ Excel ยอดขายเข้ากลุ่ม = อัปเดตยอดทันที',
   '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
   '📋 งานติดตาม',

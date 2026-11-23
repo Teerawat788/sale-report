@@ -65,6 +65,7 @@ function createBot(opts = {}) {
   const aiCalls = [];
   let aiResponse = opts.aiResponse || { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• ทดสอบบทวิเคราะห์' }] } };
   const driveFiles = []; // { id, name, mime, content (string | 2D array), updated: Date }
+  const lineFiles = {}; // messageId → ตาราง (จำลองไฟล์ที่ส่งในแชท)
   const fileObj = (f) => ({
     getId: () => f.id, getName: () => f.name, getMimeType: () => f.mime,
     getLastUpdated: () => f.updated,
@@ -111,7 +112,14 @@ function createBot(opts = {}) {
       },
     },
     DriveApp: {
-      getFolderById: () => ({ getFiles() { const list = driveFiles.filter((f) => !f.trashed); let i = 0; return { hasNext: () => i < list.length, next: () => fileObj(list[i++]) }; } }),
+      getFolderById: () => ({
+        createFile(blob) {
+          const f = { id: 'up' + driveFiles.length, name: blob.name, mime: /\.csv$/i.test(blob.name) ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            table: blob.table, content: blob.table, updated: new Date(now.getTime()) };
+          driveFiles.push(f);
+          return fileObj(f);
+        },
+        getFiles() { const list = driveFiles.filter((f) => !f.trashed); let i = 0; return { hasNext: () => i < list.length, next: () => fileObj(list[i++]) }; } }),
       getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)),
     },
     CalendarApp: { getDefaultCalendar: () => calendar, getCalendarById: () => calendar },
@@ -139,6 +147,13 @@ function createBot(opts = {}) {
           driveFiles.push({ id, name: JSON.parse(o.payload).name, mime: 'application/vnd.google-apps.spreadsheet', content: src.table, updated: new Date() });
           return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) };
         }
+        const content = url.match(/api-data\.line\.me\/v2\/bot\/message\/([^/]+)\/content/);
+        if (content) {
+          lineCalls.push({ url, method: 'get' });
+          const src = lineFiles[content[1]];
+          if (!src) return { getResponseCode: () => 404, getContentText: () => '' };
+          return { getResponseCode: () => 200, getBlob: () => ({ table: src, setName(n) { this.name = n; return this; } }) };
+        }
         if (url.startsWith('https://api.anthropic.com')) {
           aiCalls.push({ url, headers: o.headers, body: JSON.parse(o.payload) });
           const r = typeof aiResponse === 'function' ? aiResponse() : aiResponse;
@@ -163,6 +178,17 @@ function createBot(opts = {}) {
 
   return {
     ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls,
+    /** จำลองส่งไฟล์เข้ากลุ่ม */
+    sendFile(name, table, o = {}) {
+      const id = 'm' + Object.keys(lineFiles).length;
+      lineFiles[id] = table;
+      const before = lineCalls.length;
+      const ev = { type: 'message', replyToken: 'rt', source: { type: 'group', groupId: o.groupId || 'Cgroup1', userId: 'Uuser1' },
+        message: { type: 'file', id, fileName: name, fileSize: 1000 } };
+      ctx.doPost({ postData: { contents: JSON.stringify({ destination: 'Ubot', events: [ev] }) } });
+      const reply = lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));
+      return reply ? reply.body.messages.map((m) => m.text).join('\n') : null;
+    },
     setAiResponse(r) { aiResponse = r; },
     setNow(d) { now = d; },
     setDashboard(d) { dashboard = d; },

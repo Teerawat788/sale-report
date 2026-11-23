@@ -677,4 +677,19 @@ test('ไฟล์รายลูกค้าแล้วตามด้วย�
   assert.doesNotMatch(c, /มูลค่า|คิดเป็น/);
 });
 
+test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทนำเข้าและรายงานทันที / ไฟล์อื่นเงียบ', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
+  bot.ctx.setupSalesSheets();
+  const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39));
+  assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24 พ\.ย\. 2569[\s\S]*🏢 รวมทุกเขต[\s\S]*📍 F5/);
+  assert.strictEqual(bot.driveFiles.filter((f) => !f.trashed).length, 1, 'เก็บไฟล์ไว้ใน Drive');
+  bot.ctx.importSalesHourly();
+  assert.strictEqual(bot.pushes().length, 0, 'ไฟล์ที่ส่งในแชทแล้วต้องไม่รายงานซ้ำทุกชั่วโมง');
+
+  assert.strictEqual(bot.sendFile('รายชื่อ.xlsx', [['ชื่อ', 'เบอร์'], ['ก', '1']]), null);
+  assert.strictEqual(bot.driveFiles.filter((f) => !f.trashed).length, 1, 'ไฟล์ที่ไม่ใช่ยอดขายถูกลบทิ้ง');
+  assert.strictEqual(bot.sendFile('รูป.pdf', []), null);
+  assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cother' }), null);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

@@ -392,12 +392,36 @@ function importSalesFromDrive_(force, asOfOverride) {
   if (!force && prop_('LAST_IMPORT_KEY', '') === key) {
     return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้ว' };
   }
-  const asOf = asOfOverride || asOfFromFileName_(latest.getName(), latest.getLastUpdated());
-  const r = importTable_(readDriveTable_(latest), { asOf: asOf });
-  setProp_('LAST_IMPORT_KEY', key);
-  r.fileName = latest.getName();
-  r.message = formatImportResult_(r, latest.getName());
+  return importDriveFile_(latest, asOfOverride);
+}
+
+function importDriveFile_(file, asOfOverride) {
+  const asOf = asOfOverride || asOfFromFileName_(file.getName(), file.getLastUpdated());
+  const r = importTable_(readDriveTable_(file), { asOf: asOf });
+  setProp_('LAST_IMPORT_KEY', file.getId() + '@' + file.getLastUpdated().getTime());
+  r.fileName = file.getName();
+  r.message = formatImportResult_(r, file.getName());
   return r;
+}
+
+/**
+ * ไฟล์ Excel/CSV ที่ส่งเข้ากลุ่ม LINE → เก็บลงโฟลเดอร์นำเข้า แล้วนำเข้าทันที
+ * คืน null ถ้าไม่ใช่ไฟล์ยอดขาย (ลบไฟล์ทิ้ง บอทไม่ตอบ)
+ */
+function importLineFile_(messageId, fileName) {
+  const folderId = prop_('IMPORT_FOLDER_ID', '');
+  if (!folderId) throw new Error('ยังไม่ได้ตั้ง IMPORT_FOLDER_ID (โฟลเดอร์ Google Drive สำหรับเก็บไฟล์ยอด)');
+  const blob = lineContent_(messageId).setName(fileName);
+  const file = DriveApp.getFolderById(folderId).createFile(blob);
+  try {
+    return importDriveFile_(file);
+  } catch (e) {
+    if (/ไม่พบคอลัมน์|ไม่มีแถวยอดขาย/.test(String(e && e.message))) {
+      file.setTrashed(true);
+      return null;
+    }
+    throw e;
+  }
 }
 
 /** Trigger: ทุกชั่วโมง — มีไฟล์ใหม่ก็นำเข้า */

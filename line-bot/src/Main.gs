@@ -41,7 +41,22 @@ function handleEvent_(ev) {
       'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมด', ['ลงทะเบียน', 'เมนู']));
     return;
   }
-  if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
+  if (ev.type !== 'message' || !ev.message) return;
+  const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') && chatId_(source) !== registered;
+
+  // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
+  if (ev.message.type === 'file') {
+    if (inOtherGroup || !/\.(xlsx|xls|csv)$/i.test(ev.message.fileName || '')) return;
+    const r = importLineFile_(ev.message.id, ev.message.fileName);
+    if (!r) return;
+    const snap = getSalesSnapshot_();
+    const out = [r.message, formatSales_(snap, null)];
+    const ai = aiSalesComment_(snap);
+    if (ai) out.push(ai);
+    lineReply_(ev.replyToken, out);
+    return;
+  }
+  if (ev.message.type !== 'text') return;
 
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
@@ -266,6 +281,7 @@ const HELP_TEXT = [
   '• พิมพ์ F1–F5 = ยอดเขต | พิมพ์ชื่อลูกค้า เช่น กบทองฟาร์ม = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ (อันดับ) | ยอดลูกค้า | ยอดสินค้า',
   '• วิเคราะห์ — ให้ AI สรุปยอดและข้อแนะนำ',
+    '• ส่งไฟล์ Excel ยอดขายเข้ากลุ่ม = อัปเดตยอดทันที',
   '• อัปเดตยอด — ดึงไฟล์ล่าสุดเข้าระบบ (ระบุวันข้อมูล: อัปเดตยอด 18/11)',
   '',
   '📋 งานติดตาม',

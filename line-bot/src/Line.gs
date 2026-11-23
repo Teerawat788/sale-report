@@ -50,6 +50,17 @@ function linePush_(to, messages) {
   return lineFetch_('/message/push', 'post', { to: to, messages: toMessages_(messages) });
 }
 
+/** ไฟล์ที่ส่งในแชท (ดาวน์โหลดได้ภายในเวลาจำกัดหลังส่ง) */
+function lineContent_(messageId) {
+  const res = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + messageId + '/content', {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', '') },
+    muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error('ดาวน์โหลดไฟล์จาก LINE ไม่ได้ (' + res.getResponseCode() + ')');
+  return res.getBlob();
+}
+
 /** ชื่อที่แสดงของผู้ส่ง (cache 6 ชม.) */
 function lineDisplayName_(source) {
   if (!source || !source.userId) return 'ไม่ทราบชื่อ';
