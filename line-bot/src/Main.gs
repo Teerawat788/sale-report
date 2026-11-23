@@ -205,7 +205,7 @@ function runCommand_(p, ctx) {
     }
 
     case 'aisales': {
-      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI ค่ะ — ใส่ ANTHROPIC_API_KEY ใน Script Properties ก่อนนะคะ';
+      if (!aiEnabled_()) return 'ยังไม่ได้เปิดใช้ AI ค่ะ — ใส่ GEMINI_API_KEY ใน Script Properties ก่อนนะคะ';
       const snap = getSalesSnapshot_();
       if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
       return aiSalesComment_(snap) || 'ขออภัยค่ะ AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ';

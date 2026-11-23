@@ -585,7 +585,7 @@ test('AI: ใส่คีย์แล้วรายงานมีบทวิ�
 test('AI: ไม่มีคีย์ → คำสั่งวิเคราะห์บอกวิธีเปิด และไม่เรียก API', () => {
   const bot = mtdBot();
   bot.say('อัปเดตยอด');
-  assert.match(bot.say('วิเคราะห์'), /ANTHROPIC_API_KEY/);
+  assert.match(bot.say('วิเคราะห์'), /GEMINI_API_KEY/);
   assert.strictEqual(bot.aiCalls.length, 0);
 });
 
@@ -960,6 +960,33 @@ test('บันทึกข้อความยาวหลายย่อห�
   assert.match(bot.say('ติดตามผล นลินรัตน์ฟาร์ม ลูกค้าพอใจ'), /บันทึกติดตามลูกค้าแล้วค่ะ\n📞 นลินรัตน์ฟาร์ม/);
   assert.match(bot.say('เข้าพบลูกค้าใหม่ ฟาร์มปลาดุกลุงแดง\nสนใจลองสูตร 2'), /บันทึกเข้าพบลูกค้าใหม่แล้วค่ะ\n🤝 ฟาร์มปลาดุกลุงแดง/);
   assert.strictEqual(bot.say('ติดตามด้วยนะครับ'), null);
+});
+
+test('Gemini: ใส่ GEMINI_API_KEY แล้วถามตอบ/วิเคราะห์ใช้ Gemini; เลือก Claude ได้ด้วย AI_PROVIDER', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 22), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g-test' } });
+  bot.ctx.setupSalesSheets();
+  bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
+  const mention = { mentionees: [{ index: 0, length: 11, isSelf: true, userId: 'Ubot' }] };
+  const r = bot.say('@น้องขุนศึก F5 ปิดเดือนได้ไหม', { groupId: 'Cmain', mention });
+  assert.strictEqual(r, '🤖 • คำตอบจาก Gemini ค่ะ');
+  const call = bot.geminiCalls.find((c) => /คำถาม: F5 ปิดเดือนได้ไหม/.test(c.body.contents[0].parts[0].text));
+  assert.ok(call, 'ส่งคำถามไป Gemini');
+  assert.match(call.url, /\/v1beta\/models\/gemini-flash-latest:generateContent$/);
+  assert.strictEqual(call.headers['x-goog-api-key'], 'g-test');
+  assert.doesNotMatch(call.url, /g-test/, 'คีย์ไม่อยู่ใน URL');
+  assert.match(call.body.systemInstruction.parts[0].text, /น้องขุนศึก/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /🤖 วิเคราะห์โดย AI\n• คำตอบจาก Gemini ค่ะ/);
+  assert.strictEqual(bot.aiCalls.length, 0, 'ไม่เรียก Claude');
+  // บล็อก/ผิดพลาด → ข้อความขอโทษ
+  bot.setGeminiResponse({ body: { promptFeedback: { blockReason: 'SAFETY' } } });
+  assert.match(bot.say('ถาม อะไรก็ได้', { groupId: 'Cmine' }), /ตอบไม่ได้/);
+  bot.setGeminiResponse({ status: 429, body: { error: { message: 'quota' } } });
+  assert.match(bot.say('ถาม อะไรอีก', { groupId: 'Cmine' }), /ตอบไม่ได้/);
+  // มีทั้งสองคีย์ เลือก Claude
+  bot.props.ANTHROPIC_API_KEY = 'sk-test';
+  bot.props.AI_PROVIDER = 'claude';
+  assert.match(bot.say('ถาม ทดสอบ claude', { groupId: 'Cmine' }), /^🤖 /);
+  assert.strictEqual(bot.aiCalls.length, 1);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

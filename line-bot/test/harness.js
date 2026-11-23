@@ -63,6 +63,8 @@ function createBot(opts = {}) {
     getSheets: () => Object.values(sheets),
   };
   const aiCalls = [];
+  const geminiCalls = [];
+  let geminiResponse = { body: { candidates: [{ content: { parts: [{ text: '• คำตอบจาก Gemini ค่ะ' }] } }] } };
   let aiResponse = opts.aiResponse || { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• ทดสอบบทวิเคราะห์' }] } };
   const driveFiles = []; // { id, name, mime, content (string | 2D array), updated: Date }
 const folderObj = () => ctx.DriveApp._folder();
@@ -157,6 +159,11 @@ const folderObj = () => ctx.DriveApp._folder();
           if (!src) return { getResponseCode: () => 404, getContentText: () => '' };
           return { getResponseCode: () => 200, getBlob: () => ({ table: src, setName(n) { this.name = n; return this; } }) };
         }
+        if (url.startsWith('https://generativelanguage.googleapis.com')) {
+          geminiCalls.push({ url, headers: o.headers, body: JSON.parse(o.payload) });
+          const g = typeof geminiResponse === 'function' ? geminiResponse() : geminiResponse;
+          return { getResponseCode: () => g.status || 200, getContentText: () => JSON.stringify(g.body) };
+        }
         if (url.startsWith('https://api.anthropic.com')) {
           aiCalls.push({ url, headers: o.headers, body: JSON.parse(o.payload) });
           const r = typeof aiResponse === 'function' ? aiResponse() : aiResponse;
@@ -181,6 +188,8 @@ const folderObj = () => ctx.DriveApp._folder();
 
   return {
     ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls,
+    geminiCalls,
+    setGeminiResponse(r) { geminiResponse = r; },
     /** จำลองส่งไฟล์เข้ากลุ่ม */
     sendFile(name, table, o = {}) {
       const id = 'm' + Object.keys(lineFiles).length;

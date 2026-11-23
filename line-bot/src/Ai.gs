@@ -1,7 +1,10 @@
 /**
  * วิเคราะห์ยอดขายด้วย Claude (ไม่บังคับ)
  *
- * เปิดใช้: Script Property ANTHROPIC_API_KEY = API key จาก console.anthropic.com
+ * เปิดใช้ (เลือกอย่างใดอย่างหนึ่ง):
+ *   GEMINI_API_KEY    = คีย์จาก aistudio.google.com  (Google Gemini — มีแบบฟรี)
+ *   ANTHROPIC_API_KEY = คีย์จาก console.anthropic.com (Claude)
+ * มีทั้งสองคีย์: เลือกด้วย AI_PROVIDER = gemini | claude (ค่าเริ่มต้นใช้ Gemini ถ้ามีคีย์)
  * ไม่มีคีย์ = ข้ามส่วนนี้ บอทยังรายงานตัวเลขตามปกติ
  * ผลวิเคราะห์ถูก cache ตามวันที่ของข้อมูล — ไฟล์เดิมถามซ้ำไม่เสียเงินซ้ำ
  */
@@ -49,6 +52,66 @@ function aiSalesPayload_(snap) {
   return out;
 }
 
+const GEMINI_MODEL = 'gemini-flash-latest';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
+
+/** ตัวที่ใช้: 'gemini' | 'claude' | '' (ยังไม่เปิด) */
+function aiProvider_() {
+  const want = String(prop_('AI_PROVIDER', '')).toLowerCase();
+  const hasGemini = !!prop_('GEMINI_API_KEY', '');
+  const hasClaude = !!prop_('ANTHROPIC_API_KEY', '');
+  if (want === 'claude' && hasClaude) return 'claude';
+  if (want === 'gemini' && hasGemini) return 'gemini';
+  if (hasGemini) return 'gemini';
+  if (hasClaude) return 'claude';
+  return '';
+}
+
+function aiEnabled_() {
+  return !!aiProvider_();
+}
+
+/** ส่งคำถามให้ AI ที่เปิดใช้อยู่ — คืนข้อความ หรือ null */
+function callAi_(system, userText) {
+  const p = aiProvider_();
+  if (p === 'gemini') return callGemini_(system, userText);
+  if (p === 'claude') return callClaude_(system, userText);
+  return null;
+}
+
+/** เรียก Google Gemini (generateContent) */
+function callGemini_(system, userText) {
+  const key = prop_('GEMINI_API_KEY', '');
+  if (!key) return null;
+  const model = prop_('GEMINI_MODEL', GEMINI_MODEL);
+  const res = UrlFetchApp.fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
+    }),
+    muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code !== 200) {
+    console.error('Gemini API ' + code + ': ' + res.getContentText());
+    return null;
+  }
+  const body = JSON.parse(res.getContentText());
+  if (body.promptFeedback && body.promptFeedback.blockReason) {
+    console.warn('Gemini blocked: ' + body.promptFeedback.blockReason);
+    return null;
+  }
+  const cand = (body.candidates || [])[0];
+  if (!cand || !cand.content) return null;
+  const text = (cand.content.parts || []).filter(function (p) { return p.text && !p.thought; })
+    .map(function (p) { return p.text; }).join('').trim();
+  return text || null;
+}
+
 /** เรียก Claude Messages API — คืนข้อความ หรือ null ถ้าไม่มีคีย์/เรียกไม่สำเร็จ */
 function callClaude_(system, userText) {
   const key = prop_('ANTHROPIC_API_KEY', '');
@@ -94,15 +157,15 @@ function hashString_(s) {
 
 /** บทวิเคราะห์ยอดจาก AI (cache ตามข้อมูลชุดเดียวกัน 6 ชม.) */
 function aiSalesComment_(snap) {
-  if (!snap || snap.source !== 'sheet' || !prop_('ANTHROPIC_API_KEY', '')) return null;
+  if (!snap || snap.source !== 'sheet' || !aiEnabled_()) return null;
   const payload = JSON.stringify(aiSalesPayload_(snap));
   const cache = CacheService.getScriptCache();
-  const key = 'ai_sales_' + hashString_(payload);
+  const key = 'ai_sales_' + aiProvider_() + '_' + hashString_(payload);
   const hit = cache.get(key);
   if (hit) return hit;
   let text = null;
   try {
-    text = callClaude_(AI_SYSTEM_PROMPT, 'ข้อมูลยอดขาย (JSON):\n' + payload);
+    text = callAi_(AI_SYSTEM_PROMPT, 'ข้อมูลยอดขาย (JSON):\n' + payload);
   } catch (e) {
     console.error('AI: ' + (e && e.message || e));
   }
@@ -160,17 +223,17 @@ function aiQaPayload_(snap, now) {
   return out;
 }
 
-/** ตอบคำถามภาษาธรรมดา (ต้องมี ANTHROPIC_API_KEY) */
+/** ตอบคำถามภาษาธรรมดา (ต้องมี GEMINI_API_KEY หรือ ANTHROPIC_API_KEY) */
 function askBot_(question, now) {
-  if (!prop_('ANTHROPIC_API_KEY', '')) {
-    return 'น้องขุนศึกยังตอบคำถามแบบนี้ไม่ได้ค่ะ ต้องเปิดใช้ AI ก่อน (ใส่ ANTHROPIC_API_KEY ใน Script Properties)\nระหว่างนี้พิมพ์ "เมนู" เพื่อดูคำสั่งที่ใช้ได้นะคะ';
+  if (!aiEnabled_()) {
+    return 'น้องขุนศึกยังตอบคำถามแบบนี้ไม่ได้ค่ะ ต้องเปิดใช้ AI ก่อน (ใส่ GEMINI_API_KEY ใน Script Properties)\nระหว่างนี้พิมพ์ "เมนู" เพื่อดูคำสั่งที่ใช้ได้นะคะ';
   }
   let snap = null;
   try { snap = getSalesSnapshot_(); } catch (e) { /* ignore */ }
   const payload = JSON.stringify(aiQaPayload_(snap, now));
   let text = null;
   try {
-    text = callClaude_(AI_QA_SYSTEM_PROMPT, 'ข้อมูล (JSON):\n' + payload + '\n\nคำถาม: ' + question);
+    text = callAi_(AI_QA_SYSTEM_PROMPT, 'ข้อมูล (JSON):\n' + payload + '\n\nคำถาม: ' + question);
   } catch (e) {
     console.error('AI Q&A: ' + (e && e.message || e));
   }
