@@ -2299,9 +2299,15 @@ function aiEnabled_() {
 /** ส่งคำถามให้ AI ที่เปิดใช้อยู่ — คืนข้อความ หรือ null */
 function callAi_(system, userText) {
   const p = aiProvider_();
-  if (p === 'gemini') return callGemini_(system, userText);
-  if (p === 'claude') return callClaude_(system, userText);
-  return null;
+  if (!p) return null;
+  const call = function (x) { return x === 'gemini' ? callGemini_(system, userText) : callClaude_(system, userText); };
+  const text = call(p);
+  if (text) return text;
+  // ตัวหลักล่ม → ถ้ามีคีย์อีกเจ้า ใช้เป็นตัวสำรอง
+  const other = p === 'gemini' ? 'claude' : 'gemini';
+  if (!prop_(other === 'gemini' ? 'GEMINI_API_KEY' : 'ANTHROPIC_API_KEY', '')) return null;
+  console.warn(p + ' ไม่สำเร็จ (' + AI_LAST_ERROR + ') → ลอง ' + other);
+  return call(other);
 }
 
 /** สาเหตุที่เรียก AI ไม่สำเร็จครั้งล่าสุด (ไว้บอกผู้ใช้) */

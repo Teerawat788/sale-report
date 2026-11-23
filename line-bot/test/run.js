@@ -1016,4 +1016,13 @@ test('Gemini 503 → ลองรุ่นถัดไป และห้อง�
   assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmain' }), null);
 });
 
+test('AI: ตัวหลักล่ม → ใช้อีกเจ้าเป็นตัวสำรอง', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g', ANTHROPIC_API_KEY: 'a', AI_PROVIDER: 'claude' } });
+  bot.setAiResponse({ status: 529, body: { error: { message: 'overloaded' } } });
+  assert.strictEqual(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), '🤖 • คำตอบจาก Gemini ค่ะ');
+  bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'จาก Claude ค่ะ' }] } });
+  bot.setGeminiResponse({ status: 503, body: {} });
+  assert.strictEqual(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), '🤖 จาก Claude ค่ะ');
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
