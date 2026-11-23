@@ -171,7 +171,7 @@ const COMMANDS = {
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
   sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
-  visits: ['ดูเยี่ยม', 'ประวัติเยี่ยม'],
+  visits: ['ดูเยี่ยม', 'ประวัติเยี่ยม', 'ดูติดตาม', 'ดูเข้าพบ', 'ประวัติติดตาม'],
   notvisited: ['ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
@@ -2833,17 +2833,30 @@ function handlePlanCommand_(raw, now) {
  */
 
 const VISIT_SHEET = 'บันทึกเยี่ยม';
-const VISIT_HEADERS = ['วันที่เวลา', 'เซลส์', 'userId', 'ลูกค้า', 'เขต', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'สถานที่'];
-const VISIT_STOPWORDS = ['มาก', 'มากๆ', 'มากเลย', 'เลย', 'จริง', 'จริงๆ', 'ครับ', 'ค่ะ', 'คะ', 'นะ', 'ไปเลย', 'สุด', 'สุดๆ', 'ที่สุด', 'มากมาก'];
+const VISIT_HEADERS = ['วันที่เวลา', 'เซลส์', 'userId', 'ลูกค้า', 'เขต', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'สถานที่', 'ประเภท'];
+const VISIT_STOPWORDS = ['ด้วย', 'ต่อ', 'ให้', 'งาน', 'เรื่อง', 'มาก', 'มากๆ', 'มากเลย', 'เลย', 'จริง', 'จริงๆ', 'ครับ', 'ค่ะ', 'คะ', 'นะ', 'ไปเลย', 'สุด', 'สุดๆ', 'ที่สุด', 'มากมาก'];
 
-/** "เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่" → { customer, note } หรือ null ถ้าเป็นคำชม ("เยี่ยมมาก") */
+/**
+ * คำขึ้นต้นที่ใช้บันทึก (เรียงคำยาวก่อน) → ประเภท
+ * strict = คำที่ใช้ในแชทปกติบ่อย (เช่น "ติดตาม", "เยี่ยม") ต้องตามด้วยชื่อลูกค้าที่รู้จัก หรือมีรายละเอียดต่อท้าย
+ */
+const VISIT_KEYWORDS = [
+  { word: 'บันทึกเข้าพบ', type: 'เข้าพบ' }, { word: 'บันทึกติดตาม', type: 'ติดตาม' }, { word: 'บันทึกเยี่ยม', type: 'เยี่ยม' },
+  { word: 'เข้าพบลูกค้า', type: 'เข้าพบ' }, { word: 'เข้าเยี่ยมลูกค้า', type: 'เยี่ยม' }, { word: 'ติดตามลูกค้า', type: 'ติดตาม' },
+  { word: 'เยี่ยมลูกค้า', type: 'เยี่ยม' }, { word: 'พบลูกค้า', type: 'เข้าพบ' }, { word: 'เยี่ยมฟาร์ม', type: 'เยี่ยม' },
+  { word: 'ลงพื้นที่', type: 'เยี่ยม' }, { word: 'เข้าเยี่ยม', type: 'เยี่ยม' }, { word: 'เข้าพบ', type: 'เข้าพบ' },
+  { word: 'ติดตาม', type: 'ติดตาม', strict: true }, { word: 'เยี่ยม', type: 'เยี่ยม', strict: true },
+];
+
+/** "เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่" → { customer, note, type } หรือ null ถ้าเป็นแชทปกติ ("เยี่ยมมาก", "ติดตาม งานนี้ด้วย") */
 function parseVisitText_(text) {
-  const m = String(text || '').trim().match(/^(?:เยี่ยมลูกค้า|บันทึกเยี่ยม|เยี่ยม)\s+([\s\S]+)$/);
-  if (!m) return null;
-  const rest = m[1].trim();
+  const t = String(text || '').trim();
+  const kw = VISIT_KEYWORDS.find(function (k) { return t.indexOf(k.word) === 0 && /\s/.test(t.charAt(k.word.length)); });
+  if (!kw) return null;
+  const rest = t.slice(kw.word.length).trim();
+  if (!rest) return null;
   const first = rest.split(/\s+/)[0];
   if (VISIT_STOPWORDS.indexOf(first) >= 0) return null;
-  if (/^เยี่ยม\s/.test(text.trim()) && rest.split(/\s+/).length < 2) return null; // "เยี่ยม ครับ"
   // หาชื่อลูกค้าที่รู้จักที่ยาวที่สุดที่ขึ้นต้นข้อความ
   const known = knownCustomerNames_();
   const nRest = normName_(rest);
@@ -2857,10 +2870,12 @@ function parseVisitText_(text) {
     let count = normName_(best).length;
     let i = 0;
     while (i < rest.length && count > 0) { if (!/\s/.test(rest[i])) count--; i++; }
-    return { customer: best, note: rest.slice(i).trim() };
+    return { customer: best, note: rest.slice(i).trim(), type: kw.type };
   }
   const parts = rest.split(/\s+/);
-  return { customer: parts[0], note: parts.slice(1).join(' ') };
+  // คำทั่วไป: ลูกค้าที่ไม่รู้จักต้องมีรายละเอียดต่อท้าย (กันแชทปกติ เช่น "ติดตาม ด้วย")
+  if (kw.strict && (parts.length < 2 || kw.type === 'ติดตาม' && !known.length)) return null;
+  return { customer: parts[0], note: parts.slice(1).join(' '), type: kw.type };
 }
 
 function knownCustomerNames_() {
@@ -2881,7 +2896,7 @@ function customerZone_(name) {
 function logVisit_(sender, visit, now) {
   const zone = customerZone_(visit.customer);
   withLock_(function () {
-    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '']);
+    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '', visit.type || 'เยี่ยม']);
   });
   return zone;
 }
@@ -2912,12 +2927,12 @@ function readVisits_() {
   if (!sh) return [];
   return sh.getDataRange().getValues().slice(1).map(function (v) {
     return { at: toDate_(v[0]), sales: cleanText_(v[1]), customer: cleanText_(v[3]), zone: cleanText_(v[4]),
-      note: cleanText_(v[5]), lat: v[6], lng: v[7], place: cleanText_(v[8]) };
+      note: cleanText_(v[5]), lat: v[6], lng: v[7], place: cleanText_(v[8]), type: cleanText_(v[9]) || 'เยี่ยม' };
   }).filter(function (x) { return x.at && x.customer; });
 }
 
 function visitLine_(x) {
-  return '• ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
+  return '• ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' ' + x.type + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
     '\n   👤 ' + x.sales + (x.note ? ' — ' + truncate_(x.note, 120) : '') +
     (x.lat !== '' && x.lat !== undefined ? '\n   📍 ' + (x.place ? truncate_(x.place, 60) : 'แชร์ตำแหน่งแล้ว') : '');
 }
@@ -2925,7 +2940,7 @@ function visitLine_(x) {
 /** ดูเยี่ยม [คำค้น] — ไม่มีคำค้น = 7 วันล่าสุดสรุปรายคน; มีคำค้น = ลูกค้า/เซลส์/เขต ย้อน 90 วัน */
 function formatVisits_(query, now) {
   const all = readVisits_();
-  if (!all.length) return 'ยังไม่มีบันทึกการเยี่ยมลูกค้าค่ะ\nพิมพ์ในกลุ่ม: เยี่ยม <ลูกค้า> <รายละเอียด>';
+  if (!all.length) return 'ยังไม่มีบันทึกการเยี่ยม/ติดตามลูกค้าค่ะ\nพิมพ์ในกลุ่ม: เยี่ยม / เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>';
   const q = normName_(query || '');
   if (!q) {
     const since = addDays_(startOfDay_(now), -6);
@@ -2935,7 +2950,7 @@ function formatVisits_(query, now) {
     recent.forEach(function (x) { bySales[x.sales] = (bySales[x.sales] || 0) + 1; });
     const ranking = Object.keys(bySales).sort(function (a, b) { return bySales[b] - bySales[a]; })
       .map(function (s) { return '• ' + s + ' ' + bySales[s] + ' ราย'; });
-    return '📍 เยี่ยมลูกค้า 7 วันล่าสุด (' + recent.length + ' ครั้ง)\n\n👤 รายคน\n' + ranking.join('\n') +
+    return '📍 เยี่ยม/เข้าพบ/ติดตามลูกค้า 7 วันล่าสุด (' + recent.length + ' ครั้ง)\n\n👤 รายคน\n' + ranking.join('\n') +
       '\n\n🗒️ ล่าสุด\n' + recent.slice(0, 15).map(visitLine_).join('\n') +
       (recent.length > 15 ? '\n…และอีก ' + (recent.length - 15) + ' ครั้ง' : '');
   }
@@ -3278,7 +3293,9 @@ function handleEvent_(ev) {
   if (visit) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
-    lineReply_(ev.replyToken, '📍 บันทึกเยี่ยม ' + visit.customer + (zone ? ' [' + zone + ']' : '') + ' แล้วค่ะ' +
+    const icon = visit.type === 'ติดตาม' ? '📞' : visit.type === 'เข้าพบ' ? '🤝' : '📍';
+    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type + 'ลูกค้าแล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+      '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
       (visit.note ? '\n🗒️ ' + truncate_(visit.note, 200) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
     return;
   }
@@ -3565,7 +3582,8 @@ const HELP_TEXT = [
   '🎂 วันเกิด — ลูกค้าเกิดใน 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
   '',
   '📍 เยี่ยมลูกค้า',
-  '• เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่ (แล้วแชร์ตำแหน่งต่อได้)',
+  '• เยี่ยม / เข้าพบ / เข้าเยี่ยม / ติดตาม <ลูกค้า> <รายละเอียด>',
+  '  เช่น เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่ (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูเยี่ยม | ดูเยี่ยม กบทอง | ดูเยี่ยม F4 | ไม่ได้เยี่ยม F4',
   '',
   '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',

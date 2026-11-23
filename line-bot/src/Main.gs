@@ -104,7 +104,9 @@ function handleEvent_(ev) {
   if (visit) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
-    lineReply_(ev.replyToken, '📍 บันทึกเยี่ยม ' + visit.customer + (zone ? ' [' + zone + ']' : '') + ' แล้วค่ะ' +
+    const icon = visit.type === 'ติดตาม' ? '📞' : visit.type === 'เข้าพบ' ? '🤝' : '📍';
+    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type + 'ลูกค้าแล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+      '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
       (visit.note ? '\n🗒️ ' + truncate_(visit.note, 200) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
     return;
   }
@@ -391,7 +393,8 @@ const HELP_TEXT = [
   '🎂 วันเกิด — ลูกค้าเกิดใน 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
   '',
   '📍 เยี่ยมลูกค้า',
-  '• เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่ (แล้วแชร์ตำแหน่งต่อได้)',
+  '• เยี่ยม / เข้าพบ / เข้าเยี่ยม / ติดตาม <ลูกค้า> <รายละเอียด>',
+  '  เช่น เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่ (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูเยี่ยม | ดูเยี่ยม กบทอง | ดูเยี่ยม F4 | ไม่ได้เยี่ยม F4',
   '',
   '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',
