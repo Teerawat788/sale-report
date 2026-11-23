@@ -331,7 +331,7 @@ function formatImportResult_(r, fileName) {
   if (r.mode === 'mtd') {
     let m = '✅ นำเข้ายอดสะสม ณ ' + fmtDateLong_(r.from) + '\n' + fmtNum_(r.count, 0) + ' แถว รวม ' + fmtNum_(r.total) + ' ตัน' +
       (fileName ? '\n📄 ' + fileName : '') +
-      '\nถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
+      '\nถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" ได้เลยค่ะ เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
     if (r.missing && r.missing.length) m += '\n⚠️ ไฟล์ไม่มีคอลัมน์: ' + r.missing.map(function (k) { return MISSING_LABEL[k]; }).join(', ');
     if (!r.hasAmount) m += '\nℹ️ ไฟล์ไม่มีคอลัมน์มูลค่า (บาท) — รายงานจะแสดงเฉพาะตัน';
     if (r.zoneLevel) m += '\nℹ️ ไฟล์รายเขต: ใช้เป้า (Budget) จากไฟล์';
@@ -387,10 +387,10 @@ function importSalesFromDrive_(force, asOfOverride) {
     if (/^_import_tmp_/.test(f.getName())) continue;
     if (!latest || f.getLastUpdated() > latest.getLastUpdated()) latest = f;
   }
-  if (!latest) return { skipped: true, message: 'ยังไม่มีไฟล์ในโฟลเดอร์นำเข้า' };
+  if (!latest) return { skipped: true, message: 'ยังไม่มีไฟล์ในโฟลเดอร์นำเข้าค่ะ' };
   const key = latest.getId() + '@' + latest.getLastUpdated().getTime();
   if (!force && prop_('LAST_IMPORT_KEY', '') === key) {
-    return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้ว' };
+    return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้วค่ะ' };
   }
   return importDriveFile_(latest, asOfOverride);
 }
@@ -1041,7 +1041,7 @@ function findCustomers_(names, q, exactOnly) {
 function formatCustomerSales_(snap, name) {
   if (snap.source !== 'sheet') return null;
   const rows = snap.monthRows.filter(function (r) { return r.customer === name; });
-  if (!rows.length) return '👥 ' + name + '\nยังไม่มียอดเดือนนี้';
+  if (!rows.length) return '👥 ' + name + '\nยังไม่มียอดเดือนนี้ค่ะ';
   const ton = sumField_(rows, 'ton');
   const amt = sumField_(rows, 'amount');
   const wd = snap.detailWd || { total: snap.workingDaysTotal, passed: snap.workingDaysPassed };

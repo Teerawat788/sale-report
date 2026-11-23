@@ -15,7 +15,7 @@ function doPost(e) {
       (body.events || []).forEach(function (ev) {
         try { handleEvent_(ev); } catch (err) {
           console.error(err && err.stack || err);
-          if (ev.replyToken) lineReply_(ev.replyToken, '⚠️ เกิดข้อผิดพลาด: ' + (err && err.message || err));
+          if (ev.replyToken) lineReply_(ev.replyToken, '⚠️ ขออภัยค่ะ เกิดข้อผิดพลาด: ' + (err && err.message || err));
         }
       });
     }
@@ -36,9 +36,9 @@ function handleEvent_(ev) {
 
   if (ev.type === 'join') {
     lineReply_(ev.replyToken, withQuickReply_(
-      '👋 สวัสดีทีมขาย! ผมคือบอทผู้ช่วย\n' +
-      (registered ? '' : 'พิมพ์ "ลงทะเบียน" เพื่อให้บอทส่งสรุปเช้า/เตือนนัดเข้ากลุ่มนี้\n') +
-      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมด', ['ลงทะเบียน', 'เมนู']));
+      '👋 สวัสดีค่ะทีมขาย! น้องขุนศึกเป็นบอทผู้ช่วยของทีมค่ะ\n' +
+      (registered ? '' : 'พิมพ์ "ลงทะเบียน" เพื่อให้น้องขุนศึกส่งยอดและแจ้งเตือนเข้ากลุ่มนี้นะคะ\n') +
+      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมดได้เลยค่ะ', ['ลงทะเบียน', 'เมนู']));
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
@@ -93,20 +93,20 @@ function runCommand_(p, ctx) {
     case 'register': {
       const id = chatId_(ctx.source);
       const current = prop_('GROUP_ID', '');
-      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่ม LINE ที่ต้องการให้บอทส่งแจ้งเตือน';
-      if (current === id) return '✅ กลุ่มนี้ลงทะเบียนไว้แล้ว';
-      if (current) return '⚠️ บอทลงทะเบียนกับกลุ่มอื่นอยู่แล้ว — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อน';
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่ม LINE ที่ต้องการให้น้องขุนศึกส่งแจ้งเตือนนะคะ';
+      if (current === id) return '✅ กลุ่มนี้ลงทะเบียนไว้แล้วค่ะ';
+      if (current) return '⚠️ น้องขุนศึกลงทะเบียนกับกลุ่มอื่นอยู่แล้วค่ะ — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อนนะคะ';
       setProp_('GROUP_ID', id);
-      return '✅ ลงทะเบียนกลุ่มนี้แล้ว บอทจะส่งสรุปเช้า เตือนนัด และสรุปสัปดาห์เข้ากลุ่มนี้\nพิมพ์ "เมนู" เพื่อดูคำสั่ง';
+      return '✅ ลงทะเบียนกลุ่มนี้แล้วค่ะ น้องขุนศึกจะส่งยอดขายกับวันเกิดลูกค้าทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามตารางเข้ากลุ่มนี้นะคะ\nพิมพ์ "เมนู" เพื่อดูคำสั่งได้เลยค่ะ';
     }
 
     case 'registerupload': {
       const id = chatId_(ctx.source);
-      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอด';
-      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อน (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
-      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้ว — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับบอท';
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอดนะคะ';
+      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อนนะคะ (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
+      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้วค่ะ — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับน้องขุนศึกนะคะ';
       setProp_('UPLOAD_GROUP_ID', id);
-      return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว\nส่งไฟล์ Excel ยอดขายที่นี่ → บอทอัปเดตข้อมูล (ไม่ส่งอะไรเข้ากลุ่มหลัก)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุด';
+      return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้วค่ะ\nส่งไฟล์ Excel ยอดขายที่นี่ได้เลย น้องขุนศึกจะอัปเดตข้อมูลให้ (ไม่ส่งอะไรเข้ากลุ่มหลักค่ะ)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุดค่ะ';
     }
 
     case 'whoami':
@@ -131,17 +131,17 @@ function runCommand_(p, ctx) {
       const found = findCustomers_(customers, p.argText, false);
       if (found.length === 1) return formatCustomerSales_(snap, found[0]);
       if (found.length > 1) {
-        return '🔎 พบลูกค้า ' + found.length + ' ราย — พิมพ์ชื่อให้ตรงขึ้น\n' +
+        return '🔎 พบลูกค้า ' + found.length + ' รายค่ะ — พิมพ์ชื่อให้ตรงขึ้นอีกนิดนะคะ\n' +
           found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
       }
       return null;
     }
 
     case 'aisales': {
-      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI — ใส่ ANTHROPIC_API_KEY ใน Script Properties';
+      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI ค่ะ — ใส่ ANTHROPIC_API_KEY ใน Script Properties ก่อนนะคะ';
       const snap = getSalesSnapshot_();
       if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
-      return aiSalesComment_(snap) || 'AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้ง';
+      return aiSalesComment_(snap) || 'ขออภัยค่ะ AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ';
     }
 
     case 'birthday':
@@ -164,7 +164,7 @@ function runCommand_(p, ctx) {
 
     case 'importsales': {
       const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
-      if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้';
+      if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้นะคะ';
       const r = importSalesFromDrive_(true, asOf);
       if (r.skipped) return 'ℹ️ ' + r.message;
       const snap = getSalesSnapshot_();
@@ -264,7 +264,8 @@ function runCommand_(p, ctx) {
 
     case 'brief': {
       const msgs = buildMorningMessages_(now);
-      return msgs.length ? msgs : 'ไม่มีข้อความเช้า (ปิดอยู่)';
+      if (msgs.length) return msgs;
+      return flag_('BRIEF_ENABLED') || flag_('BIRTHDAY_ENABLED') ? 'ยังไม่มีข้อมูลยอดขายหรือวันเกิดสำหรับข้อความเช้าค่ะ' : 'ข้อความเช้าปิดอยู่ค่ะ';
     }
 
     case 'review':
@@ -282,8 +283,8 @@ function lookupCommand_(text) {
   return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
 }
 
-const NO_SHEET_SALES_TEXT = 'ยังไม่มียอดรายวันจาก Power BI ในแท็บ SalesData\n' +
-  'Export ข้อมูลจาก Power BI เป็น .csv แล้ววางในโฟลเดอร์ Google Drive ที่ตั้งไว้ จากนั้นพิมพ์ "อัปเดตยอด"';
+const NO_SHEET_SALES_TEXT = 'ยังไม่มียอดจากไฟล์ Power BI ค่ะ\n' +
+  'ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด หรือวางไฟล์ในโฟลเดอร์ Google Drive แล้วพิมพ์ "อัปเดตยอด" ได้เลยค่ะ';
 
 const HELP_TEXT = [
   '🤖 คำสั่งบอททีมขาย',

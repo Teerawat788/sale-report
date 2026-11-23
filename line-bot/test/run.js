@@ -286,7 +286,7 @@ test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไ�
   bot.ctx.tick();
   assert.strictEqual(bot.pushes().length, 1, 'ส่งครั้งเดียวต่อวัน');
   const text = bot.pushes()[0].body.messages[0].text;
-  assert.match(text, /^☀️ สวัสดีตอนเช้าครับ — ศุกร์ 20 พ\.ย\. 2569\n\n📊 ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
+  assert.match(text, /^☀️ สวัสดีตอนเช้าค่ะ — ศุกร์ 20 พ\.ย\. 2569\n\n📊 ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
   assert.match(text, /🏢 รวมทุกเขต[\s\S]*📍 F4[\s\S]*📍 F5/);
   assert.doesNotMatch(text, /ประชุมเช้า|ใบเสนอราคา|นัด|งานค้าง/);
   bot.setNow(D(2026, 11, 22, 7, 31)); // อาทิตย์
@@ -299,7 +299,7 @@ test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไ�
 
 test('ไม่มี SalesData: คำสั่งยอดรายวันแนะนำวิธีตั้งค่า', () => {
   const bot = createBot({ dashboard });
-  assert.match(bot.say('ยอดเซลส์'), /ยังไม่มียอดรายวันจาก Power BI/);
+  assert.match(bot.say('ยอดเซลส์'), /ยังไม่มียอดจากไฟล์ Power BI ค่ะ/);
   assert.match(bot.say('อัปเดตยอด'), /ยังไม่ได้ตั้ง IMPORT_FOLDER_ID/);
 });
 
@@ -698,7 +698,7 @@ test('แจ้งเตือนตามวัน: เสาร์ 16:00 ท�
   const sh = bot.sheets['แจ้งเตือน'];
   const at = (d, h, m) => { bot.setNow(D(2026, d[0], d[1], h, m)); bot.ctx.tick(); return bot.pushes().map((p) => p.body.messages[0].text); };
   assert.deepStrictEqual(at([11, 28], 15, 55), []);
-  assert.deepStrictEqual(at([11, 28], 16, 3), ['รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ']);
+  assert.deepStrictEqual(at([11, 28], 16, 3), ['รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยนะคะ']);
   assert.strictEqual(at([11, 28], 16, 8).length, 1, 'ไม่ส่งซ้ำวันเดียวกัน');
   assert.strictEqual(at([11, 28], 17, 30).length, 1);
   assert.strictEqual(at([11, 29], 16, 3).length, 1, 'อาทิตย์ไม่ส่ง');
@@ -708,7 +708,7 @@ test('แจ้งเตือนตามวัน: เสาร์ 16:00 ท�
   assert.strictEqual(at([12, 18], 7, 2).length, 3, 'ศุกร์ 18/12 ส่ง');
   const fri = bot.pushes()[2].body.messages[0];
   assert.strictEqual(fri.type, 'textV2');
-  assert.strictEqual(fri.text, '{everyone} วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ');
+  assert.strictEqual(fri.text, '{everyone} วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างคะ');
   assert.deepStrictEqual(fri.substitution, { everyone: { type: 'mention', mentionee: { type: 'all' } } });
   assert.match(sh.data[2][6], /^ส่งแล้ว/);
 });
@@ -733,6 +733,27 @@ test('แจ้งเตือน: ข้อความยังไม่กร
   const before = bot.pushes().length;
   bot.ctx.tick();
   assert.strictEqual(bot.pushes().length, before, 'ใช้งาน = FALSE ไม่ส่ง');
+});
+
+test('น้องขุนศึกพูดแบบผู้หญิง: ไม่มีครับ, แท็บแจ้งเตือนเดิมถูกแก้เป็นค่ะ/คะ', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  const replies = [bot.say('ลงทะเบียน'), bot.say('ลงทะเบียน'), bot.say('กลุ่มอัปโหลด', { groupId: 'Cmine' }),
+    bot.say('เมนู'), bot.say('ยอดเซลส์'), bot.say('วิเคราะห์'),
+    bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' }), bot.say('สรุปเช้า')];
+  replies.forEach((r) => assert.doesNotMatch(String(r), /ครับ|ผมคือ/));
+  assert.match(replies[0], /ลงทะเบียนกลุ่มนี้แล้วค่ะ/);
+  assert.match(replies[7], /สวัสดีตอนเช้าค่ะ/);
+
+  const sh = bot.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('แจ้งเตือน');
+  sh.appendRow(['วัน', 'เวลา', 'ข้อความ', 'ทุกกี่สัปดาห์', 'เริ่มวันที่', 'ใช้งาน', 'ส่งล่าสุด']);
+  sh.appendRow(['ส', '16:00', 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ', 1, '', true, '']);
+  sh.appendRow(['ศ', '07:00', '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ', 2, D(2026, 12, 4), true, '']);
+  sh.appendRow(['จ', '08:00', 'ข้อความที่ผู้ใช้เขียนเองครับ', 1, '', true, '']);
+  bot.ctx.setupReminders();
+  assert.strictEqual(sh.data[1][2], 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยนะคะ');
+  assert.strictEqual(sh.data[2][2], '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างคะ');
+  assert.strictEqual(sh.data[3][2], 'ข้อความที่ผู้ใช้เขียนเองครับ', 'ข้อความที่เขียนเองไม่ถูกแก้');
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

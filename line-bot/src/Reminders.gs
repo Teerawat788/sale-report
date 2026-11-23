@@ -12,9 +12,15 @@
 const REMINDER_SHEET = 'แจ้งเตือน';
 const REMINDER_HEADERS = ['วัน', 'เวลา', 'ข้อความ', 'ทุกกี่สัปดาห์', 'เริ่มวันที่', 'ใช้งาน', 'ส่งล่าสุด'];
 const REMINDER_PLACEHOLDER = '(ใส่ข้อความที่ต้องการให้บอทส่ง)';
-const FRIDAY_MEETING_TEXT = '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ';
+const FRIDAY_MEETING_TEXT = '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างคะ';
+const SATURDAY_PLAN_TEXT = 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยนะคะ';
+/** ข้อความเดิม (เสียงผู้ชาย) → ข้อความใหม่ — แก้ให้เองตอนรัน setupTriggers */
+const REMINDER_TEXT_UPDATES = {
+  '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ': FRIDAY_MEETING_TEXT,
+  'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ': SATURDAY_PLAN_TEXT,
+};
 const REMINDER_DEFAULTS = [
-  ['ส', '16:00', 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ', 1, '', true, ''],
+  ['ส', '16:00', SATURDAY_PLAN_TEXT, 1, '', true, ''],
   ['ศ', '07:00', FRIDAY_MEETING_TEXT, 2, new Date(2026, 11, 4), true, ''],
 ];
 
@@ -25,10 +31,13 @@ function setupReminders() {
     REMINDER_DEFAULTS.forEach(function (r) { sh.appendRow(r); });
     return;
   }
-  // แท็บที่สร้างไว้ก่อน: เติมข้อความวันศุกร์แทนข้อความตัวอย่าง
+  // แท็บที่สร้างไว้ก่อน: เติมข้อความวันศุกร์แทนข้อความตัวอย่าง และเปลี่ยนข้อความเดิมเป็นเสียงผู้หญิง
   const sh = ss.getSheetByName(REMINDER_SHEET);
   sh.getDataRange().getValues().forEach(function (v, i) {
-    if (i > 0 && cleanText_(v[2]) === REMINDER_PLACEHOLDER) sh.getRange(i + 1, 3).setValue(FRIDAY_MEETING_TEXT);
+    if (i === 0) return;
+    const t = cleanText_(v[2]);
+    if (t === REMINDER_PLACEHOLDER) sh.getRange(i + 1, 3).setValue(FRIDAY_MEETING_TEXT);
+    else if (REMINDER_TEXT_UPDATES[t]) sh.getRange(i + 1, 3).setValue(REMINDER_TEXT_UPDATES[t]);
   });
 }
 

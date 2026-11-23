@@ -55,7 +55,7 @@ function buildMorningMessages_(now) {
     importSalesQuietly_(false); // ใช้ไฟล์ล่าสุดในโฟลเดอร์ (ถ้ามี)
     try {
       const snap = getSalesSnapshot_();
-      messages.push('☀️ สวัสดีตอนเช้าครับ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
+      messages.push('☀️ สวัสดีตอนเช้าค่ะ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
       const ai = aiSalesComment_(snap);
       if (ai) messages.push(ai);
     } catch (e) {

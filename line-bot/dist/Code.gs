@@ -1327,7 +1327,7 @@ function formatImportResult_(r, fileName) {
   if (r.mode === 'mtd') {
     let m = '✅ นำเข้ายอดสะสม ณ ' + fmtDateLong_(r.from) + '\n' + fmtNum_(r.count, 0) + ' แถว รวม ' + fmtNum_(r.total) + ' ตัน' +
       (fileName ? '\n📄 ' + fileName : '') +
-      '\nถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
+      '\nถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" ได้เลยค่ะ เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
     if (r.missing && r.missing.length) m += '\n⚠️ ไฟล์ไม่มีคอลัมน์: ' + r.missing.map(function (k) { return MISSING_LABEL[k]; }).join(', ');
     if (!r.hasAmount) m += '\nℹ️ ไฟล์ไม่มีคอลัมน์มูลค่า (บาท) — รายงานจะแสดงเฉพาะตัน';
     if (r.zoneLevel) m += '\nℹ️ ไฟล์รายเขต: ใช้เป้า (Budget) จากไฟล์';
@@ -1383,10 +1383,10 @@ function importSalesFromDrive_(force, asOfOverride) {
     if (/^_import_tmp_/.test(f.getName())) continue;
     if (!latest || f.getLastUpdated() > latest.getLastUpdated()) latest = f;
   }
-  if (!latest) return { skipped: true, message: 'ยังไม่มีไฟล์ในโฟลเดอร์นำเข้า' };
+  if (!latest) return { skipped: true, message: 'ยังไม่มีไฟล์ในโฟลเดอร์นำเข้าค่ะ' };
   const key = latest.getId() + '@' + latest.getLastUpdated().getTime();
   if (!force && prop_('LAST_IMPORT_KEY', '') === key) {
-    return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้ว' };
+    return { skipped: true, message: 'ไฟล์ล่าสุด (' + latest.getName() + ') นำเข้าไปแล้วค่ะ' };
   }
   return importDriveFile_(latest, asOfOverride);
 }
@@ -2037,7 +2037,7 @@ function findCustomers_(names, q, exactOnly) {
 function formatCustomerSales_(snap, name) {
   if (snap.source !== 'sheet') return null;
   const rows = snap.monthRows.filter(function (r) { return r.customer === name; });
-  if (!rows.length) return '👥 ' + name + '\nยังไม่มียอดเดือนนี้';
+  if (!rows.length) return '👥 ' + name + '\nยังไม่มียอดเดือนนี้ค่ะ';
   const ton = sumField_(rows, 'ton');
   const amt = sumField_(rows, 'amount');
   const wd = snap.detailWd || { total: snap.workingDaysTotal, passed: snap.workingDaysPassed };
@@ -2395,9 +2395,9 @@ function parseMonthArg_(s, now) {
 function birthdayCommand_(arg, now) {
   const today = startOfDay_(now);
   const all = readBirthdays_();
-  if (!all.length) return 'ยังไม่มีข้อมูลวันเกิด — ตั้ง BIRTHDAY_SHEET_ID ใน Script Properties';
+  if (!all.length) return 'ยังไม่มีข้อมูลวันเกิดค่ะ — ตั้ง BIRTHDAY_SHEET_ID ใน Script Properties ก่อนนะคะ';
   if (!arg) {
-    return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีวันเกิดใน 30 วันนี้');
+    return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีลูกค้าเกิดใน 30 วันนี้ค่ะ');
   }
   const month = parseMonthArg_(arg, now);
   if (!month) return null;
@@ -2408,7 +2408,7 @@ function birthdayCommand_(arg, now) {
     if (d.getMonth() !== b.month - 1) d = new Date(year, b.month - 1, 28);
     return Object.assign({ date: d }, b);
   });
-  return formatBirthdays_('🎂 วันเกิดลูกค้า เดือน ' + TH_MONTHS_SHORT[month - 1], entries, today, 'ไม่มีวันเกิดในเดือนนี้');
+  return formatBirthdays_('🎂 วันเกิดลูกค้า เดือน ' + TH_MONTHS_SHORT[month - 1], entries, today, 'ไม่มีลูกค้าเกิดในเดือนนี้ค่ะ');
 }
 
 // ---------- Reminders.gs ----------
@@ -2426,9 +2426,15 @@ function birthdayCommand_(arg, now) {
 const REMINDER_SHEET = 'แจ้งเตือน';
 const REMINDER_HEADERS = ['วัน', 'เวลา', 'ข้อความ', 'ทุกกี่สัปดาห์', 'เริ่มวันที่', 'ใช้งาน', 'ส่งล่าสุด'];
 const REMINDER_PLACEHOLDER = '(ใส่ข้อความที่ต้องการให้บอทส่ง)';
-const FRIDAY_MEETING_TEXT = '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ';
+const FRIDAY_MEETING_TEXT = '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างคะ';
+const SATURDAY_PLAN_TEXT = 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยนะคะ';
+/** ข้อความเดิม (เสียงผู้ชาย) → ข้อความใหม่ — แก้ให้เองตอนรัน setupTriggers */
+const REMINDER_TEXT_UPDATES = {
+  '@All วันที่มีประชุม Perfomance ทีมขาย&วิชาการ มีใครนำเสนอ,อัพเดทอะไรบ้างครับ': FRIDAY_MEETING_TEXT,
+  'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ': SATURDAY_PLAN_TEXT,
+};
 const REMINDER_DEFAULTS = [
-  ['ส', '16:00', 'รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยครับ', 1, '', true, ''],
+  ['ส', '16:00', SATURDAY_PLAN_TEXT, 1, '', true, ''],
   ['ศ', '07:00', FRIDAY_MEETING_TEXT, 2, new Date(2026, 11, 4), true, ''],
 ];
 
@@ -2439,10 +2445,13 @@ function setupReminders() {
     REMINDER_DEFAULTS.forEach(function (r) { sh.appendRow(r); });
     return;
   }
-  // แท็บที่สร้างไว้ก่อน: เติมข้อความวันศุกร์แทนข้อความตัวอย่าง
+  // แท็บที่สร้างไว้ก่อน: เติมข้อความวันศุกร์แทนข้อความตัวอย่าง และเปลี่ยนข้อความเดิมเป็นเสียงผู้หญิง
   const sh = ss.getSheetByName(REMINDER_SHEET);
   sh.getDataRange().getValues().forEach(function (v, i) {
-    if (i > 0 && cleanText_(v[2]) === REMINDER_PLACEHOLDER) sh.getRange(i + 1, 3).setValue(FRIDAY_MEETING_TEXT);
+    if (i === 0) return;
+    const t = cleanText_(v[2]);
+    if (t === REMINDER_PLACEHOLDER) sh.getRange(i + 1, 3).setValue(FRIDAY_MEETING_TEXT);
+    else if (REMINDER_TEXT_UPDATES[t]) sh.getRange(i + 1, 3).setValue(REMINDER_TEXT_UPDATES[t]);
   });
 }
 
@@ -2580,7 +2589,7 @@ function buildMorningMessages_(now) {
     importSalesQuietly_(false); // ใช้ไฟล์ล่าสุดในโฟลเดอร์ (ถ้ามี)
     try {
       const snap = getSalesSnapshot_();
-      messages.push('☀️ สวัสดีตอนเช้าครับ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
+      messages.push('☀️ สวัสดีตอนเช้าค่ะ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
       const ai = aiSalesComment_(snap);
       if (ai) messages.push(ai);
     } catch (e) {
@@ -2727,7 +2736,7 @@ function doPost(e) {
       (body.events || []).forEach(function (ev) {
         try { handleEvent_(ev); } catch (err) {
           console.error(err && err.stack || err);
-          if (ev.replyToken) lineReply_(ev.replyToken, '⚠️ เกิดข้อผิดพลาด: ' + (err && err.message || err));
+          if (ev.replyToken) lineReply_(ev.replyToken, '⚠️ ขออภัยค่ะ เกิดข้อผิดพลาด: ' + (err && err.message || err));
         }
       });
     }
@@ -2748,9 +2757,9 @@ function handleEvent_(ev) {
 
   if (ev.type === 'join') {
     lineReply_(ev.replyToken, withQuickReply_(
-      '👋 สวัสดีทีมขาย! ผมคือบอทผู้ช่วย\n' +
-      (registered ? '' : 'พิมพ์ "ลงทะเบียน" เพื่อให้บอทส่งสรุปเช้า/เตือนนัดเข้ากลุ่มนี้\n') +
-      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมด', ['ลงทะเบียน', 'เมนู']));
+      '👋 สวัสดีค่ะทีมขาย! น้องขุนศึกเป็นบอทผู้ช่วยของทีมค่ะ\n' +
+      (registered ? '' : 'พิมพ์ "ลงทะเบียน" เพื่อให้น้องขุนศึกส่งยอดและแจ้งเตือนเข้ากลุ่มนี้นะคะ\n') +
+      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมดได้เลยค่ะ', ['ลงทะเบียน', 'เมนู']));
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
@@ -2805,20 +2814,20 @@ function runCommand_(p, ctx) {
     case 'register': {
       const id = chatId_(ctx.source);
       const current = prop_('GROUP_ID', '');
-      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่ม LINE ที่ต้องการให้บอทส่งแจ้งเตือน';
-      if (current === id) return '✅ กลุ่มนี้ลงทะเบียนไว้แล้ว';
-      if (current) return '⚠️ บอทลงทะเบียนกับกลุ่มอื่นอยู่แล้ว — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อน';
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่ม LINE ที่ต้องการให้น้องขุนศึกส่งแจ้งเตือนนะคะ';
+      if (current === id) return '✅ กลุ่มนี้ลงทะเบียนไว้แล้วค่ะ';
+      if (current) return '⚠️ น้องขุนศึกลงทะเบียนกับกลุ่มอื่นอยู่แล้วค่ะ — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อนนะคะ';
       setProp_('GROUP_ID', id);
-      return '✅ ลงทะเบียนกลุ่มนี้แล้ว บอทจะส่งสรุปเช้า เตือนนัด และสรุปสัปดาห์เข้ากลุ่มนี้\nพิมพ์ "เมนู" เพื่อดูคำสั่ง';
+      return '✅ ลงทะเบียนกลุ่มนี้แล้วค่ะ น้องขุนศึกจะส่งยอดขายกับวันเกิดลูกค้าทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามตารางเข้ากลุ่มนี้นะคะ\nพิมพ์ "เมนู" เพื่อดูคำสั่งได้เลยค่ะ';
     }
 
     case 'registerupload': {
       const id = chatId_(ctx.source);
-      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอด';
-      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อน (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
-      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้ว — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับบอท';
+      if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอดนะคะ';
+      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อนนะคะ (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
+      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้วค่ะ — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับน้องขุนศึกนะคะ';
       setProp_('UPLOAD_GROUP_ID', id);
-      return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว\nส่งไฟล์ Excel ยอดขายที่นี่ → บอทอัปเดตข้อมูล (ไม่ส่งอะไรเข้ากลุ่มหลัก)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุด';
+      return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้วค่ะ\nส่งไฟล์ Excel ยอดขายที่นี่ได้เลย น้องขุนศึกจะอัปเดตข้อมูลให้ (ไม่ส่งอะไรเข้ากลุ่มหลักค่ะ)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุดค่ะ';
     }
 
     case 'whoami':
@@ -2843,17 +2852,17 @@ function runCommand_(p, ctx) {
       const found = findCustomers_(customers, p.argText, false);
       if (found.length === 1) return formatCustomerSales_(snap, found[0]);
       if (found.length > 1) {
-        return '🔎 พบลูกค้า ' + found.length + ' ราย — พิมพ์ชื่อให้ตรงขึ้น\n' +
+        return '🔎 พบลูกค้า ' + found.length + ' รายค่ะ — พิมพ์ชื่อให้ตรงขึ้นอีกนิดนะคะ\n' +
           found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
       }
       return null;
     }
 
     case 'aisales': {
-      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI — ใส่ ANTHROPIC_API_KEY ใน Script Properties';
+      if (!prop_('ANTHROPIC_API_KEY', '')) return 'ยังไม่ได้เปิดใช้ AI ค่ะ — ใส่ ANTHROPIC_API_KEY ใน Script Properties ก่อนนะคะ';
       const snap = getSalesSnapshot_();
       if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
-      return aiSalesComment_(snap) || 'AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้ง';
+      return aiSalesComment_(snap) || 'ขออภัยค่ะ AI วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ';
     }
 
     case 'birthday':
@@ -2876,7 +2885,7 @@ function runCommand_(p, ctx) {
 
     case 'importsales': {
       const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
-      if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้';
+      if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้นะคะ';
       const r = importSalesFromDrive_(true, asOf);
       if (r.skipped) return 'ℹ️ ' + r.message;
       const snap = getSalesSnapshot_();
@@ -2976,7 +2985,8 @@ function runCommand_(p, ctx) {
 
     case 'brief': {
       const msgs = buildMorningMessages_(now);
-      return msgs.length ? msgs : 'ไม่มีข้อความเช้า (ปิดอยู่)';
+      if (msgs.length) return msgs;
+      return flag_('BRIEF_ENABLED') || flag_('BIRTHDAY_ENABLED') ? 'ยังไม่มีข้อมูลยอดขายหรือวันเกิดสำหรับข้อความเช้าค่ะ' : 'ข้อความเช้าปิดอยู่ค่ะ';
     }
 
     case 'review':
@@ -2994,8 +3004,8 @@ function lookupCommand_(text) {
   return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
 }
 
-const NO_SHEET_SALES_TEXT = 'ยังไม่มียอดรายวันจาก Power BI ในแท็บ SalesData\n' +
-  'Export ข้อมูลจาก Power BI เป็น .csv แล้ววางในโฟลเดอร์ Google Drive ที่ตั้งไว้ จากนั้นพิมพ์ "อัปเดตยอด"';
+const NO_SHEET_SALES_TEXT = 'ยังไม่มียอดจากไฟล์ Power BI ค่ะ\n' +
+  'ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด หรือวางไฟล์ในโฟลเดอร์ Google Drive แล้วพิมพ์ "อัปเดตยอด" ได้เลยค่ะ';
 
 const HELP_TEXT = [
   '🤖 คำสั่งบอททีมขาย',

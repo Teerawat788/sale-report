@@ -168,9 +168,9 @@ function parseMonthArg_(s, now) {
 function birthdayCommand_(arg, now) {
   const today = startOfDay_(now);
   const all = readBirthdays_();
-  if (!all.length) return 'ยังไม่มีข้อมูลวันเกิด — ตั้ง BIRTHDAY_SHEET_ID ใน Script Properties';
+  if (!all.length) return 'ยังไม่มีข้อมูลวันเกิดค่ะ — ตั้ง BIRTHDAY_SHEET_ID ใน Script Properties ก่อนนะคะ';
   if (!arg) {
-    return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีวันเกิดใน 30 วันนี้');
+    return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีลูกค้าเกิดใน 30 วันนี้ค่ะ');
   }
   const month = parseMonthArg_(arg, now);
   if (!month) return null;
@@ -181,5 +181,5 @@ function birthdayCommand_(arg, now) {
     if (d.getMonth() !== b.month - 1) d = new Date(year, b.month - 1, 28);
     return Object.assign({ date: d }, b);
   });
-  return formatBirthdays_('🎂 วันเกิดลูกค้า เดือน ' + TH_MONTHS_SHORT[month - 1], entries, today, 'ไม่มีวันเกิดในเดือนนี้');
+  return formatBirthdays_('🎂 วันเกิดลูกค้า เดือน ' + TH_MONTHS_SHORT[month - 1], entries, today, 'ไม่มีลูกค้าเกิดในเดือนนี้ค่ะ');
 }
