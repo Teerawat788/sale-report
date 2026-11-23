@@ -55,6 +55,7 @@ function buildMorningMessages_(now) {
     importSalesQuietly_(false); // ใช้ไฟล์ล่าสุดในโฟลเดอร์ (ถ้ามี)
     try {
       const snap = getSalesSnapshot_();
+      if (snap.source === 'none') throw new Error('ยังไม่มีไฟล์ยอด');
       messages.push('☀️ สวัสดีตอนเช้าค่ะ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
       const ai = aiSalesComment_(snap);
       if (ai) messages.push(ai);

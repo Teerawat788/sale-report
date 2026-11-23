@@ -21,7 +21,7 @@
  *  UPLOAD_GROUP_ID            กลุ่มสำหรับส่งไฟล์ยอด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")
  *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิดบทวิเคราะห์ยอดด้วย AI (Claude)
- *  FILE_DATE_LAG_DAYS         วันที่ข้อมูล = วันที่ในชื่อไฟล์ − N วัน (ค่าเริ่มต้น 2: data_24 = ยอดถึง 22)
+ *  FILE_DATE_LAG_DAYS         วันที่ข้อมูล = วันที่ส่งไฟล์ − N วัน (ค่าเริ่มต้น 1 = ยอดถึงเมื่อวาน)
  *  IMPORT_FOLDER_ID           โฟลเดอร์ Google Drive ที่วางไฟล์ export จาก Power BI
  *  HOLIDAYS                   วันหยุดที่ไม่นับเป็นวันทำงาน เช่น 5/12,10/12,31/12
  *  DATE_ORDER                 DMY (ค่าเริ่มต้น) หรือ MDY ถ้าเดาจากไฟล์ไม่ได้
@@ -824,11 +824,15 @@ function pct_(a, b) {
   return b ? (a / b) * 100 : null;
 }
 
-/** ข้อมูลยอด: ใช้แท็บ SalesData (จาก Power BI) ถ้ามี ไม่งั้นใช้ dashboard.json */
+/**
+ * ข้อมูลยอดจากไฟล์ที่นำเข้า — ยังไม่มีไฟล์จะคืน { source: 'none' }
+ * (ใช้ dashboard.json เดิมได้ถ้าตั้ง USE_DASHBOARD_JSON = true)
+ */
 function getSalesSnapshot_() {
   const rows = readSalesRows_();
   const snap = rows.length ? buildSalesSnapshot_(rows, now_()) : null;
-  return snap || fetchDashboard_();
+  if (snap) return snap;
+  return flag_('USE_DASHBOARD_JSON', false) ? fetchDashboard_() : { source: 'none' };
 }
 
 function normName_(s) {
@@ -863,6 +867,7 @@ function teamLine_(t) {
 
 /** team: null = ภาพรวม หรือ object ทีมจาก findTeam_ */
 function formatSales_(d, team) {
+  if (d.source === 'none') return NO_SHEET_SALES_TEXT;
   if (d.source === 'sheet') return formatSalesSheet_(d, team);
   const total = d.total || {};
   const passed = Number(d.workingDaysPassed) || 0;
@@ -1239,33 +1244,27 @@ function rowsFromTable_(table) {
 
 /** วันที่ของข้อมูลจากชื่อไฟล์: "data_18.xlsx" → วันที่ 18, "sales 2026-11-18.csv" → 18/11/2026 */
 /**
- * วันที่ของข้อมูลจากชื่อไฟล์ = วันที่ในชื่อไฟล์ (วันที่ export) − FILE_DATE_LAG_DAYS (ค่าเริ่มต้น 2)
- * เช่น data_24.xlsx = ข้อมูลถึงวันที่ 22 / ไม่มีวันที่ในชื่อ = วันที่อัปโหลด − 2
+ * วันที่ของข้อมูล = วันที่ส่ง/อัปโหลดไฟล์ − FILE_DATE_LAG_DAYS (ค่าเริ่มต้น 1 = ยอดถึงเมื่อวาน)
+ * ถ้าชื่อไฟล์มีวันที่เต็ม เช่น "sales 2026-11-22.xlsx" หรือ "ยอด 22-11-2569.xlsx" ใช้วันที่นั้น
+ * เลขอื่นในชื่อไฟล์ เช่น "data (19).xlsx" เป็นเลขดาวน์โหลดซ้ำ — ไม่ใช้
  */
 function asOfFromFileName_(name, ref) {
-  const lag = Math.max(0, Number(prop_('FILE_DATE_LAG_DAYS', '2')) || 0);
-  const today = startOfDay_(ref);
-  const d = exportDateFromFileName_(name, today);
-  return d ? addDays_(d, -lag) : addDays_(today, -Math.max(1, lag));
-}
-
-/** วันที่ในชื่อไฟล์: "data_24" → วันที่ 24 (เดือนนี้ หรือเดือนก่อนถ้ายังไม่ถึง), "2026-11-24" */
-function exportDateFromFileName_(name, today) {
   const base = String(name).replace(/\.[^.]+$/, '');
   let m = base.match(/(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})/);
-  if (m) return parseSheetDate_(m[1] + '-' + m[2] + '-' + m[3], 'DMY');
-  m = base.match(/(\d{1,2})[-_.](\d{1,2})[-_.](\d{2,4})/);
-  if (m) return parseSheetDate_(m[1] + '/' + m[2] + '/' + m[3], 'DMY');
-  const nums = base.match(/(?:^|\D)(\d{1,2})(?!\d)/g);
-  if (nums) {
-    const day = Number(nums[nums.length - 1].replace(/\D/g, ''));
-    if (day >= 1 && day <= 31) {
-      let d = new Date(today.getFullYear(), today.getMonth(), day);
-      if (d > addDays_(today, 1) || d.getDate() !== day) d = new Date(today.getFullYear(), today.getMonth() - 1, day);
-      return d;
-    }
-  }
-  return null;
+  if (m) { const d = parseSheetDate_(m[1] + '-' + m[2] + '-' + m[3], 'DMY'); if (d) return d; }
+  m = base.match(/(\d{1,2})[-_.](\d{1,2})[-_.](\d{4}|\d{2}(?!\d))/);
+  if (m) { const d = parseSheetDate_(m[1] + '/' + m[2] + '/' + m[3], 'DMY'); if (d) return d; }
+  const lag = Math.max(0, Number(prop_('FILE_DATE_LAG_DAYS', '1')) || 0);
+  return addDays_(startOfDay_(ref), -lag);
+}
+
+/** โฟลเดอร์เก็บไฟล์ยอด — ยังไม่ได้ตั้ง IMPORT_FOLDER_ID ก็สร้างให้เอง */
+function importFolder_() {
+  const id = prop_('IMPORT_FOLDER_ID', '');
+  if (id) return DriveApp.getFolderById(id);
+  const folder = DriveApp.createFolder('Sales Bot - ไฟล์ยอด');
+  setProp_('IMPORT_FOLDER_ID', folder.getId());
+  return folder;
 }
 
 /** เก็บยอดสะสม ณ วันที่ asOf (ทับของวันเดิมถ้านำเข้าซ้ำ) */
@@ -1339,7 +1338,7 @@ function formatImportResult_(r, fileName) {
   if (r.mode === 'mtd') {
     let m = '✅ นำเข้ายอดสะสม ณ ' + fmtDateLong_(r.from) + '\n' + fmtNum_(r.count, 0) + ' แถว รวม ' + fmtNum_(r.total) + ' ตัน' +
       (fileName ? '\n📄 ' + fileName : '') +
-      '\nถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" ได้เลยค่ะ เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
+      '\n(ถือเป็นยอดถึงเมื่อวานของวันที่ส่งไฟล์) ถ้าวันที่ไม่ถูก พิมพ์ "อัปเดตยอด วว/ดด" ได้เลยค่ะ เช่น อัปเดตยอด ' + r.from.getDate() + '/' + (r.from.getMonth() + 1);
     if (r.missing && r.missing.length) m += '\n⚠️ ไฟล์ไม่มีคอลัมน์: ' + r.missing.map(function (k) { return MISSING_LABEL[k]; }).join(', ');
     if (!r.hasAmount) m += '\nℹ️ ไฟล์ไม่มีคอลัมน์มูลค่า (บาท) — รายงานจะแสดงเฉพาะตัน';
     if (r.zoneLevel) m += '\nℹ️ ไฟล์รายเขต: ใช้เป้า (Budget) จากไฟล์';
@@ -1417,10 +1416,8 @@ function importDriveFile_(file, asOfOverride) {
  * คืน null ถ้าไม่ใช่ไฟล์ยอดขาย (ลบไฟล์ทิ้ง บอทไม่ตอบ)
  */
 function importLineFile_(messageId, fileName) {
-  const folderId = prop_('IMPORT_FOLDER_ID', '');
-  if (!folderId) throw new Error('ยังไม่ได้ตั้ง IMPORT_FOLDER_ID (โฟลเดอร์ Google Drive สำหรับเก็บไฟล์ยอด)');
   const blob = lineContent_(messageId).setName(fileName);
-  const file = DriveApp.getFolderById(folderId).createFile(blob);
+  const file = importFolder_().createFile(blob);
   try {
     return importDriveFile_(file);
   } catch (e) {
@@ -2601,6 +2598,7 @@ function buildMorningMessages_(now) {
     importSalesQuietly_(false); // ใช้ไฟล์ล่าสุดในโฟลเดอร์ (ถ้ามี)
     try {
       const snap = getSalesSnapshot_();
+      if (snap.source === 'none') throw new Error('ยังไม่มีไฟล์ยอด');
       messages.push('☀️ สวัสดีตอนเช้าค่ะ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
       const ai = aiSalesComment_(snap);
       if (ai) messages.push(ai);

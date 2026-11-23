@@ -49,7 +49,7 @@ function parseCsv(text) {
 }
 
 function createBot(opts = {}) {
-  const props = Object.assign({ LINE_CHANNEL_ACCESS_TOKEN: 'test-token', FILE_DATE_LAG_DAYS: '0' }, opts.props || {});
+  const props = Object.assign(Object.assign({ LINE_CHANNEL_ACCESS_TOKEN: 'test-token' }, opts.dashboard ? { USE_DASHBOARD_JSON: 'true' } : {}), opts.props || {});
   const cache = {};
   const sheets = {};
   const events = [];
@@ -65,6 +65,7 @@ function createBot(opts = {}) {
   const aiCalls = [];
   let aiResponse = opts.aiResponse || { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• ทดสอบบทวิเคราะห์' }] } };
   const driveFiles = []; // { id, name, mime, content (string | 2D array), updated: Date }
+const folderObj = () => ctx.DriveApp._folder();
   const lineFiles = {}; // messageId → ตาราง (จำลองไฟล์ที่ส่งในแชท)
   const fileObj = (f) => ({
     getId: () => f.id, getName: () => f.name, getMimeType: () => f.mime,
@@ -112,7 +113,8 @@ function createBot(opts = {}) {
       },
     },
     DriveApp: {
-      getFolderById: () => ({
+      getFolderById: () => folderObj(),
+      _folder: () => ({
         createFile(blob) {
           const f = { id: 'up' + driveFiles.length, name: blob.name, mime: /\.csv$/i.test(blob.name) ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             table: blob.table, content: blob.table, updated: new Date(now.getTime()) };
@@ -121,6 +123,7 @@ function createBot(opts = {}) {
         },
         getFiles() { const list = driveFiles.filter((f) => !f.trashed); let i = 0; return { hasNext: () => i < list.length, next: () => fileObj(list[i++]) }; } }),
       getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)),
+      createFolder: (n) => Object.assign(folderObj(), { getId: () => 'folder_' + n }),
     },
     CalendarApp: { getDefaultCalendar: () => calendar, getCalendarById: () => calendar },
     ContentService: {

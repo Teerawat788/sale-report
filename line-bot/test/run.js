@@ -506,7 +506,7 @@ test('วันเกิด: ส่งพร้อมข้อความเช
   sun.ctx.tick();
   assert.strictEqual(sun.pushes().length, 0);
 
-  const mon = bdBot(D(2026, 11, 23, 7, 31), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true', DASHBOARD_URL: 'x' });
+  const mon = bdBot(D(2026, 11, 23, 7, 31), { BIRTHDAY_SHEET_ID: 'sheet', BRIEF_ENABLED: 'true', USE_DASHBOARD_JSON: 'true' });
   mon.setDashboard(dashboard);
   mon.ctx.tick();
   assert.strictEqual(mon.pushes().length, 1);
@@ -609,9 +609,9 @@ test('ไฟล์รายเขต: ตัน + ล้านบาท, เป�
   assert.deepStrictEqual(JSON.parse(JSON.stringify(m)),
     { ton: 7, amount: 2, budgetTon: 8, budgetAmt: 3, challengeTon: 9, challengeAmt: 4, lastTon: 10, lastAmt: 5 });
 
-  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x' } });
   bot.ctx.setupSalesSheets();
-  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 24, 8) });
+  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 25, 8) });
   const imp = bot.say('อัปเดตยอด');
   assert.match(imp, /ณ อังคาร 24 พ\.ย\. 2569\n2 แถว รวม 504\.32 ตัน/);
   assert.match(imp, /ไฟล์รายเขต: ใช้เป้า \(Budget\) จากไฟล์/);
@@ -631,11 +631,11 @@ test('ไฟล์รายเขต: ตัน + ล้านบาท, เป�
 });
 
 test('ไฟล์รายเขตวันถัดไป → ยอดรายวันต่อเขต (ทั้งตันและบาท); ไฟล์ห่างหลายวันบอกช่วงวัน', () => {
-  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x' } });
+  const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x' } });
   bot.ctx.setupSalesSheets();
   bot.driveFiles.push({ id: 'z20', name: 'data_20.xlsx', mime: XLSX, table: zoneTable(300, 10000000), updated: D(2026, 11, 21, 8) });
   bot.say('อัปเดตยอด');
-  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 24, 8) });
+  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 25, 8) });
   bot.say('อัปเดตยอด');
   const d = bot.say('ยอดเมื่อวาน');
   assert.match(d, /📅 ยอด 21–24 พ\.ย\.: 90\.18 ตัน · 3\.58 ล้านบาท/);
@@ -646,8 +646,8 @@ test('ไฟล์รายเขตวันถัดไป → ยอดรา
 test('ไฟล์รายลูกค้าแล้วตามด้วยไฟล์รายเขต: ยอดเขตถูก, ลูกค้าบอกวันที่ข้อมูลเดิม', () => {
   const bot = mtdBot(); // data_18 รายลูกค้า (F1 55.2, F3 307.46, F4 165.6)
   bot.say('อัปเดตยอด');
-  bot.setNow(D(2026, 11, 24, 9));
-  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 24, 8) });
+  bot.setNow(D(2026, 11, 25, 9));
+  bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 25, 8) });
   bot.say('อัปเดตยอด');
   const d = bot.say('ยอดเมื่อวาน');
   assert.match(d, /📅 ยอด 19–24 พ\.ย\./);
@@ -660,7 +660,7 @@ test('ไฟล์รายลูกค้าแล้วตามด้วย�
 });
 
 test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทนำเข้าและรายงานทันที / ไฟล์อื่นเงียบ', () => {
-  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
+  const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
   bot.ctx.setupSalesSheets();
   const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39));
   assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24 พ\.ย\. 2569[\s\S]*🏢 รวมทุกเขต[\s\S]*📍 F5/);
@@ -676,7 +676,7 @@ test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทน�
 
 // ---------- กลุ่มอัปโหลด + แจ้งเตือนตามวัน ----------
 test('กลุ่มอัปโหลด: ส่งไฟล์ในกลุ่มเล็ก → กลุ่มใหญ่พิมพ์ยอดขายได้ข้อมูลใหม่, ไม่ push เข้ากลุ่มใหญ่', () => {
-  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
+  const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
   bot.ctx.setupSalesSheets();
   assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cgroup1' }), /เป็นกลุ่มหลักอยู่แล้ว/);
   assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cmine' }), /ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว/);
@@ -756,18 +756,28 @@ test('น้องขุนศึกพูดแบบผู้หญิง: ไ
   assert.strictEqual(sh.data[3][2], 'ข้อความที่ผู้ใช้เขียนเองครับ', 'ข้อความที่เขียนเองไม่ถูกแก้');
 });
 
-test('วันที่ข้อมูล = ชื่อไฟล์ − 2 วัน (data_24 = ยอดถึง 22)', () => {
-  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x', FILE_DATE_LAG_DAYS: '2' } });
+test('วันที่ข้อมูล = วันที่ส่งไฟล์ − 1 (เลขในชื่อไฟล์ไม่ใช่วันที่), ชื่อไฟล์มีวันที่เต็มใช้วันนั้น, สร้างโฟลเดอร์เอง', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 16, 10), props: { GROUP_ID: 'Cgroup1' } });
   const ctx = bot.ctx;
-  same(ctx.asOfFromFileName_('data_24.xlsx', D(2026, 11, 24, 8)), D(2026, 11, 22));
-  same(ctx.asOfFromFileName_('data_1.xlsx', D(2026, 12, 1, 8)), D(2026, 11, 29));
-  same(ctx.asOfFromFileName_('export.xlsx', D(2026, 11, 24, 8)), D(2026, 11, 22));
+  same(ctx.asOfFromFileName_('data (19).xlsx', D(2026, 11, 23, 16)), D(2026, 11, 22));
+  same(ctx.asOfFromFileName_('data_24.xlsx', D(2026, 11, 23, 9)), D(2026, 11, 22));
+  same(ctx.asOfFromFileName_('sales 2026-11-20.xlsx', D(2026, 11, 23, 9)), D(2026, 11, 20));
+  same(ctx.asOfFromFileName_('ยอด 21-11-2569.xlsx', D(2026, 11, 23, 9)), D(2026, 11, 21));
   bot.ctx.setupSalesSheets();
-  const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39));
-  assert.match(r, /ณ อาทิตย์ 22 พ\.ย\. 2569/);
-  // ถึง 22 พ.ย. (อาทิตย์) = วันทำงาน 18 วัน (อาทิตย์ 1, 8, 15, 22 ไม่นับ)
+  assert.strictEqual(bot.props.IMPORT_FOLDER_ID, undefined);
+  const r = bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39));
+  assert.match(r, /นำเข้ายอดสะสม ณ อาทิตย์ 22 พ\.ย\. 2569/);
+  assert.match(String(bot.props.IMPORT_FOLDER_ID), /^folder_/, 'สร้างโฟลเดอร์และจำ ID ไว้');
   assert.match(bot.say('ยอดขาย'), /วันทำงาน 18\/25 วัน \(เหลือ 7\)/);
-  assert.match(bot.say('อัปเดตยอด 23/11'), /ณ จันทร์ 23 พ\.ย\./);
+  assert.match(bot.say('อัปเดตยอด 21/11'), /ณ เสาร์ 21 พ\.ย\./);
+});
+
+test('ยังไม่มีไฟล์ยอด: ยอดขายบอกให้ส่งไฟล์ (ไม่ใช้ข้อมูลเก่า dashboard.json), ข้อความเช้าไม่มีส่วนยอด', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 9), props: { GROUP_ID: 'Cgroup1' } });
+  const r = bot.say('ยอดขาย');
+  assert.match(r, /ยังไม่มียอดจากไฟล์ Power BI ค่ะ[\s\S]*ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด/);
+  assert.doesNotMatch(r, /538\.84/);
+  assert.strictEqual(bot.ctx.buildMorningMessages_(D(2026, 11, 23, 7, 30)).length, 0);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

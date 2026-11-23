@@ -12,11 +12,15 @@ function pct_(a, b) {
   return b ? (a / b) * 100 : null;
 }
 
-/** ข้อมูลยอด: ใช้แท็บ SalesData (จาก Power BI) ถ้ามี ไม่งั้นใช้ dashboard.json */
+/**
+ * ข้อมูลยอดจากไฟล์ที่นำเข้า — ยังไม่มีไฟล์จะคืน { source: 'none' }
+ * (ใช้ dashboard.json เดิมได้ถ้าตั้ง USE_DASHBOARD_JSON = true)
+ */
 function getSalesSnapshot_() {
   const rows = readSalesRows_();
   const snap = rows.length ? buildSalesSnapshot_(rows, now_()) : null;
-  return snap || fetchDashboard_();
+  if (snap) return snap;
+  return flag_('USE_DASHBOARD_JSON', false) ? fetchDashboard_() : { source: 'none' };
 }
 
 function normName_(s) {
@@ -51,6 +55,7 @@ function teamLine_(t) {
 
 /** team: null = ภาพรวม หรือ object ทีมจาก findTeam_ */
 function formatSales_(d, team) {
+  if (d.source === 'none') return NO_SHEET_SALES_TEXT;
   if (d.source === 'sheet') return formatSalesSheet_(d, team);
   const total = d.total || {};
   const passed = Number(d.workingDaysPassed) || 0;
