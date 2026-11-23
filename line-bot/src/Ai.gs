@@ -89,6 +89,7 @@ function geminiErrorText_(code, body) {
     : code === 403 ? 'คีย์ไม่มีสิทธิ์ใช้ Gemini API (เปิด Generative Language API / ตรวจข้อจำกัดของคีย์)'
     : code === 404 ? 'ไม่พบโมเดล — ตั้ง GEMINI_MODEL เป็นชื่อรุ่นที่มีใน AI Studio'
     : code === 429 ? 'ใช้เกินโควตา รอสักครู่หรือเปิด billing'
+    : code >= 500 ? 'เซิร์ฟเวอร์ Gemini คนใช้เยอะชั่วคราว ลองใหม่อีกครั้งค่ะ'
     : '';
   return 'Gemini ' + code + (hint ? ': ' + hint : '') + (msg ? ' (' + truncate_(msg, 140) + ')' : '');
 }
@@ -98,7 +99,7 @@ function callGemini_(system, userText) {
   const key = prop_('GEMINI_API_KEY', '');
   if (!key) return null;
   const preferred = prop_('GEMINI_MODEL', GEMINI_MODEL);
-  const models = uniq_([preferred, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash']);
+  const models = uniq_([preferred, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
   for (let i = 0; i < models.length; i++) {
     const res = UrlFetchApp.fetch(GEMINI_API_URL + encodeURIComponent(models[i]) + ':generateContent', {
       method: 'post',
@@ -112,7 +113,11 @@ function callGemini_(system, userText) {
       muteHttpExceptions: true,
     });
     const code = res.getResponseCode();
-    if (code === 404 && i < models.length - 1) continue; // ลองรุ่นถัดไป
+    // ไม่พบโมเดล / คนใช้เยอะ / โควตารุ่นนี้หมด → ลองรุ่นถัดไป
+    if ((code === 404 || code === 429 || code >= 500) && i < models.length - 1) {
+      console.warn('Gemini ' + models[i] + ' → ' + code + ' ลองรุ่นถัดไป');
+      continue;
+    }
     if (code !== 200) {
       AI_LAST_ERROR = geminiErrorText_(code, res.getContentText());
       console.error(AI_LAST_ERROR);

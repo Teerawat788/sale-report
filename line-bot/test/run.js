@@ -1004,4 +1004,16 @@ test('Gemini: บอกสาเหตุเมื่อเรียกไม่
   assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /ไม่ส่งคำตอบกลับ \(MAX_TOKENS\)/);
 });
 
+test('Gemini 503 → ลองรุ่นถัดไป และห้องสั่งการถามได้โดยไม่ต้องพิมพ์ "ถาม"', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
+  let n = 0;
+  bot.setGeminiResponse(() => (++n <= 2 ? { status: 503, body: { error: { message: 'high demand' } } }
+    : { body: { candidates: [{ content: { parts: [{ text: 'ปิดได้ค่ะ' }] } }] } }));
+  assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmine' }), '🤖 ปิดได้ค่ะ');
+  assert.strictEqual(bot.geminiCalls.length, 3);
+  bot.setGeminiResponse({ status: 503, body: { error: { message: 'high demand' } } });
+  assert.match(bot.say('ถาม ทดสอบ', { groupId: 'Cmine' }), /คนใช้เยอะชั่วคราว/);
+  assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmain' }), null);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

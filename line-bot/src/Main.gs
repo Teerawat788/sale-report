@@ -114,9 +114,10 @@ function handleEvent_(ev) {
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
   const parsed = parseCommand_(stripped.text) || lookupCommand_(stripped.text);
   if (!parsed) {
-    // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์ "ถาม ..." → AI ตอบจากข้อมูลจริง
+    // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์อะไรก็ได้ (มี "ถาม" นำหน้าหรือไม่ก็ได้) → AI ตอบจากข้อมูลจริง
     const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
-    const question = stripped.botMentioned ? stripped.text : (ask && isControlRoom_(source) ? ask[1] : '');
+    const question = stripped.botMentioned ? stripped.text
+      : isControlRoom_(source) ? (ask ? ask[1] : aiEnabled_() ? stripped.text : '').trim() : '';
     if (question && !inOtherGroup) lineReply_(ev.replyToken, askBot_(question, now_()));
     return;
   }
