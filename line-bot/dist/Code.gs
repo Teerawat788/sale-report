@@ -1935,7 +1935,7 @@ function detailBlock_(m, hasAmount) {
     }
     out.push('• คาดปิด ' + fmtMillion_(m.forecastAmt) + pctShort_(m.forecastPctAmt));
   }
-  if (m.challengeTon || m.challengeAmt) {
+  if (flag_('SHOW_CHALLENGE', false) && (m.challengeTon || m.challengeAmt)) {
     out.push('');
     out.push('🎯 Challenge');
     if (m.challengeTon) out.push('• ตัน คาดปิด' + pctShort_(m.challengePct).replace(/[()]/g, '') + ' ของ ' + fmtNum_(m.challengeTon));
