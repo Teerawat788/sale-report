@@ -49,7 +49,7 @@ function parseCsv(text) {
 }
 
 function createBot(opts = {}) {
-  const props = Object.assign({ LINE_CHANNEL_ACCESS_TOKEN: 'test-token' }, opts.props || {});
+  const props = Object.assign({ LINE_CHANNEL_ACCESS_TOKEN: 'test-token', FILE_DATE_LAG_DAYS: '0' }, opts.props || {});
   const cache = {};
   const sheets = {};
   const events = [];

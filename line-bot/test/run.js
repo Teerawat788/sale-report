@@ -756,4 +756,18 @@ test('น้องขุนศึกพูดแบบผู้หญิง: ไ
   assert.strictEqual(sh.data[3][2], 'ข้อความที่ผู้ใช้เขียนเองครับ', 'ข้อความที่เขียนเองไม่ถูกแก้');
 });
 
+test('วันที่ข้อมูล = ชื่อไฟล์ − 2 วัน (data_24 = ยอดถึง 22)', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { IMPORT_FOLDER_ID: 'x', FILE_DATE_LAG_DAYS: '2' } });
+  const ctx = bot.ctx;
+  same(ctx.asOfFromFileName_('data_24.xlsx', D(2026, 11, 24, 8)), D(2026, 11, 22));
+  same(ctx.asOfFromFileName_('data_1.xlsx', D(2026, 12, 1, 8)), D(2026, 11, 29));
+  same(ctx.asOfFromFileName_('export.xlsx', D(2026, 11, 24, 8)), D(2026, 11, 22));
+  bot.ctx.setupSalesSheets();
+  const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39));
+  assert.match(r, /ณ อาทิตย์ 22 พ\.ย\. 2569/);
+  // ถึง 22 พ.ย. (อาทิตย์) = วันทำงาน 18 วัน (อาทิตย์ 1, 8, 15, 22 ไม่นับ)
+  assert.match(bot.say('ยอดขาย'), /วันทำงาน 18\/25 วัน \(เหลือ 7\)/);
+  assert.match(bot.say('อัปเดตยอด 23/11'), /ณ จันทร์ 23 พ\.ย\./);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

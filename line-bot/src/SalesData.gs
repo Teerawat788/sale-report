@@ -241,9 +241,20 @@ function rowsFromTable_(table) {
 }
 
 /** วันที่ของข้อมูลจากชื่อไฟล์: "data_18.xlsx" → วันที่ 18, "sales 2026-11-18.csv" → 18/11/2026 */
+/**
+ * วันที่ของข้อมูลจากชื่อไฟล์ = วันที่ในชื่อไฟล์ (วันที่ export) − FILE_DATE_LAG_DAYS (ค่าเริ่มต้น 2)
+ * เช่น data_24.xlsx = ข้อมูลถึงวันที่ 22 / ไม่มีวันที่ในชื่อ = วันที่อัปโหลด − 2
+ */
 function asOfFromFileName_(name, ref) {
-  const base = String(name).replace(/\.[^.]+$/, '');
+  const lag = Math.max(0, Number(prop_('FILE_DATE_LAG_DAYS', '2')) || 0);
   const today = startOfDay_(ref);
+  const d = exportDateFromFileName_(name, today);
+  return d ? addDays_(d, -lag) : addDays_(today, -Math.max(1, lag));
+}
+
+/** วันที่ในชื่อไฟล์: "data_24" → วันที่ 24 (เดือนนี้ หรือเดือนก่อนถ้ายังไม่ถึง), "2026-11-24" */
+function exportDateFromFileName_(name, today) {
+  const base = String(name).replace(/\.[^.]+$/, '');
   let m = base.match(/(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})/);
   if (m) return parseSheetDate_(m[1] + '-' + m[2] + '-' + m[3], 'DMY');
   m = base.match(/(\d{1,2})[-_.](\d{1,2})[-_.](\d{2,4})/);
@@ -257,7 +268,7 @@ function asOfFromFileName_(name, ref) {
       return d;
     }
   }
-  return addDays_(today, -1); // ไม่มีวันที่ในชื่อ: ถือว่าเป็นข้อมูลถึงเมื่อวาน
+  return null;
 }
 
 /** เก็บยอดสะสม ณ วันที่ asOf (ทับของวันเดิมถ้านำเข้าซ้ำ) */
