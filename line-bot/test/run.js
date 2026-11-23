@@ -248,11 +248,11 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   bot.say('อัปเดตยอด');
   const total = bot.say('ยอด');
   // 63 ตัน จากเป้า 700, วันทำงาน จ-ส: พ.ย. 2026 มี 25 วัน, ถึง 19 พ.ย. = 16 วัน (อาทิตย์ 1,8,15)
-  assert.match(total, /ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
-  assert.match(total, /วันทำงาน 16\/25 วัน \(เหลือ 9\)/);
-  assert.match(total, /🏢 รวมทุกเขต 🔴\nตัน: 63\.00 \/ 700\.00 \(9\.0%\)/);
-  assert.match(total, /📍 F4 🔴\nตัน: 25\.00 \/ 400\.00/);
-  assert.match(total, /📅 วันล่าสุด 28\.00 ตัน · 0\.56 ล้านบาท/);
+  assert.match(total, /ยอดขายสะสม ถึง พฤ\. 19 พ\.ย\. 69/);
+  assert.match(total, /วันทำงาน 16\/25 · เหลือ 9 วัน/);
+  assert.match(total, /🏢 รวมทุกเขต 🔴\n\n⚖️ ตัน\n• ทำได้ 63\.00 \/ 700\.00 \(9\.0%\)/);
+  assert.match(total, /🔴 F4 — คาดปิด [\d.]+%\n• ตัน 25\.00 \/ 400\.00/);
+  assert.match(total, /📅 วันล่าสุด \+28\.00 ตัน · 0\.56 ล้านบาท/);
 
   const day = bot.say('ยอดเมื่อวาน');
   assert.match(day, /ยอดขายวันที่ พฤ\. 19 พ\.ย\.: 28\.00 ตัน/);
@@ -267,7 +267,7 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(me, /ต้องทำอีก 175\.00 ตัน ≈ 19\.44 ตัน\/วัน/);
   assert.match(me, /1\. ฟาร์ม A — 17\.00 ตัน/);
 
-  assert.match(bot.say('ยอด f5'), /📍 F5[\s\S]*ตัน: 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
+  assert.match(bot.say('ยอด f5'), /📊 F5 —[\s\S]*ทำได้ 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
   assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
   assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ\n1\. อาหารปลา 1 — 32\.00 ตัน\n2\. อาหารปลา 3 — 23\.00/);
   assert.strictEqual(bot.say('ยอด ใครไม่รู้'), null);
@@ -285,9 +285,9 @@ test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไ�
   bot.setNow(D(2026, 11, 20, 7, 36));
   bot.ctx.tick();
   assert.strictEqual(bot.pushes().length, 1, 'ส่งครั้งเดียวต่อวัน');
-  const text = bot.pushes()[0].body.messages[0].text;
-  assert.match(text, /^☀️ สวัสดีตอนเช้าค่ะ — ศุกร์ 20 พ\.ย\. 2569\n\n📊 ยอดขายสะสม ถึง พฤหัสบดี 19 พ\.ย\. 2569/);
-  assert.match(text, /🏢 รวมทุกเขต[\s\S]*📍 F4[\s\S]*📍 F5/);
+  const text = bot.pushes()[0].body.messages.map((m) => m.text).join('\n');
+  assert.match(text, /^☀️ สวัสดีตอนเช้าค่ะ — ศุกร์ 20 พ\.ย\. 2569\n\n📊 ยอดขายสะสม ถึง พฤ\. 19 พ\.ย\. 69/);
+  assert.match(text, /🏢 รวมทุกเขต[\s\S]*F4 —[\s\S]*F5 —/);
   assert.doesNotMatch(text, /ประชุมเช้า|ใบเสนอราคา|นัด|งานค้าง/);
   bot.setNow(D(2026, 11, 22, 7, 31)); // อาทิตย์
   bot.ctx.tick();
@@ -318,14 +318,14 @@ test('รายงานรวม + แยก F1–F5: ตันและบา�
   assert.match(bot.say('อัปเดตยอด'), /80 แถว/);
   const r = bot.say('ยอด');
   // 16 วันทำงาน: 81 ตัน/วัน x 25 = 2,025 ตัน = 98.8% ของ 2,050
-  assert.match(r, /🏢 รวมทุกเขต 🟡\nตัน: 1,296\.00 \/ 2,050\.00 \(63\.2%\)\n   สปีด 81\.00 ตัน\/วัน → ปิดเดือน 2,025\.00 \(98\.8%\)\n   ต้องทำ 83\.78 ตัน\/วัน ⚠️ ขาด 2\.78/);
-  assert.match(r, /มูลค่า: 27\.86 \/ 43\.90 ล้านบาท \(63\.5%\)\n   สปีด 1\.74 ล้านบาท\/วัน → ปิดเดือน 43\.54 ล้านบาท \(99\.2%\)/);
-  assert.match(r, /📍 F2 🔴\nตัน: 240\.00 \/ 400\.00 \(60\.0%\)\n   สปีด 15\.00 ตัน\/วัน → ปิดเดือน 375\.00 \(93\.8%\)/);
-  assert.match(r, /📍 F4 🟢[\s\S]*ปิดเดือน 13\.44 ล้านบาท \(103\.4%\)/);
-  assert.ok(r.indexOf('📍 F1') < r.indexOf('📍 F2') && r.indexOf('📍 F4') < r.indexOf('📍 F5'));
-  for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📍 F4 🟢[\s\S]*ต้องทำ 22\.22 ตัน\/วัน ✅/);
+  assert.match(r, /🏢 รวมทุกเขต 🟡\n\n⚖️ ตัน\n• ทำได้ 1,296\.00 \/ 2,050\.00 \(63\.2%\)\n• สปีด 81\.00 ตัน\/วัน\n• ต้องทำ 83\.78 ตัน\/วัน \(ขาด 2\.78\)\n• คาดปิด 2,025\.00 \(98\.8%\)/);
+  assert.match(r, /💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 27\.86 \/ 43\.90 \(63\.5%\)\n• สปีด 1\.74 \/วัน\n• ต้องทำ 1\.78 \/วัน \(ขาด 0\.04\)\n• คาดปิด 43\.54 \(99\.2%\)/);
+  assert.match(r, /🔴 F2 — คาดปิด 93\.8%\n• ตัน 240\.00 \/ 400\.00 \(60\.0%\)\n• สปีด 15\.00 \| ต้องทำ 17\.78 \/วัน\n• คาดปิด 375\.00 ตัน/);
+  assert.match(r, /🟢 F4 — คาดปิด 104\.2%[\s\S]*คาดปิดมูลค่า 13\.44 ล้าน \(103\.4%\)/);
+  assert.ok(r.indexOf(' F1 —') < r.indexOf(' F2 —') && r.indexOf(' F4 —') < r.indexOf(' F5 —'));
+  for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📊 F4 —[\s\S]*สถานะ 🟢[\s\S]*• ต้องทำ 22\.22 ตัน\/วัน ✅/);
   assert.match(bot.say('ยอดเมื่อวาน'), /81\.00 ตัน · 1\.74 ล้านบาท\n• F1 20\.00 ตัน · 0\.43 ล้านบาท/);
-  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*📍 F4 🟢/);
+  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*🟢 F4 —/);
 });
 
 test('Targets แท็บเก่า (4 คอลัมน์) ได้หัวคอลัมน์ "เป้า (ล้านบาท)" เพิ่ม', () => {
@@ -388,10 +388,10 @@ test('ฟอร์มหลัก: นำเข้ายอดสะสม ข�
   assert.match(imp, /ไม่มีคอลัมน์มูลค่า/);
   const r = bot.say('ยอด');
   // ถึง 18 พ.ย. = 15 วันทำงาน (อาทิตย์ 1, 8, 15) จาก 25
-  assert.match(r, /วันทำงาน 15\/25 วัน \(เหลือ 10\)/);
-  assert.match(r, /ยอดรายวัน: จะเริ่มคำนวณเมื่อมีไฟล์ของวันถัดไป/);
-  assert.match(r, /🏢 รวมทุกเขต[^\n]*\nตัน: 528\.26 \/ 1,400\.00 \(37\.7%\)\n   สปีด 35\.22 ตัน\/วัน → ปิดเดือน 880\.43 \(62\.9%\)/);
-  assert.match(r, /📍 F3 🔴\nตัน: 307\.46 \/ 600\.00/);
+  assert.match(r, /วันทำงาน 15\/25 · เหลือ 10 วัน/);
+  assert.match(r, /ยอดรายวัน: (จะ)?เริ่ม/);
+  assert.match(r, /🏢 รวมทุกเขต[^\n]*\n\n⚖️ ตัน\n• ทำได้ 528\.26 \/ 1,400\.00 \(37\.7%\)\n• สปีด 35\.22 ตัน\/วัน[\s\S]*• คาดปิด 880\.43 \(62\.9%\)/);
+  assert.match(r, /🔴 F3 — คาดปิด [\d.]+%\n• ตัน 307\.46 \/ 600\.00/);
   assert.doesNotMatch(r, /อื่นๆ|0\.14/);
   assert.doesNotMatch(r, /มูลค่า:/);
   assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ \(F3\)[\s\S]*1\. คุณนรินทร์ นฤภัย — 63\.00 ตัน/);
@@ -413,12 +413,12 @@ test('ฟอร์มหลัก: ไฟล์วันถัดไป → ย�
   assert.match(day, /• F3 30\.00 ตัน\n• F4 10\.00 ตัน/);
   assert.match(day, /1\. วุฒิชัย ขันทอง — 30\.00 ตัน/);
   const r = bot.say('ยอด');
-  assert.match(r, /📅 วันล่าสุด 40\.00 ตัน/);
+  assert.match(r, /📅 วันล่าสุด \+40\.00 ตัน/);
   assert.match(r, /วันทำงาน 16\/25/);
-  assert.match(r, /ตัน: 568\.26 \/ 1,400\.00/);
+  assert.match(r, /ทำได้ 568\.26 \/ 1,400\.00/);
   // นำเข้าไฟล์เดิมซ้ำโดยระบุวัน: ไม่เกิดยอดซ้ำ
   assert.match(bot.say('อัปเดตยอด 19/11'), /ณ พฤหัสบดี 19 พ\.ย\. 2569/);
-  assert.match(bot.say('ยอด'), /ตัน: 568\.26 \/ 1,400\.00/);
+  assert.match(bot.say('ยอด'), /ทำได้ 568\.26 \/ 1,400\.00/);
   assert.strictEqual(bot.say('อัปเดตยอด พรุ่งนี้ครับ'), null);
 });
 
@@ -447,9 +447,9 @@ test('พิมพ์ชื่อลูกค้า / F4 เฉย ๆ ก็ข
   assert.strictEqual(bot.say('ไปเยี่ยมฟาร์มกันไหม'), null);
 
   const z = bot.say('F4');
-  assert.match(z, /📍 F4 🔴\nตัน: 187\.60 \/ 500\.00 \(37\.5%\)[\s\S]*มูลค่า: 3\.94 ล้านบาท\n   สปีด 0\.25 ล้านบาท\/วัน → ปิดเดือน 6\.16 ล้านบาท/);
-  assert.doesNotMatch(z, /📍 F3/);
-  assert.match(bot.say('f4'), /📍 F4/);
+  assert.match(z, /📊 F4 —[\s\S]*• ทำได้ 187\.60 \/ 500\.00 \(37\.5%\)[\s\S]*💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 3\.94\n• สปีด 0\.25 \/วัน\n• คาดปิด 6\.16/);
+  assert.doesNotMatch(z, /F3/);
+  assert.match(bot.say('f4'), /📊 F4 —/);
   assert.strictEqual(bot.say('F4 ไปไหน'), null);
 });
 
@@ -540,11 +540,11 @@ test('มีไฟล์ใหม่ → บอทส่งรายงานเ
   bot.props.LAST_IMPORT_KEY = '';
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 1);
-  const t = bot.pushes()[0].body.messages[0].text;
+  const t = bot.pushes()[0].body.messages.map((m) => m.text).join('\n');
   assert.match(t, /🏢 รวมทุกเขต/);
-  assert.match(t, /📍 F1[\s\S]*ต้องทำ [\d.,]+ ตัน\/วัน/);
-  assert.match(t, /📍 F3[\s\S]*ต้องทำ [\d.,]+ ตัน\/วัน/);
-  assert.strictEqual(bot.pushes()[0].body.messages.length, 1, 'ไม่มีคีย์ AI ต้องไม่มีบทวิเคราะห์');
+  assert.match(t, /F1 —[\s\S]*ต้องทำ [\d.,]+ \/วัน/);
+  assert.match(t, /F3 —[\s\S]*ต้องทำ [\d.,]+ \/วัน/);
+  assert.strictEqual(bot.pushes()[0].body.messages.length, 2, 'ภาพรวม + รายเขต (ไม่มีคีย์ AI ต้องไม่มีบทวิเคราะห์)');
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 1, 'ไฟล์เดิมไม่ส่งซ้ำ');
   bot.props.AUTO_REPORT = 'false';
@@ -617,17 +617,17 @@ test('ไฟล์รายเขต: ตัน + ล้านบาท, เป�
   assert.match(imp, /ไฟล์รายเขต: ใช้เป้า \(Budget\) จากไฟล์/);
   assert.doesNotMatch(imp, /ไม่มีคอลัมน์: ลูกค้า/);
   const r = bot.say('ยอด');
-  assert.match(r, /วันทำงาน 20\/25 วัน \(เหลือ 5\)/);
-  assert.match(r, /🏢 รวมทุกเขต[^\n]*\nตัน: 504\.32 \/ 869\.30/);
-  assert.match(r, /มูลค่า: 17\.22 \/ 26\.54 ล้านบาท/);
-  assert.match(r, /🎯 Challenge: 956\.23 ตัน → คาดปิด [\d.]+% · 29\.19 ล้านบาท → คาดปิด [\d.]+%/);
-  assert.match(r, /📍 F5 🟡\nตัน: 390\.18 \/ 500\.00 \(78\.0%\)\n   สปีด 19\.51 ตัน\/วัน → ปิดเดือน 487\.73 \(97\.5%\)/);
+  assert.match(r, /วันทำงาน 20\/25 · เหลือ 5 วัน/);
+  assert.match(r, /🏢 รวมทุกเขต[^\n]*\n\n⚖️ ตัน\n• ทำได้ 504\.32 \/ 869\.30/);
+  assert.match(r, /💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 17\.22 \/ 26\.54/);
+  assert.match(r, /🎯 Challenge\n• ตัน คาดปิด [\d.]+% ของ 956\.23\n• มูลค่า คาดปิด [\d.]+% ของ 29\.19/);
+  assert.match(r, /🟡 F5 — คาดปิด 97\.5%\n• ตัน 390\.18 \/ 500\.00 \(78\.0%\)\n• สปีด 19\.51 \| ต้องทำ [\d.]+ \/วัน\n• คาดปิด 487\.73 ตัน/);
   const f5 = bot.say('F5');
-  assert.match(f5, /มูลค่า: 13\.58 \/ 15\.64 ล้านบาท \(86\.9%\)\n   สปีด 0\.68 ล้านบาท\/วัน → ปิดเดือน 16\.98 ล้านบาท \(108\.6%\)/);
-  assert.match(f5, /🎯 Challenge: 550\.00 ตัน → คาดปิด 88\.7% · 17\.20 ล้านบาท → คาดปิด 98\.7%\n📅 ปีก่อน: 521\.32 ตัน · 16\.76 ล้านบาท/);
+  assert.match(f5, /💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 13\.58 \/ 15\.64 \(86\.9%\)\n• สปีด 0\.68 \/วัน\n• ต้องทำ [\d.]+ \/วัน ✅\n• คาดปิด 16\.98 \(108\.6%\)/);
+  assert.match(f5, /🎯 Challenge\n• ตัน คาดปิด 88\.7% ของ 550\.00\n• มูลค่า คาดปิด 98\.7% ของ 17\.20\n\n📅 ปีก่อน \(เดือนเดียวกัน\)\n• 521\.32 ตัน · 16\.76 ล้านบาท/);
   // แท็บ Targets ที่กรอกเองมีผลเหนือเป้าในไฟล์
   bot.sheets.Targets.data.push(['2026-11', 'F5', '', 400, 14]);
-  assert.match(bot.say('F5'), /ตัน: 390\.18 \/ 400\.00/);
+  assert.match(bot.say('F5'), /ทำได้ 390\.18 \/ 400\.00/);
 });
 
 test('ไฟล์รายเขตวันถัดไป → ยอดรายวันต่อเขต (ทั้งตันและบาท); ไฟล์ห่างหลายวันบอกช่วงวัน', () => {
@@ -653,7 +653,7 @@ test('ไฟล์รายลูกค้าแล้วตามด้วย�
   assert.match(d, /📅 ยอด 19–24 พ\.ย\./);
   assert.match(d, /• F1 58\.94 ตัน/); // 114.14 − 55.2
   assert.match(d, /• F5 390\.18 ตัน/);
-  assert.match(bot.say('ยอด'), /ตัน: 504\.32/);
+  assert.match(bot.say('ยอด'), /ทำได้ 504\.32/);
   const c = bot.say('นลินรัตน์ฟาร์ม');
   assert.match(c, /สะสมถึง พ\. 18 พ\.ย\. · วันทำงาน 15\/25/);
   assert.doesNotMatch(c, /มูลค่า|คิดเป็น/);
@@ -663,7 +663,7 @@ test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทน�
   const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
   bot.ctx.setupSalesSheets();
   const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39));
-  assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24 พ\.ย\. 2569[\s\S]*🏢 รวมทุกเขต[\s\S]*📍 F5/);
+  assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24 พ\.ย\. 2569[\s\S]*🏢 รวมทุกเขต[\s\S]*F5 —/);
   assert.strictEqual(bot.driveFiles.filter((f) => !f.trashed).length, 1, 'เก็บไฟล์ไว้ใน Drive');
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 0, 'ไฟล์ที่ส่งในแชทแล้วต้องไม่รายงานซ้ำทุกชั่วโมง');
@@ -686,8 +686,8 @@ test('กลุ่มอัปโหลด: ส่งไฟล์ในกลุ
   assert.strictEqual(bot.pushes().length, 0);
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 0);
-  assert.match(bot.say('ยอดขาย'), /ตัน: 504\.32/);
-  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /ตัน: 504\.32/);
+  assert.match(bot.say('ยอดขาย'), /ทำได้ 504\.32/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /ทำได้ 504\.32/);
   assert.strictEqual(bot.say('ยอดขาย', { groupId: 'Cstranger' }), null);
   assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cstranger' }), null);
 });
@@ -768,7 +768,7 @@ test('วันที่ข้อมูล = วันที่ส่งไฟ�
   const r = bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39));
   assert.match(r, /นำเข้ายอดสะสม ณ อาทิตย์ 22 พ\.ย\. 2569/);
   assert.match(String(bot.props.IMPORT_FOLDER_ID), /^folder_/, 'สร้างโฟลเดอร์และจำ ID ไว้');
-  assert.match(bot.say('ยอดขาย'), /วันทำงาน 18\/25 วัน \(เหลือ 7\)/);
+  assert.match(bot.say('ยอดขาย'), /วันทำงาน 18\/25 · เหลือ 7 วัน/);
   assert.match(bot.say('อัปเดตยอด 21/11'), /ณ เสาร์ 21 พ\.ย\./);
 });
 

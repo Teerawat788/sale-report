@@ -23,7 +23,7 @@ function lineFetch_(path, method, payload) {
 
 /** ข้อความยาวเกินจะถูกแบ่งเป็นหลายบับเบิล (สูงสุด 5) */
 function toMessages_(input) {
-  const items = Array.isArray(input) ? input : [input];
+  const items = (Array.isArray(input) ? input : [input]).reduce(function (acc, x) { return acc.concat(x); }, []);
   const out = [];
   items.forEach(function (it) {
     if (typeof it !== 'string') { out.push(it); return; }

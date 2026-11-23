@@ -56,7 +56,9 @@ function buildMorningMessages_(now) {
     try {
       const snap = getSalesSnapshot_();
       if (snap.source === 'none') throw new Error('ยังไม่มีไฟล์ยอด');
-      messages.push('☀️ สวัสดีตอนเช้าค่ะ — ' + fmtDateLong_(now) + '\n\n' + formatSales_(snap, null));
+      const sales = salesMessages_(snap, null);
+      sales[0] = '☀️ สวัสดีตอนเช้าค่ะ — ' + fmtDateLong_(now) + '\n\n' + sales[0];
+      sales.forEach(function (m) { messages.push(m); });
       const ai = aiSalesComment_(snap);
       if (ai) messages.push(ai);
     } catch (e) {

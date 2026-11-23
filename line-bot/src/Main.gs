@@ -52,10 +52,10 @@ function handleEvent_(ev) {
     const r = importLineFile_(ev.message.id, ev.message.fileName);
     if (!r) return;
     const snap = getSalesSnapshot_();
-    const out = [r.message, formatSales_(snap, null)];
+    const out = [r.message].concat(salesMessages_(snap, null));
     const ai = aiSalesComment_(snap);
     if (ai) out.push(ai);
-    lineReply_(ev.replyToken, out);
+    lineReply_(ev.replyToken, out.slice(0, 5));
     return;
   }
   if (ev.message.type !== 'text') return;
@@ -116,12 +116,12 @@ function runCommand_(p, ctx) {
       if (!p.argText) {
         const all = getSalesSnapshot_();
         const ai = aiSalesComment_(all);
-        return ai ? [formatSales_(all, null), ai] : formatSales_(all, null);
+        return salesMessages_(all, null).concat(ai ? [ai] : []);
       }
       let snap;
       try { snap = getSalesSnapshot_(); } catch (e) { return null; }
       const team = findTeam_(snap, p.argText);
-      if (team) return formatSales_(snap, team);
+      if (team) return salesMessages_(snap, team);
       if (snap.source !== 'sheet') return null;
       const customers = customerNames_(snap);
       const exact = findCustomers_(customers, p.argText, true);
@@ -168,10 +168,10 @@ function runCommand_(p, ctx) {
       const r = importSalesFromDrive_(true, asOf);
       if (r.skipped) return 'ℹ️ ' + r.message;
       const snap = getSalesSnapshot_();
-      const out = [r.message, formatSales_(snap, null)];
+      const out = [r.message].concat(salesMessages_(snap, null));
       const ai = aiSalesComment_(snap);
       if (ai) out.push(ai);
-      return out;
+      return out.slice(0, 5);
     }
 
     case 'tasks':

@@ -54,6 +54,12 @@ function teamLine_(t) {
 }
 
 /** team: null = ภาพรวม หรือ object ทีมจาก findTeam_ */
+/** รายงานยอดเป็นหลายบับเบิล (ไฟล์ Power BI) หรือข้อความเดียว (dashboard.json) */
+function salesMessages_(d, team) {
+  if (d.source === 'sheet') return salesSheetMessages_(d, team);
+  return [formatSales_(d, team)];
+}
+
 function formatSales_(d, team) {
   if (d.source === 'none') return NO_SHEET_SALES_TEXT;
   if (d.source === 'sheet') return formatSalesSheet_(d, team);
