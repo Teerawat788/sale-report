@@ -1258,6 +1258,15 @@ function asOfFromFileName_(name, ref) {
   return addDays_(startOfDay_(ref), -lag);
 }
 
+/**
+ * รันจากหน้า Apps Script ครั้งเดียว เพื่อกดอนุญาตสิทธิ์ Google Drive
+ * (บอทใช้ Drive เก็บไฟล์ยอดที่ส่งเข้ากลุ่ม) — สร้าง/ผูกโฟลเดอร์ให้ด้วย
+ */
+function authorizeDrive() {
+  const folder = importFolder_();
+  console.log('✅ ใช้ Google Drive ได้แล้ว — โฟลเดอร์: ' + folder.getName() + ' (' + folder.getId() + ')');
+}
+
 /** โฟลเดอร์เก็บไฟล์ยอด — ยังไม่ได้ตั้ง IMPORT_FOLDER_ID ก็สร้างให้เอง */
 function importFolder_() {
   const id = prop_('IMPORT_FOLDER_ID', '');
