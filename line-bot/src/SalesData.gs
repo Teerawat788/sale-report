@@ -1112,6 +1112,35 @@ function formatTopBy_(snap, key, title, n) {
 
 const CUSTOMER_INDEX_KEY = 'cust_index_v1';
 
+/** ลูกค้าทุกรายในเขต เรียงตามตัน (แบ่งหลายข้อความถ้ายาว) */
+function formatZoneCustomers_(snap, zone) {
+  const cust = {};
+  snap.monthRows.forEach(function (r) {
+    if (!r.customer || r.team !== zone) return;
+    const c = cust[r.customer] || (cust[r.customer] = { name: r.customer, sales: r.sales, ton: 0 });
+    c.ton += r.ton;
+  });
+  const list = Object.keys(cust).map(function (k) { return cust[k]; })
+    .filter(function (c) { return Math.abs(c.ton) > 1e-9; })
+    .sort(function (a, b) { return b.ton - a.ton; });
+  if (!list.length) return 'ยังไม่มียอดรายลูกค้าของ ' + zone + ' ค่ะ';
+  const sum = list.reduce(function (a, c) { return a + c.ton; }, 0);
+  const t = snap.teams.find(function (x) { return x.name === zone; });
+  const zoneTon = t && t.actualTon ? t.actualTon : sum;
+  const head = ['👥 ลูกค้า ' + zone + ' — ถึง ' + fmtDate_(snap.detailAsOf || snap.asOf),
+    list.length + ' ราย · รวม ' + fmtNum_(sum) + ' ตัน', ''];
+  const items = list.map(function (c, i) {
+    return (i + 1) + '. ' + c.name + '\n   ' + fmtNum_(c.ton) + ' ตัน · ' + fmtNum_(c.ton / zoneTon * 100, 0) + '%' +
+      (c.sales ? ' · ' + c.sales.split(' ')[0] : '');
+  });
+  // LINE 1 ข้อความไม่เกิน 5,000 ตัวอักษร → แบ่งทีละ 30 ราย (สูงสุด 5 ข้อความ)
+  const msgs = [];
+  for (let i = 0; i < items.length && msgs.length < 5; i += 30) {
+    msgs.push((i === 0 ? head.join('\n') + '\n' : '') + items.slice(i, i + 30).join('\n'));
+  }
+  return msgs.length === 1 ? msgs[0] : msgs;
+}
+
 function uniq_(arr) {
   const seen = {};
   return arr.filter(function (x) { if (!x || seen[x]) return false; seen[x] = true; return true; });

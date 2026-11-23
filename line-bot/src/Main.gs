@@ -255,7 +255,12 @@ function runCommand_(p, ctx) {
       if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
       if (p.cmd === 'salesday') return formatLastDay_(snap);
       if (p.cmd === 'salesrank') return formatSalesRank_(snap);
-      if (p.cmd === 'salescust') return formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10);
+      if (p.cmd === 'salescust') {
+        if (!p.args.length) return formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10) + '\n\nดูทั้งเขต พิมพ์: ลูกค้า F3';
+        const zone = teamKey_(p.argText).toUpperCase();
+        if (!/^F\d$/.test(zone)) return null; // "ลูกค้า ..." ที่ไม่ใช่เขต = แชทปกติ
+        return formatZoneCustomers_(snap, zone);
+      }
       return formatTopBy_(snap, 'product', '📦 สินค้าท็อป', 10);
     }
 
@@ -392,6 +397,7 @@ const HELP_TEXT = [
   '• ยอดขาย — ภาพรวม + F1–F5',
   '• F1–F5 — ยอดเขตนั้น',
   '• ชื่อลูกค้า — ยอดลูกค้ารายนั้น',
+  '• ลูกค้า F3 — ลูกค้าทุกรายในเขต',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
   '• วิเคราะห์ — AI สรุปยอดให้',
   '',

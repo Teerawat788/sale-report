@@ -152,7 +152,7 @@ const COMMANDS = {
   sales: ['ยอด', 'สรุปยอด', 'ยอดขาย', 'sales'],
   salesday: ['ยอดเมื่อวาน', 'ยอดล่าสุด', 'ยอดรายวัน'],
   salesrank: ['ยอดเซลส์', 'อันดับเซลส์', 'ranking'],
-  salescust: ['ยอดลูกค้า', 'ลูกค้าท็อป'],
+  salescust: ['ยอดลูกค้า', 'ลูกค้าท็อป', 'ลูกค้า', 'ลูกค้าเขต'],
   salesprod: ['ยอดสินค้า', 'สินค้าท็อป'],
   importsales: ['อัปเดตยอด', 'ดึงยอด'],
   tasks: ['งาน', 'งานค้าง', 'tasks'],
@@ -181,7 +181,7 @@ const COMMANDS = {
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
 const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
-  'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
+  'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 
 const ALIAS_TO_CMD = (function () {
@@ -2131,6 +2131,35 @@ function formatTopBy_(snap, key, title, n) {
 
 const CUSTOMER_INDEX_KEY = 'cust_index_v1';
 
+/** ลูกค้าทุกรายในเขต เรียงตามตัน (แบ่งหลายข้อความถ้ายาว) */
+function formatZoneCustomers_(snap, zone) {
+  const cust = {};
+  snap.monthRows.forEach(function (r) {
+    if (!r.customer || r.team !== zone) return;
+    const c = cust[r.customer] || (cust[r.customer] = { name: r.customer, sales: r.sales, ton: 0 });
+    c.ton += r.ton;
+  });
+  const list = Object.keys(cust).map(function (k) { return cust[k]; })
+    .filter(function (c) { return Math.abs(c.ton) > 1e-9; })
+    .sort(function (a, b) { return b.ton - a.ton; });
+  if (!list.length) return 'ยังไม่มียอดรายลูกค้าของ ' + zone + ' ค่ะ';
+  const sum = list.reduce(function (a, c) { return a + c.ton; }, 0);
+  const t = snap.teams.find(function (x) { return x.name === zone; });
+  const zoneTon = t && t.actualTon ? t.actualTon : sum;
+  const head = ['👥 ลูกค้า ' + zone + ' — ถึง ' + fmtDate_(snap.detailAsOf || snap.asOf),
+    list.length + ' ราย · รวม ' + fmtNum_(sum) + ' ตัน', ''];
+  const items = list.map(function (c, i) {
+    return (i + 1) + '. ' + c.name + '\n   ' + fmtNum_(c.ton) + ' ตัน · ' + fmtNum_(c.ton / zoneTon * 100, 0) + '%' +
+      (c.sales ? ' · ' + c.sales.split(' ')[0] : '');
+  });
+  // LINE 1 ข้อความไม่เกิน 5,000 ตัวอักษร → แบ่งทีละ 30 ราย (สูงสุด 5 ข้อความ)
+  const msgs = [];
+  for (let i = 0; i < items.length && msgs.length < 5; i += 30) {
+    msgs.push((i === 0 ? head.join('\n') + '\n' : '') + items.slice(i, i + 30).join('\n'));
+  }
+  return msgs.length === 1 ? msgs[0] : msgs;
+}
+
 function uniq_(arr) {
   const seen = {};
   return arr.filter(function (x) { if (!x || seen[x]) return false; seen[x] = true; return true; });
@@ -3750,7 +3779,12 @@ function runCommand_(p, ctx) {
       if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
       if (p.cmd === 'salesday') return formatLastDay_(snap);
       if (p.cmd === 'salesrank') return formatSalesRank_(snap);
-      if (p.cmd === 'salescust') return formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10);
+      if (p.cmd === 'salescust') {
+        if (!p.args.length) return formatTopBy_(snap, 'customer', '👥 ลูกค้าท็อป', 10) + '\n\nดูทั้งเขต พิมพ์: ลูกค้า F3';
+        const zone = teamKey_(p.argText).toUpperCase();
+        if (!/^F\d$/.test(zone)) return null; // "ลูกค้า ..." ที่ไม่ใช่เขต = แชทปกติ
+        return formatZoneCustomers_(snap, zone);
+      }
       return formatTopBy_(snap, 'product', '📦 สินค้าท็อป', 10);
     }
 
@@ -3887,6 +3921,7 @@ const HELP_TEXT = [
   '• ยอดขาย — ภาพรวม + F1–F5',
   '• F1–F5 — ยอดเขตนั้น',
   '• ชื่อลูกค้า — ยอดลูกค้ารายนั้น',
+  '• ลูกค้า F3 — ลูกค้าทุกรายในเขต',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
   '• วิเคราะห์ — AI สรุปยอดให้',
   '',

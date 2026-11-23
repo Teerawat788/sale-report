@@ -8,7 +8,7 @@ const COMMANDS = {
   sales: ['ยอด', 'สรุปยอด', 'ยอดขาย', 'sales'],
   salesday: ['ยอดเมื่อวาน', 'ยอดล่าสุด', 'ยอดรายวัน'],
   salesrank: ['ยอดเซลส์', 'อันดับเซลส์', 'ranking'],
-  salescust: ['ยอดลูกค้า', 'ลูกค้าท็อป'],
+  salescust: ['ยอดลูกค้า', 'ลูกค้าท็อป', 'ลูกค้า', 'ลูกค้าเขต'],
   salesprod: ['ยอดสินค้า', 'สินค้าท็อป'],
   importsales: ['อัปเดตยอด', 'ดึงยอด'],
   tasks: ['งาน', 'งานค้าง', 'tasks'],
@@ -37,7 +37,7 @@ const COMMANDS = {
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
 const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
-  'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
+  'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 
 const ALIAS_TO_CMD = (function () {

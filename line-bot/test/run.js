@@ -1098,4 +1098,20 @@ test('กลุ่มใหญ่: เมนูไม่มีคำสั่ง
   assert.ok(!/Script Properties/.test(bot.say('วันเกิด', { groupId: 'Cmain' })));
 });
 
+test('ลูกค้า F5: รายชื่อลูกค้าทั้งเขต เรียงตามตัน', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head,
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 30],
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '2', 'ร้านทดสอบสอง', 'Fish', 70],
+    ['เซลส์ ข', 'TFM Fish1 North', 'เซลส์ ข', 'TFM Fish1 North', '3', 'ร้านทดสอบสาม', 'Fish', 5]];
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
+  const r = bot.say('ลูกค้า F5', { groupId: 'Cmain' });
+  assert.match(r, /ลูกค้า F5[\s\S]*2 ราย · รวม 100\.00 ตัน[\s\S]*1\. ร้านทดสอบสอง\n   70\.00 ตัน · 70%[\s\S]*2\. ร้านทดสอบหนึ่ง/);
+  assert.ok(!/ร้านทดสอบสาม/.test(r));
+  assert.strictEqual(bot.say('ยอดลูกค้า fish5', { groupId: 'Cmain' }), r);
+  assert.strictEqual(bot.say('ลูกค้า ร้านนี้สั่งเพิ่ม', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('ยอดลูกค้า', { groupId: 'Cmain' }), /ดูทั้งเขต พิมพ์: ลูกค้า F3/);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
