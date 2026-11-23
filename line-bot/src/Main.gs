@@ -74,6 +74,13 @@ function handleEvent_(ev) {
     lineReply_(ev.replyToken, out.slice(0, 5));
     return;
   }
+  // แชร์ตำแหน่งหลังบันทึกเยี่ยม → แนบตำแหน่ง
+  if (ev.message.type === 'location') {
+    if (inOtherGroup) return;
+    const cust = attachVisitLocation_(source.userId, ev.message, now_());
+    if (cust) lineReply_(ev.replyToken, '📍 แนบตำแหน่งการเยี่ยม ' + cust + ' แล้วค่ะ');
+    return;
+  }
   if (ev.message.type !== 'text') return;
 
   // ห้องสั่งการ: "ประกาศ <ข้อความ>" → บอทพูดในกลุ่มหลัก (เก็บบรรทัดใหม่ตามที่พิมพ์)
@@ -84,10 +91,33 @@ function handleEvent_(ev) {
     return;
   }
 
+  // ห้องสั่งการ: แผนงาน (กิจวัตร)
+  if (isControlRoom_(source) && /^\s*(แผน|ยกเลิกแผน)/.test(ev.message.text || '')) {
+    const planReply = handlePlanCommand_(ev.message.text, now_());
+    if (planReply) { lineReply_(ev.replyToken, planReply); return; }
+  }
+
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
+
+  // บันทึกเยี่ยมลูกค้า: "เยี่ยม <ลูกค้า> <รายละเอียด>"
+  const visit = !inOtherGroup && parseVisitText_(stripped.text);
+  if (visit) {
+    const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
+    const zone = logVisit_(sender, visit, now_());
+    lineReply_(ev.replyToken, '📍 บันทึกเยี่ยม ' + visit.customer + (zone ? ' [' + zone + ']' : '') + ' แล้วค่ะ' +
+      (visit.note ? '\n🗒️ ' + truncate_(visit.note, 200) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+    return;
+  }
+
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
   const parsed = parseCommand_(stripped.text) || lookupCommand_(stripped.text);
-  if (!parsed) return;
+  if (!parsed) {
+    // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์ "ถาม ..." → AI ตอบจากข้อมูลจริง
+    const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
+    const question = stripped.botMentioned ? stripped.text : (ask && isControlRoom_(source) ? ask[1] : '');
+    if (question && !inOtherGroup) lineReply_(ev.replyToken, askBot_(question, now_()));
+    return;
+  }
 
   // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
   const isGroupChat = source.type === 'group' || source.type === 'room';
@@ -181,6 +211,12 @@ function runCommand_(p, ctx) {
 
     case 'birthday':
       return birthdayCommand_(p.argText, now);
+
+    case 'visits':
+      return formatVisits_(p.argText, now);
+
+    case 'notvisited':
+      return formatNotVisited_(p.argText, now);
 
     case 'sendsales': {
       if (!isControlRoom_(ctx.source)) return null; // ในกลุ่มอื่น "ส่งยอด" เป็นแชทปกติ
@@ -350,8 +386,13 @@ const HELP_TEXT = [
   '• ยอดขาย — ยอดรวมทุกเขต + F1–F5 (ตัน, ล้านบาท, สปีด, คาดปิดเดือน)',
   '• พิมพ์ F1–F5 = ยอดเขตนั้น | พิมพ์ชื่อลูกค้า = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ | ยอดลูกค้า | วิเคราะห์ (AI)',
+  '• แท็ก @น้องขุนศึก แล้วถามได้เลย เช่น F3 ต้องขายวันละเท่าไหร่ถึงเป้า (AI)',
   '',
   '🎂 วันเกิด — ลูกค้าเกิดใน 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
+  '',
+  '📍 เยี่ยมลูกค้า',
+  '• เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่ (แล้วแชร์ตำแหน่งต่อได้)',
+  '• ดูเยี่ยม | ดูเยี่ยม กบทอง | ดูเยี่ยม F4 | ไม่ได้เยี่ยม F4',
   '',
   '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',
   '',

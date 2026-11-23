@@ -28,6 +28,8 @@ const COMMANDS = {
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
   sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
+  visits: ['ดูเยี่ยม', 'ประวัติเยี่ยม'],
+  notvisited: ['ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
   review: ['สรุปสัปดาห์', 'review'],
@@ -55,13 +57,15 @@ function stripMentions_(text, mention) {
   list.sort(function (a, b) { return b.index - a.index; });
   const mentions = [];
   let out = text;
+  let botMentioned = false;
   list.forEach(function (m) {
     const raw = text.substr(m.index, m.length);
     out = out.slice(0, m.index) + ' ' + out.slice(m.index + m.length);
+    if (m.isSelf) botMentioned = true;
     if (m.isSelf || m.type === 'all') return;
     mentions.unshift({ userId: m.userId || '', name: raw.replace(/^@/, '').trim() });
   });
-  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions };
+  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions, botMentioned: botMentioned };
 }
 
 /** คืน { cmd, args: string[], argText } หรือ null ถ้าไม่ใช่คำสั่ง */
@@ -81,6 +85,7 @@ function parseCommand_(text) {
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 6) return null;
   if (cmd === 'registerupload' && args.length && args.join('') !== 'ยืนยัน') return null;
+  if ((cmd === 'visits' || cmd === 'notvisited') && args.length > 4) return null;
   if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&

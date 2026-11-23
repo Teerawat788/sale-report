@@ -111,3 +111,68 @@ function aiSalesComment_(snap) {
   cache.put(key, msg, 21600);
   return msg;
 }
+
+
+// ---------------------------------------------------------------- ถามบอทเป็นภาษาธรรมดา
+
+const AI_QA_SYSTEM_PROMPT = [
+  'คุณคือ "น้องขุนศึก" ผู้ช่วยทีมขายอาหารปลา TFM (เขต F1–F5) ตอบในกลุ่ม LINE ของทีม',
+  'พูดสุภาพแบบผู้หญิง ใช้ค่ะ/คะ ให้ถูกต้อง (ค่ะ = บอกเล่า, คะ = คำถาม)',
+  'ตอบจากข้อมูล JSON ที่ให้เท่านั้น ถ้าข้อมูลไม่พอให้บอกตรง ๆ ว่าไม่มีข้อมูลนั้น ห้ามเดาตัวเลข',
+  'คำนวณให้ถูก แสดงตัวเลขสำคัญ ตอบสั้น อ่านง่ายบนมือถือ: บรรทัดสั้น ขึ้นต้นด้วย "• " ไม่เกิน 12 บรรทัด ไม่ใช้ markdown',
+  'หน่วย: ตัน และมูลค่าเป็นล้านบาท (ฟิลด์ *MB) — วันทำงานนับ จ.–ส.',
+].join('\n');
+
+/** ข้อมูลที่ส่งให้ AI ตอบคำถาม: เขต, เซลส์, ลูกค้า (ยอดเดือนนี้), วันเกิด 30 วัน, เยี่ยมล่าสุด */
+function aiQaPayload_(snap, now) {
+  const r = function (n) { return n === null || n === undefined || isNaN(n) ? null : Math.round(n * 100) / 100; };
+  const out = { today: fmtDateLong_(now) };
+  if (snap && snap.source === 'sheet') {
+    Object.assign(out, aiSalesPayload_(snap));
+    out.salespeople = snap.salesList.slice(0, 60).map(function (s) {
+      return { name: s.name, zone: s.team, ton: r(s.actualTon), forecastTon: r(s.forecastTon) };
+    });
+    const cust = {};
+    snap.monthRows.forEach(function (x) {
+      if (!x.customer) return;
+      const c = cust[x.customer] || (cust[x.customer] = { name: x.customer, zone: x.team, sales: x.sales, ton: 0 });
+      c.ton += x.ton;
+    });
+    out.customersThisMonth = Object.keys(cust).map(function (k) { return cust[k]; })
+      .sort(function (a, b) { return b.ton - a.ton; }).slice(0, 250)
+      .map(function (c) { return { name: c.name, zone: c.zone, sales: c.sales, ton: r(c.ton) }; });
+    if (snap.detailAsOf) out.customerDataAsOf = fmtDateLong_(snap.detailAsOf);
+  } else {
+    out.sales = 'ยังไม่มีไฟล์ยอดขาย';
+  }
+  try {
+    const today = startOfDay_(now);
+    out.birthdaysNext30Days = upcomingBirthdays_(readBirthdays_(), today, 30).map(function (e) {
+      return { customers: e.customers, owner: e.owner, zones: e.zones, date: fmtDate_(e.date) };
+    });
+  } catch (e) { /* ignore */ }
+  try {
+    const since = addDays_(startOfDay_(now), -30);
+    out.visitsLast30Days = readVisits_().filter(function (v) { return v.at >= since; }).slice(-150).map(function (v) {
+      return { date: fmtDate_(v.at), sales: v.sales, customer: v.customer, zone: v.zone, note: truncate_(v.note, 100) };
+    });
+  } catch (e) { /* ignore */ }
+  return out;
+}
+
+/** ตอบคำถามภาษาธรรมดา (ต้องมี ANTHROPIC_API_KEY) */
+function askBot_(question, now) {
+  if (!prop_('ANTHROPIC_API_KEY', '')) {
+    return 'น้องขุนศึกยังตอบคำถามแบบนี้ไม่ได้ค่ะ ต้องเปิดใช้ AI ก่อน (ใส่ ANTHROPIC_API_KEY ใน Script Properties)\nระหว่างนี้พิมพ์ "เมนู" เพื่อดูคำสั่งที่ใช้ได้นะคะ';
+  }
+  let snap = null;
+  try { snap = getSalesSnapshot_(); } catch (e) { /* ignore */ }
+  const payload = JSON.stringify(aiQaPayload_(snap, now));
+  let text = null;
+  try {
+    text = callClaude_(AI_QA_SYSTEM_PROMPT, 'ข้อมูล (JSON):\n' + payload + '\n\nคำถาม: ' + question);
+  } catch (e) {
+    console.error('AI Q&A: ' + (e && e.message || e));
+  }
+  return text ? '🤖 ' + truncate_(text, 3500) : 'ขออภัยค่ะ ตอนนี้น้องขุนศึกตอบไม่ได้ ลองใหม่อีกครั้งนะคะ';
+}

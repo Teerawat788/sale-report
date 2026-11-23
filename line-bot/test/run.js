@@ -832,4 +832,96 @@ test('ย้ายกลุ่ม: กลุ่มหลักเดิม → �
   assert.strictEqual(bot.say('กลุ่มอัปโหลด อะไร', { groupId: 'Csmall' }), null);
 });
 
+// ---------- แผนงาน / เยี่ยมลูกค้า / ถาม AI ----------
+test('แผนงาน: ส่งในห้องสั่งการ → จำเป็นกิจวัตร ส่งเข้ากลุ่มหลักตามเวลา, ส่งใหม่แทนที่, ยกเลิกได้', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 22), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', BRIEF_ENABLED: 'false', BIRTHDAY_ENABLED: 'false' } });
+  bot.ctx.setupReminders();
+  const r = bot.say('แผน\nส 16:00 รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยนะคะ\nศ 07:00 ทุก2สัปดาห์ เริ่ม 4/12 @All วันที่มีประชุม Perfomance\nจ-ส 08:00 อย่าลืมส่งยอดเมื่อวานนะคะ\nบรรทัดนี้อ่านไม่ได้', { groupId: 'Cmine' });
+  assert.match(r, /บันทึกแผนงานแล้วค่ะ \(3 รายการ\)/);
+  assert.match(r, /2\. ศ 07:00 \(ทุก 2 สัปดาห์ เริ่ม ศ\. 4 ธ\.ค\.\)/);
+  assert.match(r, /3\. จ-ส 08:00/);
+  assert.match(r, /บรรทัดที่อ่านไม่ได้[\s\S]*บรรทัดนี้อ่านไม่ได้/);
+  assert.strictEqual(bot.sheets['แจ้งเตือน'].data.length, 4, 'แทนที่ของเดิมทั้งหมด');
+  assert.match(bot.say('แผน', { groupId: 'Cmine' }), /แผนงานที่บอทส่งเข้ากลุ่มหลักเป็นกิจวัตร \(3 รายการ\)/);
+  const at = (m, d, h, mi) => { bot.setNow(D(2026, m, d, h, mi)); bot.ctx.tick(); return bot.pushes().map((p) => p.body); };
+  let p = at(11, 24, 8, 2);
+  assert.strictEqual(p.length, 1);
+  assert.strictEqual(p[0].to, 'Cmain');
+  assert.strictEqual(p[0].messages[0].text, 'อย่าลืมส่งยอดเมื่อวานนะคะ');
+  assert.strictEqual(at(11, 29, 8, 2).length, 1, 'อาทิตย์ไม่อยู่ใน จ-ส');
+  assert.strictEqual(at(12, 4, 7, 2).length, 2, 'ศุกร์ 4/12 ส่งประชุม');
+  // ส่งแผนใหม่ = เปลี่ยนทั้งชุด
+  assert.match(bot.say('แผน\nพ 09:00 ประชุมทีมขายออนไลน์ค่ะ', { groupId: 'Cmine' }), /\(1 รายการ\)/);
+  assert.strictEqual(bot.sheets['แจ้งเตือน'].data.length, 2);
+  assert.match(bot.say('ยกเลิกแผน', { groupId: 'Cmine' }), /ยกเลิกแผนงานทั้งหมดแล้วค่ะ/);
+  assert.match(bot.say('แผน', { groupId: 'Cmine' }), /ยังไม่มีแผนงาน/);
+  // กลุ่มหลัก: "แผน ..." เป็นแชทปกติ
+  assert.strictEqual(bot.say('แผน\nส 16:00 ทดสอบ', { groupId: 'Cmain' }), null);
+  assert.strictEqual(bot.sheets['แจ้งเตือน'].data.length, 1);
+});
+
+function locate(bot, o) {
+  const before = bot.lineCalls.length;
+  const ev = { type: 'message', replyToken: 'rt', source: { type: 'group', groupId: o.groupId || 'Cmain', userId: o.userId || 'Uuser1' },
+    message: { type: 'location', id: 'loc1', title: 'ตำแหน่ง', address: o.address, latitude: 13.7, longitude: 100.5 } };
+  bot.ctx.doPost({ postData: { contents: JSON.stringify({ destination: 'Ubot', events: [ev] }) } });
+  const reply = bot.lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));
+  return reply ? reply.body.messages.map((m) => m.text).join('\n') : null;
+}
+
+test('เยี่ยมลูกค้า: บันทึกในกลุ่มใหญ่ + แชร์ตำแหน่ง + ดูเยี่ยม + ไม่ได้เยี่ยม; คำชม "เยี่ยมมาก" ไม่บันทึก', () => {
+  const bot = mtdBot(); // มีข้อมูลรายลูกค้า (นลินรัตน์ฟาร์ม F4 ฯลฯ)
+  bot.props.GROUP_ID = 'Cgroup1';
+  bot.say('อัปเดตยอด');
+  bot.setNow(D(2026, 11, 20, 10, 0));
+  const r = bot.say('เยี่ยม นลินรัตน์ฟาร์ม ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า', { userId: 'Usale1' });
+  assert.match(r, /📍 บันทึกเยี่ยม นลินรัตน์ฟาร์ม แล้วค่ะ\n🗒️ ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า/);
+  const row = bot.sheets['บันทึกเยี่ยม'].data[1];
+  assert.strictEqual(row[3], 'นลินรัตน์ฟาร์ม');
+  assert.strictEqual(row[5], 'ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า');
+  bot.setNow(D(2026, 11, 20, 10, 10));
+  assert.match(locate(bot, { groupId: 'Cgroup1', userId: 'Usale1', address: 'ราชบุรี' }), /แนบตำแหน่งการเยี่ยม นลินรัตน์ฟาร์ม แล้วค่ะ/);
+  assert.strictEqual(bot.sheets['บันทึกเยี่ยม'].data[1][8], 'ราชบุรี');
+  assert.strictEqual(locate(bot, { groupId: 'Cgroup1', userId: 'Usale1', address: 'ซ้ำ' }), null, 'แนบแล้วไม่แนบซ้ำ');
+  assert.strictEqual(locate(bot, { groupId: 'Cgroup1', userId: 'Uother' }), null);
+  bot.say('บันทึกเยี่ยม ร้านบุญสว่าง (2006) ส่งของตรงเวลา', { userId: 'Usale2' });
+  assert.strictEqual(bot.sheets['บันทึกเยี่ยม'].data[2][3], 'ร้านบุญสว่าง (2006)', 'ชื่อลูกค้ามีวงเล็บ/ช่องว่าง');
+
+  assert.strictEqual(bot.say('เยี่ยมมาก'), null);
+  assert.strictEqual(bot.say('เยี่ยม มากเลยครับ'), null);
+  assert.strictEqual(bot.sheets['บันทึกเยี่ยม'].data.length, 3);
+
+  const v = bot.say('ดูเยี่ยม');
+  assert.match(v, /เยี่ยมลูกค้า 7 วันล่าสุด \(2 ครั้ง\)/);
+  assert.match(v, /นลินรัตน์ฟาร์ม[\s\S]*📍 ราชบุรี/);
+  assert.match(bot.say('ดูเยี่ยม นลินรัตน์'), /บันทึกเยี่ยม "นลินรัตน์" \(1 ครั้ง/);
+  const nv = bot.say('ไม่ได้เยี่ยม');
+  assert.match(nv, /ยังไม่ได้เยี่ยม 30 วันขึ้นไป/);
+  assert.doesNotMatch(nv, /นลินรัตน์ฟาร์ม|ร้านบุญสว่าง/);
+  assert.match(nv, /อานนท์ฟาร์ม/);
+  assert.strictEqual(bot.say('เยี่ยม นลินรัตน์ฟาร์ม ทดสอบ', { groupId: 'Cstranger' }), null, 'กลุ่มอื่นไม่บันทึก');
+});
+
+test('ถาม AI: แท็กบอทแล้วถาม → Claude ตอบจากข้อมูล; ไม่มีคีย์บอกวิธีเปิด; ห้องสั่งการใช้ "ถาม"', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 22), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
+  bot.ctx.setupSalesSheets();
+  bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
+  const q = '@น้องขุนศึก F5 ต้องขายวันละเท่าไหร่ถึงเป้า';
+  const mention = { mentionees: [{ index: 0, length: 11, isSelf: true, userId: 'Ubot' }] };
+  assert.match(bot.say(q, { groupId: 'Cmain', mention }), /ต้องเปิดใช้ AI ก่อน/);
+  assert.strictEqual(bot.aiCalls.length, 0);
+  bot.props.ANTHROPIC_API_KEY = 'sk-test';
+  bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• F5 ต้องขายวันละ 15.69 ตันค่ะ' }] } });
+  assert.strictEqual(bot.say(q, { groupId: 'Cmain', mention }), '🤖 • F5 ต้องขายวันละ 15.69 ตันค่ะ');
+  const call = bot.aiCalls[0];
+  assert.match(call.body.messages[0].content, /คำถาม: F5 ต้องขายวันละเท่าไหร่ถึงเป้า/);
+  assert.match(call.body.messages[0].content, /"zone":"F5"/);
+  assert.match(call.body.system, /ค่ะ\/คะ/);
+  assert.strictEqual(bot.say('ถาม F1 เป็นยังไงบ้าง', { groupId: 'Cmine' }), '🤖 • F5 ต้องขายวันละ 15.69 ตันค่ะ');
+  assert.strictEqual(bot.say('ถาม F1 เป็นยังไงบ้าง', { groupId: 'Cmain' }), null, 'กลุ่มหลักต้องแท็กบอท');
+  assert.strictEqual(bot.say('F5 ต้องขายวันละเท่าไหร่', { groupId: 'Cmain' }), null, 'ไม่แท็ก ไม่ตอบ');
+  assert.match(bot.say('@น้องขุนศึก ยอด', { groupId: 'Cmain', mention }), /🏢 รวมทุกเขต/, 'แท็ก + คำสั่ง = คำสั่งปกติ');
+  assert.strictEqual(bot.aiCalls.length, 3, '2 คำถาม + บทวิเคราะห์ที่แนบกับรายงานยอด');
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

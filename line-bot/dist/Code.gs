@@ -171,6 +171,8 @@ const COMMANDS = {
   brief: ['สรุปเช้า', 'สรุปวันนี้', 'brief'],
   birthday: ['วันเกิด', 'วันเกิดลูกค้า', 'hbd'],
   sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
+  visits: ['ดูเยี่ยม', 'ประวัติเยี่ยม'],
+  notvisited: ['ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด', 'ai'],
   review: ['สรุปสัปดาห์', 'review'],
@@ -198,13 +200,15 @@ function stripMentions_(text, mention) {
   list.sort(function (a, b) { return b.index - a.index; });
   const mentions = [];
   let out = text;
+  let botMentioned = false;
   list.forEach(function (m) {
     const raw = text.substr(m.index, m.length);
     out = out.slice(0, m.index) + ' ' + out.slice(m.index + m.length);
+    if (m.isSelf) botMentioned = true;
     if (m.isSelf || m.type === 'all') return;
     mentions.unshift({ userId: m.userId || '', name: raw.replace(/^@/, '').trim() });
   });
-  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions };
+  return { text: out.replace(/\s+/g, ' ').trim(), mentions: mentions, botMentioned: botMentioned };
 }
 
 /** คืน { cmd, args: string[], argText } หรือ null ถ้าไม่ใช่คำสั่ง */
@@ -224,6 +228,7 @@ function parseCommand_(text) {
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 6) return null;
   if (cmd === 'registerupload' && args.length && args.join('') !== 'ยืนยัน') return null;
+  if ((cmd === 'visits' || cmd === 'notvisited') && args.length > 4) return null;
   if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
@@ -2329,6 +2334,71 @@ function aiSalesComment_(snap) {
   return msg;
 }
 
+
+// ---------------------------------------------------------------- ถามบอทเป็นภาษาธรรมดา
+
+const AI_QA_SYSTEM_PROMPT = [
+  'คุณคือ "น้องขุนศึก" ผู้ช่วยทีมขายอาหารปลา TFM (เขต F1–F5) ตอบในกลุ่ม LINE ของทีม',
+  'พูดสุภาพแบบผู้หญิง ใช้ค่ะ/คะ ให้ถูกต้อง (ค่ะ = บอกเล่า, คะ = คำถาม)',
+  'ตอบจากข้อมูล JSON ที่ให้เท่านั้น ถ้าข้อมูลไม่พอให้บอกตรง ๆ ว่าไม่มีข้อมูลนั้น ห้ามเดาตัวเลข',
+  'คำนวณให้ถูก แสดงตัวเลขสำคัญ ตอบสั้น อ่านง่ายบนมือถือ: บรรทัดสั้น ขึ้นต้นด้วย "• " ไม่เกิน 12 บรรทัด ไม่ใช้ markdown',
+  'หน่วย: ตัน และมูลค่าเป็นล้านบาท (ฟิลด์ *MB) — วันทำงานนับ จ.–ส.',
+].join('\n');
+
+/** ข้อมูลที่ส่งให้ AI ตอบคำถาม: เขต, เซลส์, ลูกค้า (ยอดเดือนนี้), วันเกิด 30 วัน, เยี่ยมล่าสุด */
+function aiQaPayload_(snap, now) {
+  const r = function (n) { return n === null || n === undefined || isNaN(n) ? null : Math.round(n * 100) / 100; };
+  const out = { today: fmtDateLong_(now) };
+  if (snap && snap.source === 'sheet') {
+    Object.assign(out, aiSalesPayload_(snap));
+    out.salespeople = snap.salesList.slice(0, 60).map(function (s) {
+      return { name: s.name, zone: s.team, ton: r(s.actualTon), forecastTon: r(s.forecastTon) };
+    });
+    const cust = {};
+    snap.monthRows.forEach(function (x) {
+      if (!x.customer) return;
+      const c = cust[x.customer] || (cust[x.customer] = { name: x.customer, zone: x.team, sales: x.sales, ton: 0 });
+      c.ton += x.ton;
+    });
+    out.customersThisMonth = Object.keys(cust).map(function (k) { return cust[k]; })
+      .sort(function (a, b) { return b.ton - a.ton; }).slice(0, 250)
+      .map(function (c) { return { name: c.name, zone: c.zone, sales: c.sales, ton: r(c.ton) }; });
+    if (snap.detailAsOf) out.customerDataAsOf = fmtDateLong_(snap.detailAsOf);
+  } else {
+    out.sales = 'ยังไม่มีไฟล์ยอดขาย';
+  }
+  try {
+    const today = startOfDay_(now);
+    out.birthdaysNext30Days = upcomingBirthdays_(readBirthdays_(), today, 30).map(function (e) {
+      return { customers: e.customers, owner: e.owner, zones: e.zones, date: fmtDate_(e.date) };
+    });
+  } catch (e) { /* ignore */ }
+  try {
+    const since = addDays_(startOfDay_(now), -30);
+    out.visitsLast30Days = readVisits_().filter(function (v) { return v.at >= since; }).slice(-150).map(function (v) {
+      return { date: fmtDate_(v.at), sales: v.sales, customer: v.customer, zone: v.zone, note: truncate_(v.note, 100) };
+    });
+  } catch (e) { /* ignore */ }
+  return out;
+}
+
+/** ตอบคำถามภาษาธรรมดา (ต้องมี ANTHROPIC_API_KEY) */
+function askBot_(question, now) {
+  if (!prop_('ANTHROPIC_API_KEY', '')) {
+    return 'น้องขุนศึกยังตอบคำถามแบบนี้ไม่ได้ค่ะ ต้องเปิดใช้ AI ก่อน (ใส่ ANTHROPIC_API_KEY ใน Script Properties)\nระหว่างนี้พิมพ์ "เมนู" เพื่อดูคำสั่งที่ใช้ได้นะคะ';
+  }
+  let snap = null;
+  try { snap = getSalesSnapshot_(); } catch (e) { /* ignore */ }
+  const payload = JSON.stringify(aiQaPayload_(snap, now));
+  let text = null;
+  try {
+    text = callClaude_(AI_QA_SYSTEM_PROMPT, 'ข้อมูล (JSON):\n' + payload + '\n\nคำถาม: ' + question);
+  } catch (e) {
+    console.error('AI Q&A: ' + (e && e.message || e));
+  }
+  return text ? '🤖 ' + truncate_(text, 3500) : 'ขออภัยค่ะ ตอนนี้น้องขุนศึกตอบไม่ได้ ลองใหม่อีกครั้งนะคะ';
+}
+
 // ---------- Birthdays.gs ----------
 /**
  * แจ้งเตือนวันเกิดลูกค้า (เฉพาะวันเกิด ไม่มียอดขาย)
@@ -2636,6 +2706,281 @@ function runReminders_(now) {
   return due.length;
 }
 
+// ---------------------------------------------------------------- แผนงาน (กิจวัตร) จากห้องสั่งการ
+
+const TH_DAY_SHORT_NAMES = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+function daysLabel_(days) {
+  if (days.length === 7) return 'ทุกวัน';
+  if (days.join(',') === '1,2,3,4,5,6') return 'จ-ส';
+  if (days.join(',') === '1,2,3,4,5') return 'จ-ศ';
+  return days.map(function (d) { return TH_DAY_SHORT_NAMES[d]; }).join(',');
+}
+
+/**
+ * แปลงข้อความแผน 1 บรรทัด → แถวแจ้งเตือน
+ * "ส 16:00 รบกวนส่งแผน..."  "จ-ส 07:45 ..."  "ศ 07:00 ทุก2สัปดาห์ เริ่ม 4/12 @All ..."
+ */
+function parsePlanLine_(line, now) {
+  const tokens = cleanText_(line).replace(/^[-•*]\s*/, '').split(' ').filter(Boolean);
+  if (tokens.length < 3) return null;
+  let i = 0;
+  let dayTok = tokens[i++].replace(/^วัน/, '');
+  // "ทุก วัน" / "จันทร์ - เสาร์"
+  if (tokens[i] === '-' && tokens[i + 1]) { dayTok += '-' + tokens[i + 1]; i += 2; }
+  const days = parseReminderDays_(dayTok);
+  if (!days.length || (dayTok !== 'ทุกวัน' && !parseDayName_(dayTok.split(/[-,]/)[0], true))) return null;
+  const clock = parseClock_(tokens[i++]);
+  if (!clock) return null;
+  let every = 1;
+  let start = '';
+  for (;;) {
+    const t = tokens[i] || '';
+    let m = t.match(/^ทุก(\d+)สัปดาห์$/);
+    if (m) { every = Number(m[1]); i++; continue; }
+    if (t === 'ทุก' && /^\d+$/.test(tokens[i + 1] || '') && tokens[i + 2] === 'สัปดาห์') { every = Number(tokens[i + 1]); i += 3; continue; }
+    if (t === 'เว้นสัปดาห์' || t === 'เว้นศุกร์' || t === 'สัปดาห์เว้นสัปดาห์') { every = 2; i++; continue; }
+    m = t.match(/^เริ่ม(.+)$/);
+    if (m) { start = parseDateToken_(m[1], now) || ''; i++; continue; }
+    if (t === 'เริ่ม' && tokens[i + 1]) { start = parseDateToken_(tokens[i + 1], now) || ''; i += 2; continue; }
+    break;
+  }
+  const text = tokens.slice(i).join(' ');
+  if (!text) return null;
+  return [daysLabel_(days), pad2_(clock.h) + ':' + pad2_(clock.m), text, every, start, true, ''];
+}
+
+/** แทนที่กิจวัตรทั้งหมดด้วยแผนใหม่ — คืน { rows, skipped } */
+function replacePlan_(text, now) {
+  const rows = [];
+  const skipped = [];
+  String(text || '').split(/\r?\n/).forEach(function (line) {
+    if (!cleanText_(line)) return;
+    const r = parsePlanLine_(line, now);
+    if (r) rows.push(r); else skipped.push(cleanText_(line));
+  });
+  if (!rows.length) return { rows: rows, skipped: skipped };
+  withLock_(function () {
+    const sh = sheet_(REMINDER_SHEET, REMINDER_HEADERS);
+    const out = [REMINDER_HEADERS].concat(rows);
+    sh.clearContents();
+    sh.getRange(1, 1, out.length, REMINDER_HEADERS.length).setValues(out);
+  });
+  return { rows: rows, skipped: skipped };
+}
+
+function clearPlan_() {
+  withLock_(function () {
+    const sh = sheet_(REMINDER_SHEET, REMINDER_HEADERS);
+    sh.clearContents();
+    sh.getRange(1, 1, 1, REMINDER_HEADERS.length).setValues([REMINDER_HEADERS]);
+  });
+}
+
+function planRowLabel_(v) {
+  const every = Number(v[3]) || 1;
+  const start = v[4] ? toDate_(v[4]) : null;
+  const on = !(String(v[5]).toUpperCase() === 'FALSE' || v[5] === false);
+  const clock = parseClock_(v[1]);
+  return (on ? '' : '⏸️ ') + cleanText_(v[0]) + ' ' + (clock ? pad2_(clock.h) + ':' + pad2_(clock.m) : cleanText_(v[1])) +
+    (every > 1 ? ' (ทุก ' + every + ' สัปดาห์' + (start ? ' เริ่ม ' + fmtDate_(start) : '') + ')' : '') +
+    '\n   ' + truncate_(cleanText_(v[2]), 120);
+}
+
+function formatPlan_() {
+  const sh = spreadsheet_().getSheetByName(REMINDER_SHEET);
+  const rows = sh ? sh.getDataRange().getValues().slice(1).filter(function (v) { return cleanText_(v[2]); }) : [];
+  if (!rows.length) return '📋 ยังไม่มีแผนงาน (กิจวัตร) ค่ะ\n\n' + PLAN_HELP;
+  return '📋 แผนงานที่บอทส่งเข้ากลุ่มหลักเป็นกิจวัตร (' + rows.length + ' รายการ)\n\n' +
+    rows.map(function (v, i) { return (i + 1) + '. ' + planRowLabel_(v); }).join('\n\n') +
+    '\n\nเปลี่ยน: ส่ง "แผน" ใหม่ทั้งชุด · ยกเลิกทั้งหมด: "ยกเลิกแผน"';
+}
+
+const PLAN_HELP = [
+  'ตั้งแผนงาน: พิมพ์ "แผน" แล้วขึ้นบรรทัดละ 1 รายการ เช่น',
+  'แผน',
+  'ส 16:00 รบกวนทุกคนส่งแผนการทำงานในสัปดาห์หน้าด้วยนะคะ',
+  'ศ 07:00 ทุก2สัปดาห์ เริ่ม 4/12 @All วันที่มีประชุม Perfomance...',
+  'จ-ส 08:00 อย่าลืมส่งยอดเมื่อวานนะคะ',
+  '',
+  'วัน: จ อ พ พฤ ศ ส อา · จ-ส · จ,พ,ศ · ทุกวัน',
+].join('\n');
+
+/** ห้องสั่งการ: "แผน ..." / "แผน" / "ยกเลิกแผน" */
+function handlePlanCommand_(raw, now) {
+  const t = String(raw || '').trim();
+  if (/^ยกเลิกแผน(งาน)?$/.test(t)) {
+    clearPlan_();
+    return '🗑️ ยกเลิกแผนงานทั้งหมดแล้วค่ะ บอทจะไม่ส่งแจ้งเตือนตามวันจนกว่าจะส่งแผนใหม่นะคะ';
+  }
+  const m = t.match(/^แผน(?:งาน)?\s*([\s\S]*)$/);
+  if (!m) return null;
+  if (!m[1].trim()) return formatPlan_();
+  const r = replacePlan_(m[1], now);
+  if (!r.rows.length) return '⚠️ อ่านแผนไม่ได้ค่ะ\n\n' + PLAN_HELP;
+  let s = '✅ บันทึกแผนงานแล้วค่ะ (' + r.rows.length + ' รายการ) บอทจะส่งเข้ากลุ่มหลักตามเวลาทุกสัปดาห์\n\n' +
+    r.rows.map(function (v, i) { return (i + 1) + '. ' + planRowLabel_(v); }).join('\n\n');
+  if (r.skipped.length) s += '\n\n⚠️ บรรทัดที่อ่านไม่ได้ (ไม่ได้บันทึก):\n' + r.skipped.map(function (x) { return '• ' + x; }).join('\n');
+  return s;
+}
+
+// ---------- Visits.gs ----------
+/**
+ * บันทึกการเยี่ยมลูกค้า (แท็บ "บันทึกเยี่ยม")
+ *  - ในกลุ่ม พิมพ์: เยี่ยม <ลูกค้า> <รายละเอียด>   (หรือ เยี่ยมลูกค้า / บันทึกเยี่ยม)
+ *  - แชร์ตำแหน่งภายใน 30 นาทีหลังบันทึก → แนบตำแหน่งให้รายการล่าสุดของคนนั้น
+ *  - ดูเยี่ยม [ชื่อลูกค้า/เซลส์/F1–F5]   ไม่ได้เยี่ยม [F1–F5]
+ */
+
+const VISIT_SHEET = 'บันทึกเยี่ยม';
+const VISIT_HEADERS = ['วันที่เวลา', 'เซลส์', 'userId', 'ลูกค้า', 'เขต', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'สถานที่'];
+const VISIT_STOPWORDS = ['มาก', 'มากๆ', 'มากเลย', 'เลย', 'จริง', 'จริงๆ', 'ครับ', 'ค่ะ', 'คะ', 'นะ', 'ไปเลย', 'สุด', 'สุดๆ', 'ที่สุด', 'มากมาก'];
+
+/** "เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่" → { customer, note } หรือ null ถ้าเป็นคำชม ("เยี่ยมมาก") */
+function parseVisitText_(text) {
+  const m = String(text || '').trim().match(/^(?:เยี่ยมลูกค้า|บันทึกเยี่ยม|เยี่ยม)\s+([\s\S]+)$/);
+  if (!m) return null;
+  const rest = m[1].trim();
+  const first = rest.split(/\s+/)[0];
+  if (VISIT_STOPWORDS.indexOf(first) >= 0) return null;
+  if (/^เยี่ยม\s/.test(text.trim()) && rest.split(/\s+/).length < 2) return null; // "เยี่ยม ครับ"
+  // หาชื่อลูกค้าที่รู้จักที่ยาวที่สุดที่ขึ้นต้นข้อความ
+  const known = knownCustomerNames_();
+  const nRest = normName_(rest);
+  let best = '';
+  known.forEach(function (name) {
+    const n = normName_(name);
+    if (n && nRest.indexOf(n) === 0 && n.length > normName_(best).length) best = name;
+  });
+  if (best) {
+    // ตัดชื่อออกจากข้อความโดยนับตัวอักษรที่ไม่ใช่ช่องว่าง
+    let count = normName_(best).length;
+    let i = 0;
+    while (i < rest.length && count > 0) { if (!/\s/.test(rest[i])) count--; i++; }
+    return { customer: best, note: rest.slice(i).trim() };
+  }
+  const parts = rest.split(/\s+/);
+  return { customer: parts[0], note: parts.slice(1).join(' ') };
+}
+
+function knownCustomerNames_() {
+  let names = [];
+  try { names = names.concat(customerIndex_()); } catch (e) { /* ignore */ }
+  try { readBirthdays_().forEach(function (b) { names = names.concat(b.customers); }); } catch (e) { /* ignore */ }
+  return uniq_(names);
+}
+
+function customerZone_(name) {
+  try {
+    const b = readBirthdays_().find(function (x) { return x.customers.indexOf(name) >= 0; });
+    if (b && b.zones.length) return b.zones[0];
+  } catch (e) { /* ignore */ }
+  return '';
+}
+
+function logVisit_(sender, visit, now) {
+  const zone = customerZone_(visit.customer);
+  withLock_(function () {
+    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '']);
+  });
+  return zone;
+}
+
+/** แชร์ตำแหน่ง → แนบกับรายการเยี่ยมล่าสุดของคนนั้น (ภายใน 30 นาที) */
+function attachVisitLocation_(userId, loc, now) {
+  if (!userId) return null;
+  return withLock_(function () {
+    const sh = spreadsheet_().getSheetByName(VISIT_SHEET);
+    if (!sh) return null;
+    const values = sh.getDataRange().getValues();
+    for (let i = values.length - 1; i >= 1; i--) {
+      const v = values[i];
+      if (cleanText_(v[2]) !== userId) continue;
+      const at = toDate_(v[0]);
+      if (!at || now - at > 30 * 60000 || v[6] !== '') return null;
+      sh.getRange(i + 1, 7).setValue(loc.latitude);
+      sh.getRange(i + 1, 8).setValue(loc.longitude);
+      sh.getRange(i + 1, 9).setValue(cleanText_(loc.address || loc.title || ''));
+      return cleanText_(v[3]);
+    }
+    return null;
+  });
+}
+
+function readVisits_() {
+  const sh = spreadsheet_().getSheetByName(VISIT_SHEET);
+  if (!sh) return [];
+  return sh.getDataRange().getValues().slice(1).map(function (v) {
+    return { at: toDate_(v[0]), sales: cleanText_(v[1]), customer: cleanText_(v[3]), zone: cleanText_(v[4]),
+      note: cleanText_(v[5]), lat: v[6], lng: v[7], place: cleanText_(v[8]) };
+  }).filter(function (x) { return x.at && x.customer; });
+}
+
+function visitLine_(x) {
+  return '• ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
+    '\n   👤 ' + x.sales + (x.note ? ' — ' + truncate_(x.note, 120) : '') +
+    (x.lat !== '' && x.lat !== undefined ? '\n   📍 ' + (x.place ? truncate_(x.place, 60) : 'แชร์ตำแหน่งแล้ว') : '');
+}
+
+/** ดูเยี่ยม [คำค้น] — ไม่มีคำค้น = 7 วันล่าสุดสรุปรายคน; มีคำค้น = ลูกค้า/เซลส์/เขต ย้อน 90 วัน */
+function formatVisits_(query, now) {
+  const all = readVisits_();
+  if (!all.length) return 'ยังไม่มีบันทึกการเยี่ยมลูกค้าค่ะ\nพิมพ์ในกลุ่ม: เยี่ยม <ลูกค้า> <รายละเอียด>';
+  const q = normName_(query || '');
+  if (!q) {
+    const since = addDays_(startOfDay_(now), -6);
+    const recent = all.filter(function (x) { return x.at >= since; }).sort(function (a, b) { return b.at - a.at; });
+    if (!recent.length) return '📍 7 วันล่าสุดยังไม่มีบันทึกเยี่ยมค่ะ';
+    const bySales = {};
+    recent.forEach(function (x) { bySales[x.sales] = (bySales[x.sales] || 0) + 1; });
+    const ranking = Object.keys(bySales).sort(function (a, b) { return bySales[b] - bySales[a]; })
+      .map(function (s) { return '• ' + s + ' ' + bySales[s] + ' ราย'; });
+    return '📍 เยี่ยมลูกค้า 7 วันล่าสุด (' + recent.length + ' ครั้ง)\n\n👤 รายคน\n' + ranking.join('\n') +
+      '\n\n🗒️ ล่าสุด\n' + recent.slice(0, 15).map(visitLine_).join('\n') +
+      (recent.length > 15 ? '\n…และอีก ' + (recent.length - 15) + ' ครั้ง' : '');
+  }
+  const since = addDays_(startOfDay_(now), -90);
+  const zoneQ = /^(f|fish|เขต)\d$/.test(q) ? teamKey_(query).toUpperCase() : '';
+  const hits = all.filter(function (x) {
+    if (x.at < since) return false;
+    if (zoneQ) return x.zone === zoneQ;
+    return normName_(x.customer).indexOf(q) >= 0 || normName_(x.sales).indexOf(q) >= 0;
+  }).sort(function (a, b) { return b.at - a.at; });
+  if (!hits.length) return '📍 ไม่พบบันทึกเยี่ยมของ "' + query + '" ใน 90 วันค่ะ';
+  return '📍 บันทึกเยี่ยม "' + query + '" (' + hits.length + ' ครั้ง ใน 90 วัน)\n\n' +
+    hits.slice(0, 20).map(visitLine_).join('\n') + (hits.length > 20 ? '\n…' : '');
+}
+
+/** ไม่ได้เยี่ยม [เขต] — ลูกค้าที่มียอดเดือนนี้ แต่ไม่ได้เยี่ยม 30 วันขึ้นไป */
+function formatNotVisited_(zoneArg, now) {
+  const snap = getSalesSnapshot_();
+  if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
+  const zone = zoneArg ? teamKey_(zoneArg).toUpperCase() : '';
+  const last = {};
+  readVisits_().forEach(function (x) {
+    const k = normName_(x.customer);
+    if (!last[k] || x.at > last[k]) last[k] = x.at;
+  });
+  const cust = {};
+  snap.monthRows.forEach(function (r) {
+    if (!r.customer || (zone && r.team !== zone)) return;
+    const c = cust[r.customer] || (cust[r.customer] = { name: r.customer, team: r.team, ton: 0 });
+    c.ton += r.ton;
+  });
+  const cutoff = addDays_(startOfDay_(now), -30);
+  const list = Object.keys(cust).map(function (k) { return cust[k]; })
+    .filter(function (c) { const lv = last[normName_(c.name)]; return !lv || lv < cutoff; })
+    .sort(function (a, b) { return b.ton - a.ton; });
+  if (!Object.keys(cust).length) return 'ยังไม่มีข้อมูลยอดรายลูกค้า' + (zone ? 'ของ ' + zone : '') + 'ค่ะ (ต้องใช้ไฟล์รายลูกค้า)';
+  if (!list.length) return '✅ ลูกค้าที่มียอดเดือนนี้' + (zone ? 'ของ ' + zone : '') + ' ได้เยี่ยมครบใน 30 วันแล้วค่ะ';
+  return '📍 ลูกค้าที่ยังไม่ได้เยี่ยม 30 วันขึ้นไป' + (zone ? ' — ' + zone : '') + ' (' + list.length + ' ราย)\nเรียงตามยอดเดือนนี้\n\n' +
+    list.slice(0, 25).map(function (c, i) {
+      const lv = last[normName_(c.name)];
+      return (i + 1) + '. ' + c.name + ' [' + c.team + '] ' + fmtNum_(c.ton) + ' ตัน\n   ' +
+        (lv ? 'เยี่ยมล่าสุด ' + fmtDate_(lv) : 'ยังไม่มีบันทึก');
+    }).join('\n') + (list.length > 25 ? '\n…และอีก ' + (list.length - 25) + ' ราย' : '');
+}
+
 // ---------- Schedule.gs ----------
 /**
  * งานตั้งเวลา
@@ -2903,6 +3248,13 @@ function handleEvent_(ev) {
     lineReply_(ev.replyToken, out.slice(0, 5));
     return;
   }
+  // แชร์ตำแหน่งหลังบันทึกเยี่ยม → แนบตำแหน่ง
+  if (ev.message.type === 'location') {
+    if (inOtherGroup) return;
+    const cust = attachVisitLocation_(source.userId, ev.message, now_());
+    if (cust) lineReply_(ev.replyToken, '📍 แนบตำแหน่งการเยี่ยม ' + cust + ' แล้วค่ะ');
+    return;
+  }
   if (ev.message.type !== 'text') return;
 
   // ห้องสั่งการ: "ประกาศ <ข้อความ>" → บอทพูดในกลุ่มหลัก (เก็บบรรทัดใหม่ตามที่พิมพ์)
@@ -2913,10 +3265,33 @@ function handleEvent_(ev) {
     return;
   }
 
+  // ห้องสั่งการ: แผนงาน (กิจวัตร)
+  if (isControlRoom_(source) && /^\s*(แผน|ยกเลิกแผน)/.test(ev.message.text || '')) {
+    const planReply = handlePlanCommand_(ev.message.text, now_());
+    if (planReply) { lineReply_(ev.replyToken, planReply); return; }
+  }
+
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
+
+  // บันทึกเยี่ยมลูกค้า: "เยี่ยม <ลูกค้า> <รายละเอียด>"
+  const visit = !inOtherGroup && parseVisitText_(stripped.text);
+  if (visit) {
+    const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
+    const zone = logVisit_(sender, visit, now_());
+    lineReply_(ev.replyToken, '📍 บันทึกเยี่ยม ' + visit.customer + (zone ? ' [' + zone + ']' : '') + ' แล้วค่ะ' +
+      (visit.note ? '\n🗒️ ' + truncate_(visit.note, 200) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+    return;
+  }
+
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
   const parsed = parseCommand_(stripped.text) || lookupCommand_(stripped.text);
-  if (!parsed) return;
+  if (!parsed) {
+    // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์ "ถาม ..." → AI ตอบจากข้อมูลจริง
+    const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
+    const question = stripped.botMentioned ? stripped.text : (ask && isControlRoom_(source) ? ask[1] : '');
+    if (question && !inOtherGroup) lineReply_(ev.replyToken, askBot_(question, now_()));
+    return;
+  }
 
   // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
   const isGroupChat = source.type === 'group' || source.type === 'room';
@@ -3010,6 +3385,12 @@ function runCommand_(p, ctx) {
 
     case 'birthday':
       return birthdayCommand_(p.argText, now);
+
+    case 'visits':
+      return formatVisits_(p.argText, now);
+
+    case 'notvisited':
+      return formatNotVisited_(p.argText, now);
 
     case 'sendsales': {
       if (!isControlRoom_(ctx.source)) return null; // ในกลุ่มอื่น "ส่งยอด" เป็นแชทปกติ
@@ -3179,8 +3560,13 @@ const HELP_TEXT = [
   '• ยอดขาย — ยอดรวมทุกเขต + F1–F5 (ตัน, ล้านบาท, สปีด, คาดปิดเดือน)',
   '• พิมพ์ F1–F5 = ยอดเขตนั้น | พิมพ์ชื่อลูกค้า = ยอดลูกค้า',
   '• ยอดเมื่อวาน | ยอดเซลส์ | ยอดลูกค้า | วิเคราะห์ (AI)',
+  '• แท็ก @น้องขุนศึก แล้วถามได้เลย เช่น F3 ต้องขายวันละเท่าไหร่ถึงเป้า (AI)',
   '',
   '🎂 วันเกิด — ลูกค้าเกิดใน 30 วันข้างหน้า | วันเกิด ธ.ค. (ทั้งเดือน)',
+  '',
+  '📍 เยี่ยมลูกค้า',
+  '• เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่ (แล้วแชร์ตำแหน่งต่อได้)',
+  '• ดูเยี่ยม | ดูเยี่ยม กบทอง | ดูเยี่ยม F4 | ไม่ได้เยี่ยม F4',
   '',
   '⏰ บอทส่งเอง: ยอด + วันเกิด ทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามแท็บ "แจ้งเตือน" ในชีท',
   '',
