@@ -299,7 +299,7 @@ test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไ�
 
 test('ไม่มี SalesData: คำสั่งยอดรายวันแนะนำวิธีตั้งค่า', () => {
   const bot = createBot({ dashboard });
-  assert.match(bot.say('ยอดเซลส์'), /ยังไม่มียอดจากไฟล์ Power BI ค่ะ/);
+  assert.match(bot.say('ยอดเซลส์'), /ยังไม่มีข้อมูลยอดขายของเดือนนี้ค่ะ/);
   assert.match(bot.say('อัปเดตยอด'), /ยังไม่ได้ตั้ง IMPORT_FOLDER_ID/);
 });
 
@@ -585,7 +585,7 @@ test('AI: ใส่คีย์แล้วรายงานมีบทวิ�
 test('AI: ไม่มีคีย์ → คำสั่งวิเคราะห์บอกวิธีเปิด และไม่เรียก API', () => {
   const bot = mtdBot();
   bot.say('อัปเดตยอด');
-  assert.match(bot.say('วิเคราะห์'), /GEMINI_API_KEY/);
+  assert.match(bot.say('วิเคราะห์'), /ยังไม่ได้เปิดใช้ AI/);
   assert.strictEqual(bot.aiCalls.length, 0);
 });
 
@@ -780,7 +780,7 @@ test('วันที่ข้อมูล = วันที่ส่งไฟ�
 test('ยังไม่มีไฟล์ยอด: ยอดขายบอกให้ส่งไฟล์ (ไม่ใช้ข้อมูลเก่า dashboard.json), ข้อความเช้าไม่มีส่วนยอด', () => {
   const bot = createBot({ now: D(2026, 11, 23, 9), props: { GROUP_ID: 'Cgroup1' } });
   const r = bot.say('ยอดขาย');
-  assert.match(r, /ยังไม่มียอดจากไฟล์ Power BI ค่ะ[\s\S]*ส่งไฟล์ Excel ยอดขายในกลุ่มอัปโหลด/);
+  assert.match(r, /ยังไม่มีข้อมูลยอดขายของเดือนนี้ค่ะ/);
   assert.doesNotMatch(r, /538\.84/);
   assert.strictEqual(bot.ctx.buildMorningMessages_(D(2026, 11, 23, 7, 30)).length, 0);
 });
@@ -908,7 +908,7 @@ test('ถาม AI: แท็กบอทแล้วถาม → Claude ตอ
   bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
   const q = '@น้องขุนศึก F5 ต้องขายวันละเท่าไหร่ถึงเป้า';
   const mention = { mentionees: [{ index: 0, length: 11, isSelf: true, userId: 'Ubot' }] };
-  assert.match(bot.say(q, { groupId: 'Cmain', mention }), /ต้องเปิดใช้ AI ก่อน/);
+  assert.match(bot.say(q, { groupId: 'Cmain', mention }), /ยังตอบคำถามแบบนี้ไม่ได้/);
   assert.strictEqual(bot.aiCalls.length, 0);
   bot.props.ANTHROPIC_API_KEY = 'sk-test';
   bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• F5 ต้องขายวันละ 15.69 ตันค่ะ' }] } });
@@ -1046,7 +1046,7 @@ test('ห้องสั่งการถาม AI ได้โดยไม่�
   const bot = createBot({ now: D(2026, 11, 23, 23), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g' } });
   assert.match(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmine' }), /^🤖/);
   assert.strictEqual(bot.say('F5 จะปิดเดือนได้ตามเป้าไหม', { groupId: 'Cmain' }), null);
-  assert.match(bot.say('เมนู', { groupId: 'Cmine' }), /คำสั่งบอททีมขาย/); // คำสั่งปกติยังทำงาน
+  assert.match(bot.say('เมนู', { groupId: 'Cmine' }), /คำสั่งน้องขุนศึก/); // คำสั่งปกติยังทำงาน
   assert.strictEqual(bot.geminiCalls.length, 1);
 });
 
@@ -1084,6 +1084,18 @@ test('AI: จัดข้อความให้อ่านง่าย (ต�
   assert.ok(!/\n\n\n/.test(t));
   t.split('\n').forEach((l) => assert.ok(l.length <= 48, l));
   assert.match(t, /\n   \S/); // บรรทัดต่อย่อหน้าเข้าไป
+});
+
+test('กลุ่มใหญ่: เมนูไม่มีคำสั่งของห้องสั่งการ, อัปเดตยอดใช้ไม่ได้', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  const team = bot.say('เมนู', { groupId: 'Cmain' });
+  assert.ok(!/ประกาศ|ส่งยอด|ส่งวันเกิด|อัปเดตยอด|แผน|ห้องสั่งการ|กลุ่มอัปโหลด|Script Properties/.test(team), team);
+  assert.match(team, /ยอดขาย[\s\S]*วันเกิด[\s\S]*เยี่ยม/);
+  const admin = bot.say('เมนู', { groupId: 'Cmine' });
+  assert.match(admin, /เฉพาะห้องสั่งการ[\s\S]*ประกาศ[\s\S]*ส่งยอด[\s\S]*แผน/);
+  assert.strictEqual(bot.say('อัปเดตยอด', { groupId: 'Cmain' }), null);
+  assert.ok(!/Script Properties|ส่งไฟล์|กลุ่มอัปโหลด/.test(bot.say('ยอดขาย', { groupId: 'Cmain' })));
+  assert.ok(!/Script Properties/.test(bot.say('วันเกิด', { groupId: 'Cmain' })));
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

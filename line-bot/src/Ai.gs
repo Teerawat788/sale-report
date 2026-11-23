@@ -412,7 +412,7 @@ function aiQaPayload_(snap, now) {
 /** ตอบคำถามภาษาธรรมดา (ต้องมี GEMINI_API_KEY หรือ ANTHROPIC_API_KEY) */
 function askBot_(question, now) {
   if (!aiEnabled_()) {
-    return 'น้องขุนศึกยังตอบคำถามแบบนี้ไม่ได้ค่ะ ต้องเปิดใช้ AI ก่อน (ใส่ GEMINI_API_KEY ใน Script Properties)\nระหว่างนี้พิมพ์ "เมนู" เพื่อดูคำสั่งที่ใช้ได้นะคะ';
+    return 'น้องขุนศึกยังตอบคำถามแบบนี้ไม่ได้ค่ะ\nพิมพ์ "เมนู" เพื่อดูคำสั่งที่ใช้ได้นะคะ';
   }
   let snap = null;
   try { snap = getSalesSnapshot_(); } catch (e) { /* ignore */ }

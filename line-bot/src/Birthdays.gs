@@ -168,7 +168,7 @@ function parseMonthArg_(s, now) {
 function birthdayCommand_(arg, now) {
   const today = startOfDay_(now);
   const all = readBirthdays_();
-  if (!all.length) return 'ยังไม่มีข้อมูลวันเกิดค่ะ — ตั้ง BIRTHDAY_SHEET_ID ใน Script Properties ก่อนนะคะ';
+  if (!all.length) return 'ยังไม่มีข้อมูลวันเกิดลูกค้าค่ะ';
   if (!arg) {
     return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีลูกค้าเกิดใน 30 วันนี้ค่ะ');
   }
