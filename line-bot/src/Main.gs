@@ -61,6 +61,9 @@ function handleEvent_(ev) {
   const uploadGroup = prop_('UPLOAD_GROUP_ID', '');
   const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') &&
     chatId_(source) !== registered && chatId_(source) !== uploadGroup;
+  // กลุ่มอื่นที่มีน้องขุนศึก: ใช้คำสั่งของทีมได้ (ดูยอด/ลูกค้า/เซลส์/วันเกิด/เยี่ยม/ถาม AI)
+  // ตั้ง LOCK_GROUPS = true ถ้าต้องการให้ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ
+  const blocked = inOtherGroup && prop_('LOCK_GROUPS', '') === 'true';
 
   // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
   if (ev.message.type === 'file') {
@@ -76,7 +79,7 @@ function handleEvent_(ev) {
   }
   // แชร์ตำแหน่งหลังบันทึกเยี่ยม → แนบตำแหน่ง
   if (ev.message.type === 'location') {
-    if (inOtherGroup) return;
+    if (blocked) return;
     const cust = attachVisitLocation_(source.userId, ev.message, now_());
     if (cust) lineReply_(ev.replyToken, '📍 แนบตำแหน่งการเยี่ยม ' + cust + ' แล้วค่ะ');
     return;
@@ -100,7 +103,7 @@ function handleEvent_(ev) {
   const stripped = stripMentions_(ev.message.text, ev.message.mention);
 
   // บันทึกเยี่ยมลูกค้า: "เยี่ยม <ลูกค้า> <รายละเอียด>"
-  const visit = !inOtherGroup && parseVisitText_(stripped.multiline);
+  const visit = !blocked && parseVisitText_(stripped.multiline);
   if (visit) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
@@ -118,13 +121,13 @@ function handleEvent_(ev) {
     const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
     const question = stripped.botMentioned ? stripped.text
       : isControlRoom_(source) ? (ask ? ask[1] : aiEnabled_() ? stripped.text : '').trim() : '';
-    if (question && !inOtherGroup) lineReply_(ev.replyToken, askBot_(question, now_()));
+    if (question && !blocked) lineReply_(ev.replyToken, askBot_(question, now_()));
     return;
   }
 
   // ล็อกให้ใช้ได้เฉพาะกลุ่มที่ลงทะเบียน (แชท 1:1 กับบอทใช้ได้เสมอ)
   const isGroupChat = source.type === 'group' || source.type === 'room';
-  if (inOtherGroup && parsed.cmd !== 'whoami' && parsed.cmd !== 'register' && parsed.cmd !== 'registerupload') return;
+  if (blocked && parsed.cmd !== 'whoami' && parsed.cmd !== 'register' && parsed.cmd !== 'registerupload') return;
 
   const ctx = {
     now: now_(),
@@ -167,6 +170,8 @@ function runCommand_(p, ctx) {
     case 'registerupload': {
       const id = chatId_(ctx.source);
       if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอดนะคะ';
+      const currentUpload = prop_('UPLOAD_GROUP_ID', '');
+      if (currentUpload && currentUpload !== id) return null; // มีห้องสั่งการแล้ว — กลุ่มอื่นเปลี่ยนไม่ได้
       if (id === prop_('GROUP_ID', '')) {
         if (p.argText !== 'ยืนยัน') {
           return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่ค่ะ\n' +

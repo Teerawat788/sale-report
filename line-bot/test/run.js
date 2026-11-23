@@ -87,7 +87,7 @@ test('ลงทะเบียนกลุ่ม และล็อกกลุ�
   assert.match(bot.say('ลงทะเบียน'), /ลงทะเบียนกลุ่มนี้แล้ว/);
   assert.strictEqual(bot.props.GROUP_ID, 'Cgroup1');
   assert.match(bot.say('ลงทะเบียน', { groupId: 'Cother' }), /กลุ่มอื่นอยู่แล้ว/);
-  assert.strictEqual(bot.say('งาน', { groupId: 'Cother' }), null);
+  assert.ok(bot.say('งาน', { groupId: 'Cother' }), 'กลุ่มอื่นใช้คำสั่งทีมได้');
   assert.strictEqual(bot.say('งาน', { destination: 'Ufake' }), null);
 });
 
@@ -693,7 +693,7 @@ test('กลุ่มอัปโหลด: ส่งไฟล์ในกลุ
   assert.strictEqual(bot.pushes().length, 0);
   assert.match(bot.say('ยอดขาย'), /ทำได้ 504\.32/);
   assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /ทำได้ 504\.32/);
-  assert.strictEqual(bot.say('ยอดขาย', { groupId: 'Cstranger' }), null);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cstranger' }), /ทำได้ 504\.32/);
   assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cstranger' }), null);
 });
 
@@ -899,7 +899,7 @@ test('เยี่ยมลูกค้า: บันทึกในกลุ่
   assert.match(nv, /ยังไม่ได้เยี่ยม 30 วันขึ้นไป/);
   assert.doesNotMatch(nv, /นลินรัตน์ฟาร์ม|ร้านบุญสว่าง/);
   assert.match(nv, /อานนท์ฟาร์ม/);
-  assert.strictEqual(bot.say('เยี่ยม นลินรัตน์ฟาร์ม ทดสอบ', { groupId: 'Cstranger' }), null, 'กลุ่มอื่นไม่บันทึก');
+  assert.match(bot.say('เยี่ยม นลินรัตน์ฟาร์ม ทดสอบ', { groupId: 'Cstranger' }), /บันทึกเยี่ยม/, 'กลุ่มอื่นบันทึกได้');
 });
 
 test('ถาม AI: แท็กบอทแล้วถาม → Claude ตอบจากข้อมูล; ไม่มีคีย์บอกวิธีเปิด; ห้องสั่งการใช้ "ถาม"', () => {
@@ -1154,6 +1154,24 @@ test('พิมพ์ชื่อผิด: เดาให้ / บอกให
   const ai = bot.say('ยอด ฟาร์มของป้านวล', { groupId: 'Cmain' });
   assert.match(ai, /หมายถึงชื่อนี้หรือเปล่าคะ\n• นวลจันทร์ฟาร์ม\n\n/);
   assert.ok(!/ชื่อมั่ว/.test(ai));
+});
+
+test('กลุ่มอื่นที่มีน้องขุนศึก: ใช้คำสั่งทีมได้ แต่คำสั่งผู้ดูแล/ส่งไฟล์ไม่ได้; LOCK_GROUPS ปิดได้', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' });
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cteam2' }), /ทำได้ 512\.72/);
+  assert.match(bot.say('F5', { groupId: 'Cteam2' }), /398\.58/);
+  assert.match(bot.say('เมนู', { groupId: 'Cteam2' }), /คำสั่งน้องขุนศึก/);
+  assert.ok(!/เฉพาะห้องสั่งการ/.test(bot.say('เมนู', { groupId: 'Cteam2' })));
+  assert.strictEqual(bot.say('ประกาศ ทดสอบ', { groupId: 'Cteam2' }), null);
+  assert.strictEqual(bot.say('ส่งยอด', { groupId: 'Cteam2' }), null);
+  assert.strictEqual(bot.say('อัปเดตยอด', { groupId: 'Cteam2' }), null);
+  assert.strictEqual(bot.say('กลุ่มอัปโหลด', { groupId: 'Cteam2' }), null);
+  assert.strictEqual(bot.props.UPLOAD_GROUP_ID, 'Cmine', 'กลุ่มอื่นยึดห้องสั่งการไม่ได้');
+  assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cteam2' }), null);
+  assert.strictEqual(bot.pushes().length, 0);
+  bot.props.LOCK_GROUPS = 'true';
+  assert.strictEqual(bot.say('ยอดขาย', { groupId: 'Cteam2' }), null);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
