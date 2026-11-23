@@ -270,7 +270,7 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(bot.say('ยอด f5'), /📊 F5 —[\s\S]*ทำได้ 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
   assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
   assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ\n1\. อาหารปลา 1 — 32\.00 ตัน\n2\. อาหารปลา 3 — 23\.00/);
-  assert.strictEqual(bot.say('ยอด ใครไม่รู้'), null);
+  assert.match(bot.say('ยอด ใครไม่รู้'), /ไม่พบชื่อ "ใครไม่รู้"[\s\S]*สะกดชื่อให้ถูก/);
 });
 
 test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไฟล์ใหม่ + ยอดรวมและรายเขต, ไม่มีนัด/งาน, ส่งวันละครั้ง, อาทิตย์ไม่ส่ง', () => {
@@ -1128,6 +1128,32 @@ test('พิมพ์ชื่อเซลส์ (ชื่อต้นหรื
   assert.strictEqual(bot.say('สมหญิง ทดสอบ', { groupId: 'Cmain' }), r);
   assert.strictEqual(bot.say('สม', { groupId: 'Cmain' }), null); // บางส่วนไม่ตอบ
   assert.strictEqual(bot.say('สมหญิง ไปไหนมา', { groupId: 'Cmain' }), null);
+});
+
+test('พิมพ์ชื่อผิด: เดาให้ / บอกให้สะกดให้ถูก / AI ช่วยเดา', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = [head,
+    ['สมศักดิ์ ทดสอบ', 'TFM Fish5 South', 'สมศักดิ์ ทดสอบ', 'TFM Fish5 South', '1', 'ร้านรุ่งเรืองทรัพย์ (1999)', 'Fish', 30],
+    ['สมศักดิ์ ทดสอบ', 'TFM Fish5 South', 'สมศักดิ์ ทดสอบ', 'TFM Fish5 South', '2', 'นวลจันทร์ฟาร์ม', 'Fish', 70]];
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
+  // สะกดผิดเล็กน้อย → เดาให้ พร้อมบอกชื่อที่ถูก
+  assert.match(bot.say('สมสัก', { groupId: 'Cmain' }), /^🔎 พิมพ์ว่า "สมสัก" — ชื่อที่ถูกคือ "สมศักดิ์ ทดสอบ" ค่ะ\n\n👤 สมศักดิ์ ทดสอบ/);
+  assert.match(bot.say('รุ่งเรืองซับ', { groupId: 'Cmain' }), /ชื่อที่ถูกคือ "ร้านรุ่งเรืองทรัพย์ \(1999\)"[\s\S]*ตัน: 30\.00/);
+  assert.match(bot.say('นวลจันฟาม', { groupId: 'Cmain' }), /ชื่อที่ถูกคือ "นวลจันทร์ฟาร์ม"/);
+  // แชทปกติไม่ตอบ
+  ['สวัสดี', 'รับทราบ', 'ประชุม', 'ราคาใหม่', 'ส่งของแล้ว'].forEach((t) => assert.strictEqual(bot.say(t, { groupId: 'Cmain' }), null, t));
+  // "ยอด <ชื่อ>" ไม่พบ → บอกให้สะกดให้ถูก + ชื่อที่น่าจะใช่
+  assert.match(bot.say('ยอด นวลจัน', { groupId: 'Cmain' }), /👥 นวลจันทร์ฟาร์ม|ไม่พบชื่อ/);
+  const miss = bot.say('ยอด สมศัก ทดลอง', { groupId: 'Cmain' });
+  assert.match(miss, /ไม่พบชื่อ "สมศัก ทดลอง" ค่ะ\nช่วยสะกดชื่อให้ถูกอีกครั้งนะคะ[\s\S]*• สมศักดิ์ ทดสอบ/);
+  assert.match(bot.say('ยอด กขคงจ', { groupId: 'Cmain' }), /ไม่พบชื่อ "กขคงจ"[\s\S]*สะกดชื่อให้ถูก/);
+  // ไม่ใกล้เคียงเลย + มี AI → ให้ AI เดาจากรายชื่อจริง
+  bot.props.GEMINI_API_KEY = 'g';
+  bot.setGeminiResponse({ body: { candidates: [{ content: { parts: [{ text: '• นวลจันทร์ฟาร์ม\nชื่อมั่ว' }] } }] } });
+  const ai = bot.say('ยอด ฟาร์มของป้านวล', { groupId: 'Cmain' });
+  assert.match(ai, /หมายถึงชื่อนี้หรือเปล่าคะ\n• นวลจันทร์ฟาร์ม\n\n/);
+  assert.ok(!/ชื่อมั่ว/.test(ai));
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

@@ -2212,6 +2212,94 @@ function findSalesName_(names, q) {
   return first.length === 1 ? first[0] : null;
 }
 
+// ---------------------------------------------------------------- เดาชื่อที่พิมพ์ผิด
+
+/** ตัดคำนำหน้า/ท้ายที่ไม่ใช่ชื่อจริง: ร้าน, บจก., หจก., (2006), /สนญ. ... */
+function coreName_(s) {
+  return normName_(String(s || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\/.*$/, '')
+    .replace(/^(ร้าน|บจก\.?|หจก\.?|บริษัท|ห้างหุ้นส่วนจำกัด|คุณ|นางสาว|นาย|นาง|น\.ส\.)\s*/, '')
+    .replace(/\s*(จำกัด|ฟาร์ม)$/, ''));
+}
+
+/** คีย์เทียบเสียง: ตัดวรรณยุกต์/การันต์ และรวมพยัญชนะที่ออกเสียงคล้ายกัน (สะกดผิดบ่อย) */
+function soundKey_(s) {
+  return String(s || '')
+    .replace(/[ก-ฮ][ิุ]?์/g, '') // ตัวการันต์ไม่ออกเสียง: ศักดิ์ → ศัก, ฟาร์ม → ฟาม
+    .replace(/[็-๎]/g, '')
+    .replace(/[ดตฏฎทธฑฒถจชซศษส]/g, 'ด')
+    .replace(/[นณญรลฬ]/g, 'น')
+    .replace(/[กขคฆ]/g, 'ก')
+    .replace(/[บปพภ]/g, 'บ');
+}
+
+function editDistance_(a, b) {
+  a = Array.from(a); b = Array.from(b);
+  let prev = [];
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/**
+ * ชื่อที่ใกล้เคียงกับที่พิมพ์ (เซลส์ + ลูกค้า) เรียงจากใกล้สุด
+ * คืน [{ name, kind: 'sales'|'customer', d, ratio }]
+ */
+function similarNames_(q, sales, customers, maxRatio) {
+  const nq = soundKey_(coreName_(q) || normName_(q));
+  if (Array.from(nq).length < 2) return [];
+  const out = [];
+  const consider = function (name, kind, keys) {
+    let best = null;
+    keys.forEach(function (k) {
+      if (!k) return;
+      k = soundKey_(k);
+      const d = editDistance_(nq, k);
+      const ratio = d / Math.max(Array.from(nq).length, Array.from(k).length);
+      if (!best || ratio < best.ratio) best = { name: name, kind: kind, d: d, ratio: ratio };
+    });
+    if (best && best.ratio <= maxRatio) out.push(best);
+  };
+  (sales || []).forEach(function (n) { consider(n, 'sales', [normName_(n), normName_(String(n).split(/\s+/)[0])]); });
+  (customers || []).forEach(function (n) { consider(n, 'customer', [normName_(n), coreName_(n)]); });
+  return out.sort(function (a, b) { return a.ratio - b.ratio || a.d - b.d; });
+}
+
+/** ถาม AI ให้เดาว่าหมายถึงชื่อไหน (เลือกจากรายชื่อจริงเท่านั้น) */
+function aiGuessNames_(q, names) {
+  if (!aiEnabled_() || !names.length) return [];
+  let text = null;
+  try {
+    text = callAi_('คุณช่วยเดาชื่อที่ผู้ใช้พิมพ์ผิด/สะกดไม่ถูก โดยเลือกจากรายชื่อที่ให้เท่านั้น ' +
+      'ตอบเป็นชื่อจากรายชื่อ ตรงตามตัวอักษรทุกตัว บรรทัดละ 1 ชื่อ ไม่เกิน 3 ชื่อ ถ้าไม่มีชื่อที่ใกล้เคียงให้ตอบว่า ไม่มี',
+      'รายชื่อ:\n' + names.join('\n') + '\n\nผู้ใช้พิมพ์: ' + q);
+  } catch (e) { console.error('AI guess: ' + e); }
+  if (!text) return [];
+  const set = {};
+  names.forEach(function (n) { set[normName_(n)] = n; });
+  return uniq_(String(text).split('\n').map(function (l) {
+    return set[normName_(l.replace(/^[\s•\-*\d.)]+/, ''))];
+  })).slice(0, 3);
+}
+
+/** ข้อความเมื่อหาชื่อไม่เจอ: บอกให้สะกดให้ถูก + ชื่อที่น่าจะใช่ */
+function spellingHelpText_(q, guesses) {
+  const lines = ['🔎 ไม่พบชื่อ "' + q + '" ค่ะ', 'ช่วยสะกดชื่อให้ถูกอีกครั้งนะคะ'];
+  if (guesses.length) {
+    lines.push('', 'หมายถึงชื่อนี้หรือเปล่าคะ');
+    guesses.forEach(function (g) { lines.push('• ' + g); });
+    lines.push('', '(พิมพ์ชื่อที่ถูกได้เลยค่ะ)');
+  }
+  return lines.join('\n');
+}
+
 function clearCustomerIndex_() {
   CacheService.getScriptCache().remove(CUSTOMER_INDEX_KEY);
   CacheService.getScriptCache().remove(SALES_INDEX_KEY);
@@ -3711,7 +3799,12 @@ function handleEvent_(ev) {
     return ctx.sender;
   };
 
-  const reply = runCommand_(parsed, ctx);
+  let reply = runCommand_(parsed, ctx);
+  if (reply && parsed.guessedFrom) {
+    // เดาชื่อจากที่พิมพ์ผิด → บอกชื่อที่ถูกไว้ด้านบน
+    const note = '🔎 พิมพ์ว่า "' + parsed.guessedFrom + '" — ชื่อที่ถูกคือ "' + parsed.argText + '" ค่ะ';
+    reply = Array.isArray(reply) ? [note + '\n\n' + reply[0]].concat(reply.slice(1)) : note + '\n\n' + reply;
+  }
   if (reply) lineReply_(ev.replyToken, reply);
 }
 
@@ -3777,8 +3870,15 @@ function runCommand_(p, ctx) {
         return '🔎 พบลูกค้า ' + found.length + ' รายค่ะ — พิมพ์ชื่อให้ตรงขึ้นอีกนิดนะคะ\n' +
           found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
       }
-      return null;
+      // ไม่พบ → เดาชื่อที่ใกล้เคียง (ถ้าไม่มี ให้ AI ช่วยเดา) แล้วบอกให้สะกดให้ถูก
+      const sales = uniq_(snap.monthRows.map(function (r) { return r.sales; }));
+      let guesses = similarNames_(p.argText, sales, customers, 0.45).slice(0, 3).map(function (x) { return x.name; });
+      if (!guesses.length) guesses = aiGuessNames_(p.argText, sales.concat(customers));
+      return spellingHelpText_(p.argText, guesses);
     }
+
+    case 'nameguess':
+      return spellingHelpText_(p.argText, p.args);
 
     case 'aisales': {
       if (!aiEnabled_()) return isControlRoom_(ctx.source) ? 'ยังไม่ได้เปิดใช้ AI ค่ะ — ใส่ GEMINI_API_KEY ใน Script Properties ก่อนนะคะ' : 'ตอนนี้ยังไม่ได้เปิดใช้ AI ค่ะ';
@@ -3963,7 +4063,15 @@ function lookupCommand_(text) {
   const person = findSalesName_(salesIndex_(), t);
   if (person) return { cmd: 'sales', args: [person], argText: person };
   const found = findCustomers_(names, t, false);
-  return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
+  if (found.length === 1) return { cmd: 'customer', args: [found[0]], argText: found[0] };
+  if (found.length) return null;
+  // พิมพ์ชื่อผิดเล็กน้อย → เดาให้ (เฉพาะข้อความสั้น ๆ คล้ายชื่อ กันชนแชทปกติ)
+  if (t.length < 3 || t.length > 40 || t.split(/\s+/).length > 3 || /[?？]|ไหม|มั้ย|ครับ|ค่ะ|คะ|นะ$/.test(t)) return null;
+  const near = similarNames_(t, salesIndex_(), names, 0.25);
+  if (!near.length) return null;
+  const clear = near.length === 1 || near[1].d > near[0].d;
+  if (clear) return { cmd: near[0].kind === 'sales' ? 'sales' : 'customer', args: [near[0].name], argText: near[0].name, guessedFrom: t };
+  return { cmd: 'nameguess', args: near.slice(0, 3).map(function (x) { return x.name; }), argText: t };
 }
 
 const NO_SHEET_SALES_TEXT = 'ยังไม่มีข้อมูลยอดขายของเดือนนี้ค่ะ รอผู้ดูแลอัปเดตไฟล์ยอดก่อนนะคะ';
@@ -3978,6 +4086,7 @@ const HELP_TEXT = [
   '• ชื่อลูกค้า — ยอดลูกค้ารายนั้น',
   '• ลูกค้า F3 — ลูกค้าทุกรายในเขต',
   "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
+  '  (พิมพ์ชื่อผิดนิดหน่อย น้องขุนศึกเดาให้ค่ะ)',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
   '• วิเคราะห์ — AI สรุปยอดให้',
   '',

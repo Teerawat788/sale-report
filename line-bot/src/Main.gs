@@ -137,7 +137,12 @@ function handleEvent_(ev) {
     return ctx.sender;
   };
 
-  const reply = runCommand_(parsed, ctx);
+  let reply = runCommand_(parsed, ctx);
+  if (reply && parsed.guessedFrom) {
+    // เดาชื่อจากที่พิมพ์ผิด → บอกชื่อที่ถูกไว้ด้านบน
+    const note = '🔎 พิมพ์ว่า "' + parsed.guessedFrom + '" — ชื่อที่ถูกคือ "' + parsed.argText + '" ค่ะ';
+    reply = Array.isArray(reply) ? [note + '\n\n' + reply[0]].concat(reply.slice(1)) : note + '\n\n' + reply;
+  }
   if (reply) lineReply_(ev.replyToken, reply);
 }
 
@@ -203,8 +208,15 @@ function runCommand_(p, ctx) {
         return '🔎 พบลูกค้า ' + found.length + ' รายค่ะ — พิมพ์ชื่อให้ตรงขึ้นอีกนิดนะคะ\n' +
           found.slice(0, 15).map(function (n) { return '• ' + n; }).join('\n') + (found.length > 15 ? '\n…' : '');
       }
-      return null;
+      // ไม่พบ → เดาชื่อที่ใกล้เคียง (ถ้าไม่มี ให้ AI ช่วยเดา) แล้วบอกให้สะกดให้ถูก
+      const sales = uniq_(snap.monthRows.map(function (r) { return r.sales; }));
+      let guesses = similarNames_(p.argText, sales, customers, 0.45).slice(0, 3).map(function (x) { return x.name; });
+      if (!guesses.length) guesses = aiGuessNames_(p.argText, sales.concat(customers));
+      return spellingHelpText_(p.argText, guesses);
     }
+
+    case 'nameguess':
+      return spellingHelpText_(p.argText, p.args);
 
     case 'aisales': {
       if (!aiEnabled_()) return isControlRoom_(ctx.source) ? 'ยังไม่ได้เปิดใช้ AI ค่ะ — ใส่ GEMINI_API_KEY ใน Script Properties ก่อนนะคะ' : 'ตอนนี้ยังไม่ได้เปิดใช้ AI ค่ะ';
@@ -389,7 +401,15 @@ function lookupCommand_(text) {
   const person = findSalesName_(salesIndex_(), t);
   if (person) return { cmd: 'sales', args: [person], argText: person };
   const found = findCustomers_(names, t, false);
-  return found.length === 1 ? { cmd: 'customer', args: [found[0]], argText: found[0] } : null;
+  if (found.length === 1) return { cmd: 'customer', args: [found[0]], argText: found[0] };
+  if (found.length) return null;
+  // พิมพ์ชื่อผิดเล็กน้อย → เดาให้ (เฉพาะข้อความสั้น ๆ คล้ายชื่อ กันชนแชทปกติ)
+  if (t.length < 3 || t.length > 40 || t.split(/\s+/).length > 3 || /[?？]|ไหม|มั้ย|ครับ|ค่ะ|คะ|นะ$/.test(t)) return null;
+  const near = similarNames_(t, salesIndex_(), names, 0.25);
+  if (!near.length) return null;
+  const clear = near.length === 1 || near[1].d > near[0].d;
+  if (clear) return { cmd: near[0].kind === 'sales' ? 'sales' : 'customer', args: [near[0].name], argText: near[0].name, guessedFrom: t };
+  return { cmd: 'nameguess', args: near.slice(0, 3).map(function (x) { return x.name; }), argText: t };
 }
 
 const NO_SHEET_SALES_TEXT = 'ยังไม่มีข้อมูลยอดขายของเดือนนี้ค่ะ รอผู้ดูแลอัปเดตไฟล์ยอดก่อนนะคะ';
@@ -404,6 +424,7 @@ const HELP_TEXT = [
   '• ชื่อลูกค้า — ยอดลูกค้ารายนั้น',
   '• ลูกค้า F3 — ลูกค้าทุกรายในเขต',
   "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
+  '  (พิมพ์ชื่อผิดนิดหน่อย น้องขุนศึกเดาให้ค่ะ)',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
   '• วิเคราะห์ — AI สรุปยอดให้',
   '',

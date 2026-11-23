@@ -1193,6 +1193,94 @@ function findSalesName_(names, q) {
   return first.length === 1 ? first[0] : null;
 }
 
+// ---------------------------------------------------------------- เดาชื่อที่พิมพ์ผิด
+
+/** ตัดคำนำหน้า/ท้ายที่ไม่ใช่ชื่อจริง: ร้าน, บจก., หจก., (2006), /สนญ. ... */
+function coreName_(s) {
+  return normName_(String(s || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\/.*$/, '')
+    .replace(/^(ร้าน|บจก\.?|หจก\.?|บริษัท|ห้างหุ้นส่วนจำกัด|คุณ|นางสาว|นาย|นาง|น\.ส\.)\s*/, '')
+    .replace(/\s*(จำกัด|ฟาร์ม)$/, ''));
+}
+
+/** คีย์เทียบเสียง: ตัดวรรณยุกต์/การันต์ และรวมพยัญชนะที่ออกเสียงคล้ายกัน (สะกดผิดบ่อย) */
+function soundKey_(s) {
+  return String(s || '')
+    .replace(/[ก-ฮ][ิุ]?์/g, '') // ตัวการันต์ไม่ออกเสียง: ศักดิ์ → ศัก, ฟาร์ม → ฟาม
+    .replace(/[็-๎]/g, '')
+    .replace(/[ดตฏฎทธฑฒถจชซศษส]/g, 'ด')
+    .replace(/[นณญรลฬ]/g, 'น')
+    .replace(/[กขคฆ]/g, 'ก')
+    .replace(/[บปพภ]/g, 'บ');
+}
+
+function editDistance_(a, b) {
+  a = Array.from(a); b = Array.from(b);
+  let prev = [];
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/**
+ * ชื่อที่ใกล้เคียงกับที่พิมพ์ (เซลส์ + ลูกค้า) เรียงจากใกล้สุด
+ * คืน [{ name, kind: 'sales'|'customer', d, ratio }]
+ */
+function similarNames_(q, sales, customers, maxRatio) {
+  const nq = soundKey_(coreName_(q) || normName_(q));
+  if (Array.from(nq).length < 2) return [];
+  const out = [];
+  const consider = function (name, kind, keys) {
+    let best = null;
+    keys.forEach(function (k) {
+      if (!k) return;
+      k = soundKey_(k);
+      const d = editDistance_(nq, k);
+      const ratio = d / Math.max(Array.from(nq).length, Array.from(k).length);
+      if (!best || ratio < best.ratio) best = { name: name, kind: kind, d: d, ratio: ratio };
+    });
+    if (best && best.ratio <= maxRatio) out.push(best);
+  };
+  (sales || []).forEach(function (n) { consider(n, 'sales', [normName_(n), normName_(String(n).split(/\s+/)[0])]); });
+  (customers || []).forEach(function (n) { consider(n, 'customer', [normName_(n), coreName_(n)]); });
+  return out.sort(function (a, b) { return a.ratio - b.ratio || a.d - b.d; });
+}
+
+/** ถาม AI ให้เดาว่าหมายถึงชื่อไหน (เลือกจากรายชื่อจริงเท่านั้น) */
+function aiGuessNames_(q, names) {
+  if (!aiEnabled_() || !names.length) return [];
+  let text = null;
+  try {
+    text = callAi_('คุณช่วยเดาชื่อที่ผู้ใช้พิมพ์ผิด/สะกดไม่ถูก โดยเลือกจากรายชื่อที่ให้เท่านั้น ' +
+      'ตอบเป็นชื่อจากรายชื่อ ตรงตามตัวอักษรทุกตัว บรรทัดละ 1 ชื่อ ไม่เกิน 3 ชื่อ ถ้าไม่มีชื่อที่ใกล้เคียงให้ตอบว่า ไม่มี',
+      'รายชื่อ:\n' + names.join('\n') + '\n\nผู้ใช้พิมพ์: ' + q);
+  } catch (e) { console.error('AI guess: ' + e); }
+  if (!text) return [];
+  const set = {};
+  names.forEach(function (n) { set[normName_(n)] = n; });
+  return uniq_(String(text).split('\n').map(function (l) {
+    return set[normName_(l.replace(/^[\s•\-*\d.)]+/, ''))];
+  })).slice(0, 3);
+}
+
+/** ข้อความเมื่อหาชื่อไม่เจอ: บอกให้สะกดให้ถูก + ชื่อที่น่าจะใช่ */
+function spellingHelpText_(q, guesses) {
+  const lines = ['🔎 ไม่พบชื่อ "' + q + '" ค่ะ', 'ช่วยสะกดชื่อให้ถูกอีกครั้งนะคะ'];
+  if (guesses.length) {
+    lines.push('', 'หมายถึงชื่อนี้หรือเปล่าคะ');
+    guesses.forEach(function (g) { lines.push('• ' + g); });
+    lines.push('', '(พิมพ์ชื่อที่ถูกได้เลยค่ะ)');
+  }
+  return lines.join('\n');
+}
+
 function clearCustomerIndex_() {
   CacheService.getScriptCache().remove(CUSTOMER_INDEX_KEY);
   CacheService.getScriptCache().remove(SALES_INDEX_KEY);
