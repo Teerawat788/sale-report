@@ -682,7 +682,8 @@ test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทน�
 test('กลุ่มอัปโหลด: ส่งไฟล์ในกลุ่มเล็ก → กลุ่มใหญ่พิมพ์ยอดขายได้ข้อมูลใหม่, ไม่ push เข้ากลุ่มใหญ่', () => {
   const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
   bot.ctx.setupSalesSheets();
-  assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cgroup1' }), /เป็นกลุ่มหลักอยู่แล้ว/);
+  assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cgroup1' }), /เป็นกลุ่มหลักอยู่ค่ะ[\s\S]*กลุ่มอัปโหลด ยืนยัน/);
+  assert.strictEqual(bot.props.GROUP_ID, 'Cgroup1', 'ยังไม่ยืนยัน ไม่เปลี่ยน');
   assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cmine' }), /ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว/);
   assert.strictEqual(bot.props.UPLOAD_GROUP_ID, 'Cmine');
   const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
@@ -815,6 +816,20 @@ test('ห้องสั่งการ: ประกาศ / ส่งยอด
   assert.strictEqual(bot.say('ประกาศ ทดสอบ', { groupId: 'Cmain' }), null);
   assert.strictEqual(bot.say('ประกาศ ทดสอบ', { groupId: 'Cstranger' }), null);
   assert.strictEqual(bot.pushes().length, 4);
+});
+
+test('ย้ายกลุ่ม: กลุ่มหลักเดิม → กลุ่มอัปโหลด (ยืนยัน) แล้วลงทะเบียนกลุ่มใหญ่', () => {
+  const bot = createBot({ now: D(2026, 11, 23, 22), props: {} });
+  bot.say('ลงทะเบียน', { groupId: 'Csmall' });
+  assert.strictEqual(bot.props.GROUP_ID, 'Csmall');
+  assert.match(bot.say('กลุ่มอัปโหลด ยืนยัน', { groupId: 'Csmall' }), /เปลี่ยนกลุ่มนี้เป็นกลุ่มอัปโหลด/);
+  assert.strictEqual(bot.props.UPLOAD_GROUP_ID, 'Csmall');
+  assert.match(bot.say('ลงทะเบียน', { groupId: 'Csmall' }), /กลุ่มนี้เป็นกลุ่มอัปโหลด/);
+  assert.match(bot.say('ลงทะเบียน', { groupId: 'Cbig' }), /ลงทะเบียนกลุ่มนี้แล้วค่ะ/);
+  assert.strictEqual(bot.props.GROUP_ID, 'Cbig');
+  assert.strictEqual(bot.say('ประกาศ สวัสดีทุกคนค่ะ', { groupId: 'Csmall' }), '✅ ส่งข้อความเข้ากลุ่มหลักแล้วค่ะ');
+  assert.strictEqual(bot.pushes()[0].body.to, 'Cbig');
+  assert.strictEqual(bot.say('กลุ่มอัปโหลด อะไร', { groupId: 'Csmall' }), null);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

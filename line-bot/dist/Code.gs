@@ -177,7 +177,7 @@ const COMMANDS = {
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['help', 'register', 'registerupload', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank', 'salescust',
   'salesprod', 'aisales'];
 
@@ -223,6 +223,7 @@ function parseCommand_(text) {
   if (NO_ARG_COMMANDS.indexOf(cmd) >= 0 && args.length) return null;
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 6) return null;
+  if (cmd === 'registerupload' && args.length && args.join('') !== 'ยืนยัน') return null;
   if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
   if ((cmd === 'done' || cmd === 'deltask' || cmd === 'weeklydone' || cmd === 'delweekly') &&
@@ -2947,6 +2948,7 @@ function runCommand_(p, ctx) {
       const current = prop_('GROUP_ID', '');
       if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่ม LINE ที่ต้องการให้น้องขุนศึกส่งแจ้งเตือนนะคะ';
       if (current === id) return '✅ กลุ่มนี้ลงทะเบียนไว้แล้วค่ะ';
+      if (id === prop_('UPLOAD_GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มอัปโหลด (ห้องสั่งการ) ค่ะ — พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่นะคะ';
       if (current) return '⚠️ น้องขุนศึกลงทะเบียนกับกลุ่มอื่นอยู่แล้วค่ะ — ให้ผู้ดูแลลบ GROUP_ID ใน Script Properties ก่อนนะคะ';
       setProp_('GROUP_ID', id);
       return '✅ ลงทะเบียนกลุ่มนี้แล้วค่ะ น้องขุนศึกจะส่งยอดขายกับวันเกิดลูกค้าทุกเช้า 7:30 (จ.–ส.) และแจ้งเตือนตามตารางเข้ากลุ่มนี้นะคะ\nพิมพ์ "เมนู" เพื่อดูคำสั่งได้เลยค่ะ';
@@ -2955,8 +2957,18 @@ function runCommand_(p, ctx) {
     case 'registerupload': {
       const id = chatId_(ctx.source);
       if (ctx.source.type !== 'group' && ctx.source.type !== 'room') return 'ใช้คำสั่งนี้ในกลุ่มที่จะใช้ส่งไฟล์ยอดนะคะ';
-      if (!prop_('GROUP_ID', '')) return 'ลงทะเบียนกลุ่มหลักก่อนนะคะ (พิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่)';
-      if (id === prop_('GROUP_ID', '')) return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่แล้วค่ะ — ใช้คำสั่งนี้ในกลุ่มเล็กที่มีแค่คุณกับน้องขุนศึกนะคะ';
+      if (id === prop_('GROUP_ID', '')) {
+        if (p.argText !== 'ยืนยัน') {
+          return '⚠️ กลุ่มนี้เป็นกลุ่มหลักอยู่ค่ะ\n' +
+            'ถ้าต้องการเปลี่ยนกลุ่มนี้เป็นกลุ่มอัปโหลด (ห้องสั่งการ) พิมพ์:\nกลุ่มอัปโหลด ยืนยัน\n' +
+            'แล้วไปพิมพ์ "ลงทะเบียน" ในกลุ่มใหญ่นะคะ';
+        }
+        setProp_('GROUP_ID', '');
+        setProp_('UPLOAD_GROUP_ID', id);
+        return '✅ เปลี่ยนกลุ่มนี้เป็นกลุ่มอัปโหลด (ห้องสั่งการ) แล้วค่ะ\n' +
+          '👉 ต่อไป: ไปที่กลุ่มใหญ่ แล้วพิมพ์ "ลงทะเบียน" เพื่อตั้งเป็นกลุ่มหลักนะคะ\n' +
+          '(ระหว่างนี้ข้อความเช้าและแจ้งเตือนจะยังไม่ส่งจนกว่าจะลงทะเบียนกลุ่มใหญ่)';
+      }
       setProp_('UPLOAD_GROUP_ID', id);
       return '✅ ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้วค่ะ\nส่งไฟล์ Excel ยอดขายที่นี่ได้เลย น้องขุนศึกจะอัปเดตข้อมูลให้ (ไม่ส่งอะไรเข้ากลุ่มหลักค่ะ)\nในกลุ่มหลักพิมพ์ "ยอดขาย" จะได้ข้อมูลล่าสุดค่ะ';
     }
