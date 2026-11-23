@@ -2015,27 +2015,30 @@ function fmtBirthdayDate_(d) {
     String(d.getFullYear() + 543).slice(-2);
 }
 
-function birthdayLine_(e, today) {
+/** 1 รายการ = ชื่อบัญชี / ชื่อเจ้าของ / วันเกิด (3 บรรทัด) */
+function birthdayLines_(e, today, no) {
   const diff = dayDiff_(e.date, today);
   const when = diff === 0 ? ' 🎉 วันนี้!' : diff === 1 ? ' (พรุ่งนี้)' : diff < 0 ? ' (ผ่านมาแล้ว)' : ' (อีก ' + diff + ' วัน)';
-  return (diff === 0 ? '🎂 ' : '• ') + 'ลูกค้าราย ' + e.customers.join(', ') +
-    (e.owner ? ' ชื่อ ' + e.owner : '') + ' วันเกิด ' + fmtBirthdayDate_(e.date) + when +
-    (e.zones.length ? ' [' + e.zones.join(', ') + ']' : '');
+  const lines = [(diff === 0 ? '🎂 ' : '') + no + '. ' + e.customers.join(', ') + (e.zones.length ? ' [' + e.zones.join(', ') + ']' : '')];
+  if (e.owner) lines.push('ชื่อ ' + e.owner);
+  lines.push('วันเกิด ' + fmtBirthdayDate_(e.date) + when);
+  return lines;
 }
 
-/** รายการเรียงตามวัน แยกหัวข้อตามเดือน */
+/** รายการเรียงตามวัน แยกหัวข้อตามเดือน เว้นบรรทัดระหว่างแต่ละราย */
 function formatBirthdays_(title, entries, today, emptyText) {
   if (!entries.length) return emptyText === undefined ? null : title + '\n' + emptyText;
   entries.sort(function (a, b) { return a.date - b.date || a.customers[0].localeCompare(b.customers[0], 'th'); });
   const out = [title + ' (' + entries.length + ' ราย)'];
   let month = -1;
-  entries.forEach(function (e) {
+  entries.forEach(function (e, i) {
     if (e.date.getMonth() !== month) {
       month = e.date.getMonth();
       out.push('');
-      out.push('เดือน ' + TH_MONTHS_SHORT[month]);
+      out.push('━━ เดือน ' + TH_MONTHS_SHORT[month] + ' ━━');
     }
-    out.push(birthdayLine_(e, today));
+    out.push('');
+    birthdayLines_(e, today, i + 1).forEach(function (l) { out.push(l); });
   });
   return out.join('\n');
 }
