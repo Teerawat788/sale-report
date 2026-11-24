@@ -69,7 +69,8 @@ function buildMorningMessages_(now) {
   if (flag_('BIRTHDAY_ENABLED')) {
     try {
       const bd = buildBirthdayAlert_(now);
-      if (bd) messages.push(bd);
+      // LINE ส่งได้ครั้งละ 5 ข้อความ — การ์ดวันเกิดใช้ที่เหลือ
+      if (bd) [].concat(bd).slice(0, Math.max(1, 5 - messages.length)).forEach(function (m) { messages.push(m); });
     } catch (e) {
       console.error('วันเกิด: ' + (e && e.message || e));
     }

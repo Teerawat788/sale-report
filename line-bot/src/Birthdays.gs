@@ -113,32 +113,79 @@ function fmtBirthdayDate_(d) {
     String(d.getFullYear() + 543).slice(-2);
 }
 
-/** 1 รายการ = ชื่อบัญชี / ชื่อเจ้าของ / วันเกิด (3 บรรทัด) */
-function birthdayLines_(e, today, no) {
-  const diff = dayDiff_(e.date, today);
-  const when = diff === 0 ? ' 🎉 วันนี้!' : diff === 1 ? ' (พรุ่งนี้)' : diff < 0 ? ' (ผ่านมาแล้ว)' : ' (อีก ' + diff + ' วัน)';
-  const lines = [(diff === 0 ? '🎂 ' : '') + no + '. ' + e.customers.join(', ') + (e.zones.length ? ' [' + e.zones.join(', ') + ']' : '')];
-  if (e.owner) lines.push('ชื่อ ' + e.owner);
-  lines.push('วันเกิด ' + fmtBirthdayDate_(e.date) + when);
-  return lines;
+// ---------------------------------------------------------------- การ์ดวันเกิด (แบบเดียวกับรายงานยอด)
+
+const BIRTHDAYS_PER_CARD = 20;
+
+/** วันนี้ / พรุ่งนี้ / อีก n วัน / ผ่านมาแล้ว */
+function birthdayWhen_(diff) {
+  if (diff === 0) return { t: '🎉 วันนี้', color: FX.red, bold: true };
+  if (diff === 1) return { t: 'พรุ่งนี้', color: FX.amber, bold: true };
+  if (diff < 0) return { t: 'ผ่านมาแล้ว', color: FX.muted };
+  return { t: 'อีก ' + diff + ' วัน', color: FX.sub };
 }
 
-/** รายการเรียงตามวัน แยกหัวข้อตามเดือน เว้นบรรทัดระหว่างแต่ละราย */
-function formatBirthdays_(title, entries, today, emptyText) {
+/** 1 แถว: [วันเกิด + อีกกี่วัน] [ลูกค้า + เจ้าของ] [เขต] — วันนี้ไฮไลต์สีชมพู */
+function birthdayRow_(e, today) {
+  const diff = dayDiff_(e.date, today);
+  const when = birthdayWhen_(diff);
+  const left = fxBox_('vertical', [
+    fxText_(fmtDate_(e.date), { size: 'sm', weight: 'bold', color: FX.text, wrap: true }),
+    fxText_(when.t, { size: 'xs', color: when.color, weight: when.bold ? 'bold' : undefined }),
+  ], { flex: 5 });
+  const mid = [fxText_(e.customers.join(', '), { size: 'sm', weight: 'bold', color: FX.text, wrap: true })];
+  if (e.owner && e.customers.indexOf(e.owner) < 0) mid.push(fxText_('👤 ' + e.owner, { size: 'xs', color: FX.sub, wrap: true }));
+  const today0 = diff === 0;
+  return fxBox_('horizontal', [
+    left,
+    fxBox_('vertical', mid, { flex: 10 }),
+    fxText_(e.zones.join(', ') || '-', { size: 'xs', color: FX.sub, flex: 2, align: 'end' }),
+  ], { spacing: 'md', margin: 'md', paddingAll: today0 ? 'sm' : undefined,
+    backgroundColor: today0 ? '#FFF1F2' : undefined, cornerRadius: today0 ? 'md' : undefined });
+}
+
+/**
+ * การ์ดวันเกิด เรียงตามวัน แยกหัวข้อตามเดือน (การ์ดละ 20 ราย)
+ * คืน null ถ้าไม่มีรายการและไม่ได้ส่ง emptyText
+ */
+function formatBirthdays_(title, entries, today, emptyText, lines) {
   if (!entries.length) return emptyText === undefined ? null : title + '\n' + emptyText;
   entries.sort(function (a, b) { return a.date - b.date || a.customers[0].localeCompare(b.customers[0], 'th'); });
-  const out = [title + ' (' + entries.length + ' ราย)'];
-  let month = -1;
-  entries.forEach(function (e, i) {
-    if (e.date.getMonth() !== month) {
-      month = e.date.getMonth();
-      out.push('');
-      out.push('━━ เดือน ' + TH_MONTHS_SHORT[month] + ' ━━');
-    }
-    out.push('');
-    birthdayLines_(e, today, i + 1).forEach(function (l) { out.push(l); });
-  });
-  return out.join('\n');
+  const todays = entries.filter(function (e) { return dayDiff_(e.date, today) === 0; });
+  const alt = title + ' (' + entries.length + ' ราย)' +
+    (todays.length ? ' · วันนี้: ' + todays.map(function (e) { return e.owner || e.customers[0]; }).join(', ') : '');
+  const cards = [];
+  for (let i = 0; i < entries.length && cards.length < 5; i += BIRTHDAYS_PER_CARD) {
+    const part = entries.slice(i, i + BIRTHDAYS_PER_CARD);
+    const body = [fxBox_('horizontal', [
+      fxText_('วันเกิด', { size: 'xxs', color: FX.muted, weight: 'bold', flex: 5 }),
+      fxText_('ลูกค้า · เจ้าของ', { size: 'xxs', color: FX.muted, weight: 'bold', flex: 10 }),
+      fxText_('เขต', { size: 'xxs', color: FX.muted, weight: 'bold', flex: 2, align: 'end' }),
+    ], { spacing: 'md' })];
+    let month = -1;
+    part.forEach(function (e) {
+      if (e.date.getMonth() !== month) {
+        month = e.date.getMonth();
+        body.push(fxText_('📅 เดือน ' + TH_MONTHS_SHORT[month] + ' ' + String(e.date.getFullYear() + 543).slice(-2),
+          { size: 'sm', weight: 'bold', color: FX.text, margin: 'lg' }));
+        body.push(fxSep_('sm'));
+      } else {
+        body.push(fxSep_('md'));
+      }
+      body.push(birthdayRow_(e, today));
+    });
+    const more = entries.length - (i + part.length);
+    const isLast = i + BIRTHDAYS_PER_CARD >= entries.length || cards.length === 4;
+    cards.push(fxMessage_(alt, fxBubble_({
+      title: title + (i ? ' (ต่อ)' : ''),
+      lines: i ? ['ลำดับ ' + (i + 1) + '–' + (i + part.length) + ' จาก ' + entries.length]
+        : [entries.length + ' ราย' + (lines && lines.length ? ' · ' + lines.join(' · ') : '')],
+      body: body,
+      footer: isLast ? (more > 0 ? '…และอีก ' + more + ' ราย'
+        : 'พิมพ์ "วันเกิด" ดู 30 วันข้างหน้า · "วันเกิด ' + TH_MONTHS_SHORT[(today.getMonth() + 1) % 12] + '" ดูทั้งเดือน') : undefined,
+    })));
+  }
+  return cards.length === 1 ? cards[0] : cards;
 }
 
 function upcomingBirthdays_(list, today, days) {
@@ -152,7 +199,8 @@ function buildBirthdayAlert_(now) {
   const today = startOfDay_(now);
   const days = Number(prop_('BIRTHDAY_DAYS_AHEAD', BIRTHDAY_DAYS_AHEAD));
   const list = upcomingBirthdays_(readBirthdays_(), today, days);
-  return formatBirthdays_('🎂 วันเกิดลูกค้า ' + days + ' วันข้างหน้า', list, today);
+  return formatBirthdays_('🎂 วันเกิดลูกค้า ' + days + ' วันข้างหน้า', list, today, undefined,
+    [fmtDate_(today) + ' – ' + fmtDate_(addDays_(today, days - 1))]);
 }
 
 /** "พ.ย.", "พฤศจิกายน", "11", "เดือนนี้", "เดือนหน้า" → 1..12 */
@@ -170,7 +218,8 @@ function birthdayCommand_(arg, now) {
   const all = readBirthdays_();
   if (!all.length) return 'ยังไม่มีข้อมูลวันเกิดลูกค้าค่ะ';
   if (!arg) {
-    return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีลูกค้าเกิดใน 30 วันนี้ค่ะ');
+    return formatBirthdays_('🎂 วันเกิดลูกค้า 30 วันข้างหน้า', upcomingBirthdays_(all, today, 30), today, 'ไม่มีลูกค้าเกิดใน 30 วันนี้ค่ะ',
+      [fmtDate_(today) + ' – ' + fmtDate_(addDays_(today, 29))]);
   }
   const month = parseMonthArg_(arg, now);
   if (!month) return null;

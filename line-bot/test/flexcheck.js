@@ -32,6 +32,7 @@ function checkComponent(node, path, parentLayout) {
       if (node[k] !== undefined && !PADDING.test(node[k])) fail(path, k + ' = ' + node[k]);
     });
     if (node.backgroundColor !== undefined && !COLOR.test(node.backgroundColor)) fail(path, 'backgroundColor');
+    if (node.cornerRadius !== undefined && !SPACING.test(node.cornerRadius)) fail(path, 'cornerRadius = ' + node.cornerRadius);
     if (node.flex !== undefined && !(Number.isInteger(node.flex) && node.flex >= 0)) fail(path, 'flex ต้องเป็นจำนวนเต็ม ≥ 0');
     node.contents.forEach((c, i) => checkComponent(c, path + '.contents[' + i + ']', node.layout));
     return;

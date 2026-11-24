@@ -168,7 +168,13 @@ function flexToText_(node) {
     });
     return out.join('\n');
   }
-  return node.contents.map(flexToText_).filter(Boolean).join(' · ');
+  const cells = node.contents.map(flexToText_).filter(Boolean).map(function (t) { return t.split('\n'); });
+  const rows = Math.max.apply(null, cells.map(function (c) { return c.length; }).concat([0]));
+  const out = [];
+  for (let i = 0; i < rows; i++) {
+    out.push(cells.map(function (c) { return c[i] || ''; }).filter(Boolean).join(' · '));
+  }
+  return out.join('\n');
 }
 
 // ---------------------------------------------------------------- ตัวเลขในการ์ด

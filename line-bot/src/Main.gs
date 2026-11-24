@@ -284,9 +284,9 @@ function runCommand_(p, ctx) {
 
     case 'sendbirthday': {
       if (!isControlRoom_(ctx.source)) return null;
-      const text = birthdayCommand_(p.argText, now);
-      if (!text) return null;
-      return sendToMainGroup_([text], 'วันเกิดลูกค้า');
+      const bd = birthdayCommand_(p.argText, now);
+      if (!bd) return null;
+      return sendToMainGroup_([].concat(bd), 'วันเกิดลูกค้า');
     }
 
     case 'customer':
