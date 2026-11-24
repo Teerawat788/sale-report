@@ -126,6 +126,8 @@ function handleEvent_(ev) {
   let parsed = parseCommand_(stripped.text);
   // คำสั่งงาน/นัด/งานประจำ (ฟีเจอร์เดิมที่เลิกใช้) — ปิดไว้ กันคำทั่วไป เช่น "งาน" "วันนี้" "นัด" ทำให้บอทตอบ
   if (parsed && LEGACY_CMDS.indexOf(parsed.cmd) >= 0 && !flag_('LEGACY_COMMANDS', false)) parsed = null;
+  // "วิเคราะห์" (บทวิเคราะห์ AI) ปิดไว้ — แท็กบอทแล้วถามยังได้ (ส่งต่อไปถาม AI)
+  if (parsed && parsed.cmd === 'aisales' && !aiAnalysisOn_()) parsed = null;
   parsed = parsed || lookupCommand_(stripped.text);
   if (!parsed) {
     // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์อะไรก็ได้ (มี "ถาม" นำหน้าหรือไม่ก็ได้) → AI ตอบจากข้อมูลจริง
@@ -176,7 +178,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูเยี่ยม', 'วิเคราะห์']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูเยี่ยม']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -463,7 +465,6 @@ const HELP_TEXT = [
   "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
   '  (พิมพ์ชื่อผิดนิดหน่อย น้องขุนศึกเดาให้ค่ะ)',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
-  '• วิเคราะห์ — AI สรุปยอดให้',
   '',
   '💬 ถาม AI',
   '• แท็ก @น้องขุนศึก แล้วพิมพ์คำถาม',

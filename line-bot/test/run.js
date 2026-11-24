@@ -574,9 +574,10 @@ test('มีไฟล์ใหม่ → บอทส่งรายงานเ
   assert.strictEqual(bot.pushes().length, 1, 'ปิด AUTO_REPORT แล้วต้องไม่ส่ง');
 });
 
-test('AI: ใส่คีย์แล้วรายงานมีบทวิเคราะห์ / cache / ไม่ส่งชื่อลูกค้า / refusal ข้ามไป', () => {
+test('AI: เปิด AI_ANALYSIS แล้วรายงานมีบทวิเคราะห์ / cache / ไม่ส่งชื่อลูกค้า / refusal ข้ามไป', () => {
   const bot = mtdBot();
   bot.props.ANTHROPIC_API_KEY = 'sk-test';
+  bot.props.AI_ANALYSIS = 'true';
   bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• F3 ต้องเร่งอีก 20 ตัน/วัน' }] } });
   const imp = bot.say('อัปเดตยอด');
   assert.match(imp, /นำเข้า[\s\S]*📊 ยอดขายสะสม · ทุกเขต[\s\S]*📍 รายเขต F1–F5[\s\S]*🤖 วิเคราะห์โดย AI\n\n• F3 ต้องเร่งอีก 20 ตัน\/วัน/);
@@ -595,6 +596,7 @@ test('AI: ใส่คีย์แล้วรายงานมีบทวิ�
 
   const r2 = mtdBot();
   r2.props.ANTHROPIC_API_KEY = 'sk-test';
+  r2.props.AI_ANALYSIS = 'true';
   r2.setAiResponse({ body: { stop_reason: 'refusal', content: [] } });
   r2.say('อัปเดตยอด');
   assert.doesNotMatch(r2.say('ยอด'), /🤖/);
@@ -604,6 +606,7 @@ test('AI: ใส่คีย์แล้วรายงานมีบทวิ�
 
 test('AI: ไม่มีคีย์ → คำสั่งวิเคราะห์บอกวิธีเปิด และไม่เรียก API', () => {
   const bot = mtdBot();
+  bot.props.AI_ANALYSIS = 'true';
   bot.say('อัปเดตยอด');
   assert.match(bot.say('วิเคราะห์'), /ยังไม่ได้เปิดใช้ AI/);
   assert.strictEqual(bot.aiCalls.length, 0);
@@ -946,7 +949,8 @@ test('ถาม AI: แท็กบอทแล้วถาม → Claude ตอ
   assert.strictEqual(bot.say('F5 ต้องขายวันละเท่าไหร่', { groupId: 'Cmain' }), null, 'ไม่แท็ก ไม่ตอบ');
   assert.match(bot.say('@น้องขุนศึก ยอด', { groupId: 'Cmain', mention }), /📊 ยอดขายสะสม · ทุกเขต/, 'แท็ก + คำสั่ง = คำสั่งปกติ');
   assert.strictEqual(bot.aiCalls.length, 2, '"ยอด" ไม่เรียก AI ใหม่ (ตอบไว)');
-  // "วิเคราะห์" สร้างบทวิเคราะห์ → "ยอด" ครั้งต่อไปแนบให้โดยไม่เรียก AI ซ้ำ (แม้ cache หมดอายุ)
+  // (เปิด AI_ANALYSIS) "วิเคราะห์" สร้างบทวิเคราะห์ → "ยอด" ครั้งต่อไปแนบให้โดยไม่เรียก AI ซ้ำ (แม้ cache หมดอายุ)
+  bot.props.AI_ANALYSIS = 'true';
   bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '📌 ภาพรวม\n• F5 ใกล้เป้า' }] } });
   assert.match(bot.say('วิเคราะห์', { groupId: 'Cmain' }), /🤖 วิเคราะห์โดย AI\n\n📌 ภาพรวม\n• F5 ใกล้เป้า/);
   bot.ctx.CacheService.getScriptCache().remove(bot.props.AI_SALES_KEY);
@@ -993,7 +997,7 @@ test('บันทึกข้อความยาวหลายย่อห�
 });
 
 test('Gemini: ใส่ GEMINI_API_KEY แล้วถามตอบ/วิเคราะห์ใช้ Gemini; เลือก Claude ได้ด้วย AI_PROVIDER', () => {
-  const bot = createBot({ now: D(2026, 11, 23, 22), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g-test' } });
+  const bot = createBot({ now: D(2026, 11, 23, 22), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', GEMINI_API_KEY: 'g-test', AI_ANALYSIS: 'true' } });
   bot.ctx.setupSalesSheets();
   bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
   const mention = { mentionees: [{ index: 0, length: 11, isSelf: true, userId: 'Ubot' }] };
@@ -1294,6 +1298,23 @@ test('สรุปสัปดาห์ (คำสั่งเดิม เป�
   const r = bot.say('สรุปสัปดาห์', { groupId: 'Cmain' });
   assert.ok(r && !/ขออภัย|error|undefined/i.test(r), r);
   assert.match(r, /📊 ยอดถึง จ\. 23 พ\.ย\./);
+});
+
+test('บทวิเคราะห์ AI ปิดเป็นค่าเริ่มต้น: ไม่มีในรายงาน/ข้อความเช้า/ตอนนำเข้า · "วิเคราะห์" เงียบ · แท็กถาม AI ยังได้', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 6), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x', GEMINI_API_KEY: 'g' } });
+  const imp = bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' });
+  assert.doesNotMatch(imp, /วิเคราะห์โดย AI/);
+  assert.doesNotMatch(bot.say('ยอดขาย', { groupId: 'Cmain' }), /วิเคราะห์โดย AI/);
+  assert.strictEqual(bot.say('วิเคราะห์', { groupId: 'Cmain' }), null);
+  assert.doesNotMatch(bot.say('เมนู', { groupId: 'Cmain' }), /วิเคราะห์/);
+  bot.setNow(D(2026, 11, 24, 7, 31));
+  bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 1);
+  assert.doesNotMatch(bot.pushTexts()[0], /วิเคราะห์โดย AI/);
+  assert.strictEqual(bot.geminiCalls.length, 0, 'ไม่เรียก AI วิเคราะห์เลย');
+  const mention = { mentionees: [{ index: 0, length: 11, isSelf: true, userId: 'Ubot' }] };
+  assert.match(bot.say('@น้องขุนศึก F5 จะถึงเป้าไหม', { groupId: 'Cmain', mention }), /^🤖/);
+  assert.match(bot.say('@น้องขุนศึก วิเคราะห์ยอด F3', { groupId: 'Cmain', mention }), /^🤖/, 'แท็กแล้วพิมพ์วิเคราะห์ = ถาม AI');
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

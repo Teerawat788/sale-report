@@ -20,6 +20,7 @@
  *  MORNING_TIME / MORNING_DAYS ข้อความเช้า (ค่าเริ่มต้น 07:30 / 1,2,3,4,5,6 = จ.–ส.)
  *  UPLOAD_GROUP_ID            กลุ่มสำหรับส่งไฟล์ยอด (ตั้งด้วยคำสั่ง "กลุ่มอัปโหลด")
  *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
+ *  AI_ANALYSIS                (ไม่บังคับ) true = แนบบทวิเคราะห์ AI ท้ายรายงานยอด + คำสั่ง "วิเคราะห์" (ค่าเริ่มต้นปิด)
  *  LEGACY_COMMANDS            (ไม่บังคับ) true = เปิดคำสั่งงาน/นัด/งานประจำแบบเดิม (ค่าเริ่มต้นปิด กันคำทั่วไปทำให้บอทตอบ)
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
  *  GEMINI_API_KEY             (ไม่บังคับ) เปิด AI ด้วย Google Gemini (aistudio.google.com) / GEMINI_MODEL
@@ -3168,8 +3169,13 @@ function hashString_(s) {
  * บทวิเคราะห์ยอดจาก AI — ข้อมูลชุดเดียวกันใช้บทวิเคราะห์เดิม (เก็บใน cache 6 ชม. + Script Properties)
  * cachedOnly = true: ไม่เรียก AI ใหม่ (ใช้ตอนพิมพ์ "ยอดขาย" ให้ตอบไว ไม่ต้องรอ AI)
  */
+/** บทวิเคราะห์ AI ท้ายรายงานยอด — ปิดไว้ (ตั้ง AI_ANALYSIS = true เพื่อเปิด) · ถาม AI ด้วยการแท็กยังใช้ได้ */
+function aiAnalysisOn_() {
+  return flag_('AI_ANALYSIS', false);
+}
+
 function aiSalesComment_(snap, cachedOnly) {
-  if (!snap || snap.source !== 'sheet' || !aiEnabled_()) return null;
+  if (!snap || snap.source !== 'sheet' || !aiEnabled_() || !aiAnalysisOn_()) return null;
   const payload = JSON.stringify(aiSalesPayload_(snap));
   const cache = CacheService.getScriptCache();
   const key = 'ai_sales_' + aiProvider_() + '_' + hashString_(payload);
@@ -4242,6 +4248,8 @@ function handleEvent_(ev) {
   let parsed = parseCommand_(stripped.text);
   // คำสั่งงาน/นัด/งานประจำ (ฟีเจอร์เดิมที่เลิกใช้) — ปิดไว้ กันคำทั่วไป เช่น "งาน" "วันนี้" "นัด" ทำให้บอทตอบ
   if (parsed && LEGACY_CMDS.indexOf(parsed.cmd) >= 0 && !flag_('LEGACY_COMMANDS', false)) parsed = null;
+  // "วิเคราะห์" (บทวิเคราะห์ AI) ปิดไว้ — แท็กบอทแล้วถามยังได้ (ส่งต่อไปถาม AI)
+  if (parsed && parsed.cmd === 'aisales' && !aiAnalysisOn_()) parsed = null;
   parsed = parsed || lookupCommand_(stripped.text);
   if (!parsed) {
     // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์อะไรก็ได้ (มี "ถาม" นำหน้าหรือไม่ก็ได้) → AI ตอบจากข้อมูลจริง
@@ -4292,7 +4300,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูเยี่ยม', 'วิเคราะห์']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูเยี่ยม']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -4579,7 +4587,6 @@ const HELP_TEXT = [
   "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
   '  (พิมพ์ชื่อผิดนิดหน่อย น้องขุนศึกเดาให้ค่ะ)',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
-  '• วิเคราะห์ — AI สรุปยอดให้',
   '',
   '💬 ถาม AI',
   '• แท็ก @น้องขุนศึก แล้วพิมพ์คำถาม',

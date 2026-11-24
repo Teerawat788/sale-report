@@ -343,8 +343,13 @@ function hashString_(s) {
  * บทวิเคราะห์ยอดจาก AI — ข้อมูลชุดเดียวกันใช้บทวิเคราะห์เดิม (เก็บใน cache 6 ชม. + Script Properties)
  * cachedOnly = true: ไม่เรียก AI ใหม่ (ใช้ตอนพิมพ์ "ยอดขาย" ให้ตอบไว ไม่ต้องรอ AI)
  */
+/** บทวิเคราะห์ AI ท้ายรายงานยอด — ปิดไว้ (ตั้ง AI_ANALYSIS = true เพื่อเปิด) · ถาม AI ด้วยการแท็กยังใช้ได้ */
+function aiAnalysisOn_() {
+  return flag_('AI_ANALYSIS', false);
+}
+
 function aiSalesComment_(snap, cachedOnly) {
-  if (!snap || snap.source !== 'sheet' || !aiEnabled_()) return null;
+  if (!snap || snap.source !== 'sheet' || !aiEnabled_() || !aiAnalysisOn_()) return null;
   const payload = JSON.stringify(aiSalesPayload_(snap));
   const cache = CacheService.getScriptCache();
   const key = 'ai_sales_' + aiProvider_() + '_' + hashString_(payload);
