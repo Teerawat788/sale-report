@@ -2,10 +2,11 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { checkFlexMessage } = require('./flexcheck');
 
 const SRC = path.join(__dirname, '..', 'src');
-const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Store', 'Tasks', 'Weekly',
-  'Calendar', 'Sales', 'SalesData', 'Ai', 'Birthdays', 'Reminders', 'Visits', 'Schedule', 'Main'];
+const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Flex', 'Store', 'Tasks', 'Weekly',
+  'Calendar', 'Sales', 'SalesData', 'Cards', 'Ai', 'Birthdays', 'Reminders', 'Visits', 'Schedule', 'Main'];
 
 function makeSheet(name) {
   const data = [];
@@ -56,6 +57,7 @@ function createBot(opts = {}) {
   const lineCalls = [];
   const triggers = [];
   let dashboard = opts.dashboard;
+  let rejectFlex = !!opts.rejectFlex;
 
   const ss = {
     getSheetByName: (n) => sheets[n] || null,
@@ -178,6 +180,15 @@ const folderObj = () => ctx.DriveApp._folder();
         if (url.startsWith('https://api.line.me')) {
           const call = { url, method: o.method, body: o.payload ? JSON.parse(o.payload) : null };
           lineCalls.push(call);
+          const msgs = (call.body && call.body.messages) || [];
+          if (msgs.length > 5) throw new Error('LINE รับได้ไม่เกิน 5 ข้อความต่อครั้ง (ส่ง ' + msgs.length + ')');
+          msgs.forEach((m, i) => {
+            checkFlexMessage(m, 'messages[' + i + ']');
+            if (m.type === 'text' && (!m.text || m.text.length > 5000)) throw new Error('ข้อความว่างหรือยาวเกิน 5000');
+          });
+          if (rejectFlex && msgs.some((m) => m.type === 'flex')) {
+            return { getResponseCode: () => 400, getContentText: () => '{"message":"A message (messages[0]) in the request body is invalid"}' };
+          }
           const body = /\/member\/|\/profile\//.test(url) ? JSON.stringify({ displayName: 'ผู้ทดสอบ' }) : '{}';
           return { getResponseCode: () => 200, getContentText: () => body };
         }
@@ -192,8 +203,14 @@ const folderObj = () => ctx.DriveApp._folder();
   let now = opts.now || new Date(2026, 10, 19, 9, 0); // พฤ. 19 พ.ย. 2026
   ctx.now_ = () => new Date(now.getTime());
 
+  // การ์ด (Flex) → ข้อความ เพื่อให้ตรวจเนื้อหาได้เหมือนข้อความธรรมดา
+  const msgText = (m) => (m.type === 'flex' ? ctx.flexToText_(m.contents) : m.text);
+
   return {
-    ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls,
+    ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls, msgText,
+    setRejectFlex(v) { rejectFlex = v; },
+    /** ข้อความของ push แต่ละครั้ง (การ์ดแปลงเป็นข้อความ) */
+    pushTexts() { return lineCalls.filter((c) => c.url.endsWith('/message/push')).map((c) => c.body.messages.map(msgText).join('\n')); },
     geminiCalls,
     setGeminiResponse(r) { geminiResponse = r; },
     geminiListCalls,
@@ -207,7 +224,7 @@ const folderObj = () => ctx.DriveApp._folder();
         message: { type: 'file', id, fileName: name, fileSize: 1000 } };
       ctx.doPost({ postData: { contents: JSON.stringify({ destination: 'Ubot', events: [ev] }) } });
       const reply = lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));
-      return reply ? reply.body.messages.map((m) => m.text).join('\n') : null;
+      return reply ? reply.body.messages.map(msgText).join('\n') : null;
     },
     setAiResponse(r) { aiResponse = r; },
     setNow(d) { now = d; },
@@ -222,7 +239,7 @@ const folderObj = () => ctx.DriveApp._folder();
       };
       ctx.doPost({ postData: { contents: JSON.stringify({ destination: o.destination || 'Ubot', events: [ev] }) } });
       const reply = lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));
-      return reply ? reply.body.messages.map((m) => m.text).join('\n') : null;
+      return reply ? reply.body.messages.map(msgText).join('\n') : null;
     },
     pushes() { return lineCalls.filter((c) => c.url.endsWith('/message/push')); },
   };

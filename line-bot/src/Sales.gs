@@ -55,8 +55,8 @@ function teamLine_(t) {
 
 /** team: null = ภาพรวม หรือ object ทีมจาก findTeam_ */
 /** รายงานยอดเป็นหลายบับเบิล (ไฟล์ Power BI) หรือข้อความเดียว (dashboard.json) */
-function salesMessages_(d, team) {
-  if (d.source === 'sheet') return salesSheetMessages_(d, team);
+function salesMessages_(d, team, opt) {
+  if (d.source === 'sheet') return salesSheetMessages_(d, team, opt);
   return [formatSales_(d, team)];
 }
 
@@ -136,6 +136,13 @@ function appendBullets_(lines, title, list) {
   if (!Array.isArray(list) || !list.length) return;
   lines.push(title);
   list.slice(0, 5).forEach(function (x) { lines.push('• ' + x); });
+}
+
+/** 🟢/🟡/🔴 ตาม % คาดปิด (ใช้ในข้อความแบบเดิม) */
+function forecastIcon_(m) {
+  const p = m.forecastPct !== null && m.forecastPct !== undefined ? m.forecastPct : m.forecastPctAmt;
+  if (p === null || p === undefined) return '';
+  return p >= 100 ? ' 🟢' : p >= 95 ? ' 🟡' : ' 🔴';
 }
 
 /** บรรทัดสั้นสำหรับสรุปเช้า/สรุปสัปดาห์ */

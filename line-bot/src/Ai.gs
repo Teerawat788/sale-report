@@ -339,14 +339,22 @@ function hashString_(s) {
   return (h >>> 0).toString(36) + '_' + s.length;
 }
 
-/** บทวิเคราะห์ยอดจาก AI (cache ตามข้อมูลชุดเดียวกัน 6 ชม.) */
-function aiSalesComment_(snap) {
+/**
+ * บทวิเคราะห์ยอดจาก AI — ข้อมูลชุดเดียวกันใช้บทวิเคราะห์เดิม (เก็บใน cache 6 ชม. + Script Properties)
+ * cachedOnly = true: ไม่เรียก AI ใหม่ (ใช้ตอนพิมพ์ "ยอดขาย" ให้ตอบไว ไม่ต้องรอ AI)
+ */
+function aiSalesComment_(snap, cachedOnly) {
   if (!snap || snap.source !== 'sheet' || !aiEnabled_()) return null;
   const payload = JSON.stringify(aiSalesPayload_(snap));
   const cache = CacheService.getScriptCache();
   const key = 'ai_sales_' + aiProvider_() + '_' + hashString_(payload);
   const hit = cache.get(key);
   if (hit) return hit;
+  if (prop_('AI_SALES_KEY', '') === key) {
+    const saved = prop_('AI_SALES_TEXT', '');
+    if (saved) { cache.put(key, saved, 21600); return saved; }
+  }
+  if (cachedOnly) return null;
   let text = null;
   try {
     text = callAi_(AI_SYSTEM_PROMPT, 'ข้อมูลยอดขาย (JSON):\n' + payload);
@@ -356,6 +364,7 @@ function aiSalesComment_(snap) {
   if (!text) return null;
   const msg = '🤖 วิเคราะห์โดย AI\n\n' + truncate_(tidyAiText_(text), 3000);
   cache.put(key, msg, 21600);
+  try { setProp_('AI_SALES_KEY', key); setProp_('AI_SALES_TEXT', msg); } catch (e) { /* ไม่เป็นไร */ }
   return msg;
 }
 

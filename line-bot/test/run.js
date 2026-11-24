@@ -6,7 +6,24 @@ const { createBot } = require('./harness');
 
 const dashboard = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'dashboard.json'), 'utf8'));
 let passed = 0;
+// ONLY=คำ → รันเฉพาะเทสต์ที่ชื่อมีคำนั้น · SOFT=1 → แสดงทุกจุดที่ไม่ผ่าน (ไม่หยุดที่จุดแรก) ใช้ตอนแก้เทสต์
+const SOFT_SEEN = new Set();
+if (process.env.SOFT) {
+  ['match', 'doesNotMatch', 'strictEqual', 'deepStrictEqual', 'ok', 'notStrictEqual'].forEach((k) => {
+    const orig = assert[k];
+    assert[k] = (...args) => {
+      try { orig.apply(assert, args); } catch (e) {
+        const input = typeof args[0] === 'string' ? args[0] : '';
+        const seen = SOFT_SEEN.has(input);
+        SOFT_SEEN.add(input);
+        console.error('  ✗ ' + k + ' ' + String(args[1] instanceof RegExp ? args[1] : JSON.stringify(args[1])).slice(0, 300) +
+          (seen || !input ? '' : '\n----- ข้อความจริง -----\n' + input + '\n-----------------------') + '\n');
+      }
+    };
+  });
+}
 function test(name, fn) {
+  if (process.env.ONLY && name.indexOf(process.env.ONLY) < 0) return;
   try { fn(); passed++; console.log('✓ ' + name); } catch (e) {
     console.error('✗ ' + name + '\n  ' + (e.stack || e));
     process.exitCode = 1;
@@ -87,8 +104,9 @@ test('ลงทะเบียนกลุ่ม และล็อกกลุ�
   assert.match(bot.say('ลงทะเบียน'), /ลงทะเบียนกลุ่มนี้แล้ว/);
   assert.strictEqual(bot.props.GROUP_ID, 'Cgroup1');
   assert.match(bot.say('ลงทะเบียน', { groupId: 'Cother' }), /กลุ่มอื่นอยู่แล้ว/);
-  assert.ok(bot.say('งาน', { groupId: 'Cother' }), 'กลุ่มอื่นใช้คำสั่งทีมได้');
-  assert.strictEqual(bot.say('งาน', { destination: 'Ufake' }), null);
+  assert.ok(bot.say('เมนู', { groupId: 'Cother' }), 'กลุ่มอื่นใช้คำสั่งทีมได้');
+  assert.strictEqual(bot.say('งาน', { groupId: 'Cother' }), null, 'คำสั่งงาน (เลิกใช้) ไม่ตอบ');
+  assert.strictEqual(bot.say('เมนู', { destination: 'Ufake' }), null);
 });
 
 test('ยอดขายจาก dashboard.json', () => {
@@ -107,7 +125,7 @@ test('ยอดขายจาก dashboard.json', () => {
 });
 
 test('งานติดตาม: เพิ่ม/ดู/งานฉัน/เลื่อน/ปิด/ลบ', () => {
-  const bot = createBot();
+  const bot = createBot({ props: { LEGACY_COMMANDS: 'true' } });
   const msg = 'งาน+ ส่งใบเสนอราคาฟาร์ม A พรุ่งนี้ @สมชาย';
   const add = bot.say(msg, {
     mention: { mentionees: [{ index: msg.indexOf('@สมชาย'), length: 6, userId: 'Usomchai' }] },
@@ -133,7 +151,7 @@ test('งานติดตาม: เพิ่ม/ดู/งานฉัน/เ
 });
 
 test('นัด: เพิ่ม และดู agenda', () => {
-  const bot = createBot();
+  const bot = createBot({ props: { LEGACY_COMMANDS: 'true' } });
   assert.match(bot.say('นัด+ วันนี้ 14:00 เยี่ยมฟาร์มคุณสมชาย'), /บันทึกนัดแล้ว\nพฤ\. 19 พ\.ย\. 14:00–15:00/);
   bot.say('นัด+ พรุ่งนี้ ออกบูธงานเกษตร');
   bot.say('นัด+ จันทร์หน้า 09:00-10:00 ประชุมทีม');
@@ -145,7 +163,7 @@ test('นัด: เพิ่ม และดู agenda', () => {
 });
 
 test('งานประจำสัปดาห์: เพิ่ม/เช็ค/ขึ้นสัปดาห์ใหม่รีเซ็ต', () => {
-  const bot = createBot();
+  const bot = createBot({ props: { LEGACY_COMMANDS: 'true' } });
   assert.match(bot.say('ประจำ+ จันทร์ ส่งรายงานลูกค้าใหม่ @สมชาย'), /#1 ส่งรายงานลูกค้าใหม่ \(ภายใน จ\.\)\n👤 สมชาย/);
   bot.say('ประจำ+ อัปเดตสต๊อกตัวแทน');
   assert.match(bot.say('ประจำ'), /ทำแล้ว 0\/2[\s\S]*⬜ #1[\s\S]*⬜ #2 .*ภายในสัปดาห์/);
@@ -156,7 +174,7 @@ test('งานประจำสัปดาห์: เพิ่ม/เช็�
 });
 
 test('เตือนก่อนนัด ครั้งเดียวต่อนัด', () => {
-  const bot = createBot({ now: D(2026, 11, 19, 13, 40) });
+  const bot = createBot({ now: D(2026, 11, 19, 13, 40), props: { LEGACY_COMMANDS: 'true' } });
   bot.say('ลงทะเบียน');
   bot.say('นัด+ วันนี้ 14:00 เยี่ยมฟาร์ม');
   bot.say('นัด+ วันนี้ 16:00 ประชุม');
@@ -222,7 +240,7 @@ test('mapColumns / วันที่ / ตัวเลข', () => {
 test('อัปเดตยอด: นำเข้า CSV จาก Power BI (kg→ตัน, ข้ามแถว Total, นำเข้าซ้ำไม่ซ้ำซ้อน)', () => {
   const bot = pbiBot();
   const r = bot.say('อัปเดตยอด');
-  assert.match(r, /นำเข้ายอดขาย 6 แถว \(อ\. 17 พ\.ย\. – พฤ\. 19 พ\.ย\.\)/);
+  assert.match(r, /นำเข้ายอดขายแล้วค่ะ[\s\S]*6 แถว · อ\. 17 พ\.ย\. – พฤ\. 19 พ\.ย\./);
   assert.strictEqual(bot.sheets.SalesData.data.length, 7);
   assert.strictEqual(bot.sheets.SalesData.data[1][5], 12);
   bot.say('อัปเดตยอด');
@@ -237,7 +255,7 @@ test('นำเข้า .xlsx (แปลงผ่าน Drive) และแท�
   bot.driveFiles.push({ id: 'f2', name: 'day20.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     table: [['วันที่', 'ทีม', 'เซลส์', 'ลูกค้า', 'สินค้า', 'ตัน'], [D(2026, 11, 19), 'Fish 4', 'สมชาย ใจดี', 'ฟาร์ม A', 'อาหารปลา 1', 7]],
     updated: D(2026, 11, 20, 8) });
-  assert.match(bot.say('อัปเดตยอด'), /1 แถว[\s\S]*day20\.xlsx/);
+  assert.match(bot.say('อัปเดตยอด'), /day20\.xlsx[\s\S]*1 แถว/);
   const d19 = bot.sheets.SalesData.data.slice(1).filter((r) => r[0].getDate() === 19);
   assert.strictEqual(d19.length, 1);
   assert.ok(bot.driveFiles.find((f) => f.id.startsWith('tmp')).trashed, 'ไฟล์ชั่วคราวต้องถูกลบ');
@@ -248,28 +266,29 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   bot.say('อัปเดตยอด');
   const total = bot.say('ยอด');
   // 63 ตัน จากเป้า 700, วันทำงาน จ-ส: พ.ย. 2026 มี 25 วัน, ถึง 19 พ.ย. = 16 วัน (อาทิตย์ 1,8,15)
-  assert.match(total, /ยอดขายสะสม ถึง พฤ\. 19 พ\.ย\. 69/);
-  assert.match(total, /วันทำงาน 16\/25 · เหลือ 9 วัน/);
-  assert.match(total, /🏢 รวมทุกเขต 🔴\n\n⚖️ ตัน\n• ทำได้ 63\.00 \/ 700\.00 \(9\.0%\)/);
-  assert.match(total, /🔴 F4 — คาดปิด [\d.]+%\n• ตัน 25\.00 \/ 400\.00/);
-  assert.match(total, /📅 วันล่าสุด \+28\.00 ตัน · 0\.56 ล้านบาท/);
+  assert.match(total, /📊 ยอดขายสะสม · ทุกเขต\nข้อมูลถึง พฤ\. 19 พ\.ย\. 69\nวันทำงาน 16\/25 · เหลือ 9 วัน · Time gone 64%/);
+  assert.match(total, /คาดปิดเดือน · 14\.1% · ต่ำกว่าเป้า/);
+  assert.match(total, /ทำได้ · 63\.0 · 1\.26\nเป้า · 700\.0 · -\nสำเร็จ · 9\.0% · -/);
+  assert.match(total, /F4 · 25\.0 · 400\.0 · 6% · 10%\nF5 · 38\.0 · 300\.0 · 13% · 20%\nรวม · 63\.0 · 700\.0 · 9% · 14%/);
+  assert.match(total, /วันล่าสุด 19 พ\.ย\. · \+28\.0 · \+0\.56/);
 
   const day = bot.say('ยอดเมื่อวาน');
-  assert.match(day, /ยอดขายวันที่ พฤ\. 19 พ\.ย\.: 28\.00 ตัน/);
-  assert.match(day, /1\. วิทย์ รักงาน — 20\.00 ตัน/);
+  assert.match(day, /📅 ยอดขายวันที่ พฤ\. 19 พ\.ย\.\nรวม \+28\.0 ตัน · \+0\.56 ล้านบาท/);
+  assert.match(day, /F4 · \+5\.0 · \+0\.10\nF5 · \+23\.0 · \+0\.46\nรวม · \+28\.0 · \+0\.56/);
+  assert.match(day, /1 · วิทย์ รักงาน · \+20\.0/);
 
   const rank = bot.say('ยอดเซลส์');
-  assert.match(rank, /1\. วิทย์ รักงาน \(F5\) — 35\.00 \/ 150\.00 ตัน \(23\.3%\) 🔴/);
+  assert.match(rank, /# · เซลส์ · เขต · ตัน · % เป้า\n1 · วิทย์ รักงาน · F5 · 35\.0 · 23%\n2 · สมชาย ใจดี · F4 · 25\.0 · 13%/);
 
   const me = bot.say('ยอด สมชาย');
-  assert.match(me, /👤 สมชาย ใจดี · F4/);
-  assert.match(me, /ยอดเดือนนี้ 25\.00 ตัน[\s\S]*เป้า 200\.00 ตัน \(13%\)/);
-  assert.match(me, /ต้องทำ 19\.44 ตัน\/วัน/);
-  assert.match(me, /1\. ฟาร์ม A\n   17\.00 ตัน/);
+  assert.match(me, /👤 สมชาย ใจดี\nเขต F4 · ข้อมูลถึง พฤ\. 19 พ\.ย\. 69/);
+  assert.match(me, /ยอดเดือนนี้ · 25\.0 ตัน[\s\S]*เป้า · 200\.0 ตัน\nสำเร็จ · 12\.5%/);
+  assert.match(me, /ต้องทำ \/ วัน · 19\.4 ตัน/);
+  assert.match(me, /1 · ฟาร์ม A · 17\.0 · 68%\n2 · ฟาร์ม B · 8\.0 · 32%/);
 
-  assert.match(bot.say('ยอด f5'), /📊 F5 —[\s\S]*ทำได้ 38\.00 \/ 300\.00[\s\S]*วิทย์ รักงาน/);
-  assert.match(bot.say('ยอดลูกค้า'), /1\. ร้าน D — 20\.00 ตัน/);
-  assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ\n1\. อาหารปลา 1 — 32\.00 ตัน\n2\. อาหารปลา 3 — 23\.00/);
+  assert.match(bot.say('ยอด f5'), /📊 F5 · ยอดสะสม[\s\S]*ทำได้ · 38\.0 · 0\.76[\s\S]*วิทย์ รักงาน · 35\.0/);
+  assert.match(bot.say('ยอดลูกค้า'), /1 · ร้าน D · F5 · 20\.0/);
+  assert.match(bot.say('ยอดสินค้า'), /ทั้งหมด 3 รายการ[\s\S]*1 · อาหารปลา 1 · 32\.0\n2 · อาหารปลา 3 · 23\.0/);
   assert.match(bot.say('ยอด ใครไม่รู้'), /ไม่พบชื่อ "ใครไม่รู้"[\s\S]*สะกดชื่อให้ถูก/);
 });
 
@@ -285,9 +304,9 @@ test('ข้อความเช้า 7:30 จ.–ส.: นำเข้าไ�
   bot.setNow(D(2026, 11, 20, 7, 36));
   bot.ctx.tick();
   assert.strictEqual(bot.pushes().length, 1, 'ส่งครั้งเดียวต่อวัน');
-  const text = bot.pushes()[0].body.messages.map((m) => m.text).join('\n');
-  assert.match(text, /^☀️ สวัสดีตอนเช้าค่ะ — ศุกร์ 20 พ\.ย\. 2569\n\n📊 ยอดขายสะสม ถึง พฤ\. 19 พ\.ย\. 69/);
-  assert.match(text, /🏢 รวมทุกเขต[\s\S]*F4 —[\s\S]*F5 —/);
+  const text = bot.pushTexts()[0];
+  assert.match(text, /^☀️ สวัสดีตอนเช้าค่ะ\nศุกร์ 20 พ\.ย\. 2569 · ยอดขายสะสมทุกเขต\nข้อมูลถึง พฤ\. 19 พ\.ย\. 69/);
+  assert.match(text, /ทำได้ · 63\.0[\s\S]*📍 รายเขต F1–F5[\s\S]*F4 · 25\.0[\s\S]*F5 · 38\.0/);
   assert.doesNotMatch(text, /ประชุมเช้า|ใบเสนอราคา|นัด|งานค้าง/);
   bot.setNow(D(2026, 11, 22, 7, 31)); // อาทิตย์
   bot.ctx.tick();
@@ -318,14 +337,15 @@ test('รายงานรวม + แยก F1–F5: ตันและบา�
   assert.match(bot.say('อัปเดตยอด'), /80 แถว/);
   const r = bot.say('ยอด');
   // 16 วันทำงาน: 81 ตัน/วัน x 25 = 2,025 ตัน = 98.8% ของ 2,050
-  assert.match(r, /🏢 รวมทุกเขต 🟡\n\n⚖️ ตัน\n• ทำได้ 1,296\.00 \/ 2,050\.00 \(63\.2%\)\n• สปีด 81\.00 ตัน\/วัน\n• ต้องทำ 83\.78 ตัน\/วัน \(ขาด 2\.78\)\n• คาดปิด 2,025\.00 \(98\.8%\)/);
-  assert.match(r, /💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 27\.86 \/ 43\.90 \(63\.5%\)\n• สปีด 1\.74 \/วัน\n• ต้องทำ 1\.78 \/วัน \(ขาด 0\.04\)\n• คาดปิด 43\.54 \(99\.2%\)/);
-  assert.match(r, /🔴 F2 — คาดปิด 93\.8%\n• ตัน 240\.00 \/ 400\.00 \(60\.0%\)\n• สปีด 15\.00 \| ต้องทำ 17\.78 \/วัน\n• คาดปิด 375\.00 ตัน/);
-  assert.match(r, /🟢 F4 — คาดปิด 104\.2%[\s\S]*คาดปิดมูลค่า 13\.44 ล้าน \(103\.4%\)/);
-  assert.ok(r.indexOf(' F1 —') < r.indexOf(' F2 —') && r.indexOf(' F4 —') < r.indexOf(' F5 —'));
-  for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📊 F4 —[\s\S]*สถานะ 🟢[\s\S]*• ต้องทำ 22\.22 ตัน\/วัน ✅/);
-  assert.match(bot.say('ยอดเมื่อวาน'), /81\.00 ตัน · 1\.74 ล้านบาท\n• F1 20\.00 ตัน · 0\.43 ล้านบาท/);
-  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*🟢 F4 —/);
+  assert.match(r, /คาดปิดเดือน · 98\.8% · ใกล้เป้า/);
+  assert.match(r, /ทำได้ · 1,296\.0 · 27\.86\nเป้า · 2,050\.0 · 43\.90\nสำเร็จ · 63\.2% · 63\.5%\nสปีด \/ วัน · 81\.0 · 1\.74\nต้องทำ \/ วัน · 83\.8 · 1\.78\nส่วนต่าง \/ วัน · −2\.8 · −0\.04\nคาดปิดเดือน · 2,025\.0 · 43\.54\nคาดปิด % เป้า · 98\.8% · 99\.2%/);
+  assert.match(r, /⚖️ ยอด \(ตัน\)\nเขต · ทำได้ · เป้า · สำเร็จ · คาดปิด\nF1 · 320\.0 · 500\.0 · 64% · 100%\nF2 · 240\.0 · 400\.0 · 60% · 94%/);
+  assert.match(r, /F2 · 15\.0 · 17\.8 · −2\.8[\s\S]*F4 · 25\.0 · 22\.2 · \+2\.8/);
+  assert.match(r, /💰 มูลค่า \(ล้านบาท\)[\s\S]*F4 · 8\.60 · 13\.00 · 66% · 103%/);
+  assert.ok(r.indexOf('\nF1 · ') < r.indexOf('\nF2 · ') && r.indexOf('\nF4 · ') < r.indexOf('\nF5 · '));
+  for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📊 F4 · ยอดสะสม[\s\S]*คาดปิดเดือน · 104\.2% · ถึงเป้า[\s\S]*ต้องทำ \/ วัน · 22\.2 · 0\.49\nส่วนต่าง \/ วัน · \+2\.8 · \+0\.05/);
+  assert.match(bot.say('ยอดเมื่อวาน'), /รวม \+81\.0 ตัน · \+1\.74 ล้านบาท[\s\S]*F1 · \+20\.0 · \+0\.43/);
+  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*F4 · 400\.0 · 600\.0 · 67% · 104%/);
 });
 
 test('Targets แท็บเก่า (4 คอลัมน์) ได้หัวคอลัมน์ "เป้า (ล้านบาท)" เพิ่ม', () => {
@@ -384,19 +404,19 @@ test('ฟอร์มหลัก: แมปคอลัมน์ PIC_New / Area
 test('ฟอร์มหลัก: นำเข้ายอดสะสม ข้ามแถว Total/ตัวกรอง และสรุปรวม + แยกเขต', () => {
   const bot = mtdBot();
   const imp = bot.say('อัปเดตยอด');
-  assert.match(imp, /นำเข้ายอดสะสม ณ พุธ 18 พ\.ย\. 2569\n5 แถว รวม 528\.26 ตัน/);
-  assert.match(imp, /ไฟล์รายลูกค้า: ใช้ดูยอดลูกค้า\/เซลส์ \(ตัน\)/);
+  assert.match(imp, /📋 ไฟล์รายลูกค้า · 5 แถว · 528\.3 ตัน\n📆 ยอดสะสมถึง พ\. 18 พ\.ย\. 69/);
+  assert.match(imp, /ใช้ดูยอดลูกค้าและเซลส์/);
   const r = bot.say('ยอด');
   // ถึง 18 พ.ย. = 15 วันทำงาน (อาทิตย์ 1, 8, 15) จาก 25
   assert.match(r, /วันทำงาน 15\/25 · เหลือ 10 วัน/);
-  assert.match(r, /ยอดรายวัน: (จะ)?เริ่ม/);
-  assert.match(r, /🏢 รวมทุกเขต[^\n]*\n\n⚖️ ตัน\n• ทำได้ 528\.26 \/ 1,400\.00 \(37\.7%\)\n• สปีด 35\.22 ตัน\/วัน[\s\S]*• คาดปิด 880\.43 \(62\.9%\)/);
-  assert.match(r, /🔴 F3 — คาดปิด [\d.]+%\n• ตัน 307\.46 \/ 600\.00/);
+  assert.match(r, /ยอดรายวันจะเริ่มคิดเมื่อมีไฟล์ของวันถัดไป/);
+  assert.match(r, /ทำได้ · 528\.3\nเป้า · 1,400\.0\nสำเร็จ · 37\.7%\nสปีด \/ วัน · 35\.2[\s\S]*คาดปิดเดือน · 880\.4\nคาดปิด % เป้า · 62\.9%/);
+  assert.match(r, /F3 · 307\.5 · 600\.0 · 51% · 85%/);
   assert.doesNotMatch(r, /อื่นๆ|0\.14/);
   assert.doesNotMatch(r, /มูลค่า:/);
-  assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ · F3[\s\S]*1\. คุณนรินทร์ นฤภัย\n   63\.00 ตัน/);
+  assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ\nเขต F3[\s\S]*1 · คุณนรินทร์ นฤภัย · 63\.0 · 100%/);
   assert.match(bot.say('ยอด กลุ่มบัญชี'), /กลุ่มบัญชี ประโยชน์ โสรัจจกิจ/);
-  assert.match(bot.say('ยอดเมื่อวาน'), /จะเริ่มคำนวณเมื่อมีไฟล์ของวันถัดไป/);
+  assert.match(bot.say('ยอดเมื่อวาน'), /ยอดรายวันยังไม่มีค่ะ\nจะเริ่มคิดเมื่อมีไฟล์ของวันถัดไป/);
 });
 
 test('ฟอร์มหลัก: ไฟล์วันถัดไป → ยอดรายวัน = ผลต่างยอดสะสม', () => {
@@ -407,18 +427,18 @@ test('ฟอร์มหลัก: ไฟล์วันถัดไป → ย�
   bot.setNow(D(2026, 11, 20, 9));
   bot.driveFiles.push({ id: 'd19', name: 'data_19.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     table: t19, updated: D(2026, 11, 20, 8) });
-  assert.match(bot.say('อัปเดตยอด'), /ณ พฤหัสบดี 19 พ\.ย\. 2569/);
+  assert.match(bot.say('อัปเดตยอด'), /ยอดสะสมถึง พฤ\. 19 พ\.ย\. 69/);
   const day = bot.say('ยอดเมื่อวาน');
-  assert.match(day, /ยอดขายวันที่ พฤ\. 19 พ\.ย\.: 40\.00 ตัน/);
-  assert.match(day, /• F3 30\.00 ตัน\n• F4 10\.00 ตัน/);
-  assert.match(day, /1\. วุฒิชัย ขันทอง — 30\.00 ตัน/);
+  assert.match(day, /📅 ยอดขายวันที่ พฤ\. 19 พ\.ย\.\nรวม \+40\.0 ตัน/);
+  assert.match(day, /F3 · \+30\.0\nF4 · \+10\.0\nรวม · \+40\.0/);
+  assert.match(day, /1 · วุฒิชัย ขันทอง · \+30\.0/);
   const r = bot.say('ยอด');
-  assert.match(r, /📅 วันล่าสุด \+40\.00 ตัน/);
+  assert.match(r, /วันล่าสุด 19 พ\.ย\. · \+40\.0/);
   assert.match(r, /วันทำงาน 16\/25/);
-  assert.match(r, /ทำได้ 568\.26 \/ 1,400\.00/);
+  assert.match(r, /ทำได้ · 568\.3\nเป้า · 1,400\.0/);
   // นำเข้าไฟล์เดิมซ้ำโดยระบุวัน: ไม่เกิดยอดซ้ำ
-  assert.match(bot.say('อัปเดตยอด 19/11'), /ณ พฤหัสบดี 19 พ\.ย\. 2569/);
-  assert.match(bot.say('ยอด'), /ทำได้ 568\.26 \/ 1,400\.00/);
+  assert.match(bot.say('อัปเดตยอด 19/11'), /ยอดสะสมถึง พฤ\. 19 พ\.ย\. 69/);
+  assert.match(bot.say('ยอด'), /ทำได้ · 568\.3\nเป้า · 1,400\.0/);
   assert.strictEqual(bot.say('อัปเดตยอด พรุ่งนี้ครับ'), null);
 });
 
@@ -435,21 +455,21 @@ test('พิมพ์ชื่อลูกค้า / F4 เฉย ๆ ก็ข
   bot.say('อัปเดตยอด');
 
   const c = bot.say('นลินรัตน์ฟาร์ม');
-  assert.match(c, /👥 นลินรัตน์ฟาร์ม\n📍 F4 · 👤 ณรงค์วิทย์ ช่วยทอง/);
+  assert.match(c, /🏪 นลินรัตน์ฟาร์ม\nF4 · 👤 ณรงค์วิทย์ ช่วยทอง/);
   assert.match(c, /วันทำงาน 16\/25/);
-  assert.match(c, /ตัน: 175\.60\n   สปีด 10\.97 ตัน\/วัน → ปิดเดือน 274\.38/);
-  assert.match(c, /มูลค่า: 3\.69 ล้านบาท/);
-  assert.match(c, /📅 รายวันล่าสุด\n• พฤ\. 19 พ\.ย\. \+10\.00 ตัน$/m);
-  assert.match(bot.say('กบทองฟาร์ม'), /👥 กบทองฟาร์ม[\s\S]*ตัน: 12\.00/);
-  assert.match(bot.say('ยอด นลินรัตน์'), /👥 นลินรัตน์ฟาร์ม/);
+  assert.match(c, /ยอดเดือนนี้ · 175\.6 ตัน\nมูลค่า · 3\.69 ล้านบาท\nสปีด \/ วัน · 11\.0 ตัน\nคาดปิดเดือน · 274\.4 ตัน/);
+  assert.match(c, /สัดส่วนในเขต F4 · 93\.6%/);
+  assert.match(c, /📅 รายวันล่าสุด\nวันที่ · ตัน\nพฤ\. 19 พ\.ย\. · \+10\.0$/m);
+  assert.match(bot.say('กบทองฟาร์ม'), /🏪 กบทองฟาร์ม[\s\S]*ยอดเดือนนี้ · 12\.0 ตัน/);
+  assert.match(bot.say('ยอด นลินรัตน์'), /🏪 นลินรัตน์ฟาร์ม/);
   assert.match(bot.say('ยอด ฟาร์ม'), /พบลูกค้า 3 ราย/);
   assert.strictEqual(bot.say('ฟาร์ม'), null);
   assert.strictEqual(bot.say('ไปเยี่ยมฟาร์มกันไหม'), null);
 
   const z = bot.say('F4');
-  assert.match(z, /📊 F4 —[\s\S]*• ทำได้ 187\.60 \/ 500\.00 \(37\.5%\)[\s\S]*💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 3\.94\n• สปีด 0\.25 \/วัน\n• คาดปิด 6\.16/);
+  assert.match(z, /📊 F4 · ยอดสะสม[\s\S]*ทำได้ · 187\.6 · 3\.94\nเป้า · 500\.0 · -\nสำเร็จ · 37\.5% · -\nสปีด \/ วัน · 11\.7 · 0\.25[\s\S]*คาดปิดเดือน · 293\.1 · 6\.16/);
   assert.doesNotMatch(z, /F3/);
-  assert.match(bot.say('f4'), /📊 F4 —/);
+  assert.match(bot.say('f4'), /📊 F4 · ยอดสะสม/);
   assert.strictEqual(bot.say('F4 ไปไหน'), null);
 });
 
@@ -540,10 +560,10 @@ test('มีไฟล์ใหม่ → บอทส่งรายงานเ
   bot.props.LAST_IMPORT_KEY = '';
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 1);
-  const t = bot.pushes()[0].body.messages.map((m) => m.text).join('\n');
-  assert.match(t, /🏢 รวมทุกเขต/);
-  assert.match(t, /F1 —[\s\S]*ต้องทำ [\d.,]+ \/วัน/);
-  assert.match(t, /F3 —[\s\S]*ต้องทำ [\d.,]+ \/วัน/);
+  const t = bot.pushTexts()[0];
+  assert.match(t, /📊 ยอดขายสะสม · ทุกเขต/);
+  assert.match(t, /🚀 สปีด \(ตัน \/ วัน\)\nเขต · ทำได้ · ต้องทำ · ส่วนต่าง\nF1 · 3\.7 · 24\.5 · −20\.8/);
+  assert.match(t, /F3 · 20\.5 · 29\.3 · −8\.8/);
   assert.strictEqual(bot.pushes()[0].body.messages.length, 2, 'ภาพรวม + รายเขต (ไม่มีคีย์ AI ต้องไม่มีบทวิเคราะห์)');
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 1, 'ไฟล์เดิมไม่ส่งซ้ำ');
@@ -559,7 +579,7 @@ test('AI: ใส่คีย์แล้วรายงานมีบทวิ�
   bot.props.ANTHROPIC_API_KEY = 'sk-test';
   bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '• F3 ต้องเร่งอีก 20 ตัน/วัน' }] } });
   const imp = bot.say('อัปเดตยอด');
-  assert.match(imp, /นำเข้ายอดสะสม[\s\S]*🏢 รวมทุกเขต[\s\S]*🤖 วิเคราะห์โดย AI\n\n• F3 ต้องเร่งอีก 20 ตัน\/วัน/);
+  assert.match(imp, /นำเข้า[\s\S]*📊 ยอดขายสะสม · ทุกเขต[\s\S]*📍 รายเขต F1–F5[\s\S]*🤖 วิเคราะห์โดย AI\n\n• F3 ต้องเร่งอีก 20 ตัน\/วัน/);
   assert.strictEqual(bot.aiCalls.length, 1);
   const call = bot.aiCalls[0];
   assert.strictEqual(call.body.model, 'claude-opus-5-5');
@@ -613,25 +633,26 @@ test('ไฟล์รายเขต: ตัน + ล้านบาท, เป�
   bot.ctx.setupSalesSheets();
   bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 25, 8) });
   const imp = bot.say('อัปเดตยอด');
-  assert.match(imp, /ณ อังคาร 24 พ\.ย\. 2569\n2 แถว รวม 504\.32 ตัน/);
-  assert.match(imp, /ไฟล์รายเขต: ใช้ยอดรวม \+ เป้า \(Budget\) จากไฟล์นี้/);
+  assert.match(imp, /✅ นำเข้าไฟล์ยอดแล้วค่ะ\n📄 data_24\.xlsx\n📋 ไฟล์รายเขต · 2 แถว · 504\.3 ตัน\n📆 ยอดสะสมถึง อ\. 24 พ\.ย\. 69\n→ ใช้เป็นยอดรวม \+ เป้าของแต่ละเขต/);
   assert.doesNotMatch(imp, /ไม่มีคอลัมน์: ลูกค้า/);
   const r = bot.say('ยอด');
   assert.match(r, /วันทำงาน 20\/25 · เหลือ 5 วัน/);
-  assert.match(r, /🏢 รวมทุกเขต[^\n]*\n\n⚖️ ตัน\n• ทำได้ 504\.32 \/ 869\.30/);
-  assert.match(r, /💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 17\.22 \/ 26\.54/);
+  assert.match(r, /ทำได้ · 504\.3 · 17\.22\nเป้า · 869\.3 · 26\.54/);
+  assert.match(r, /ปีก่อน · 676\.4 · 21\.61/);
   assert.doesNotMatch(r, /Challenge/);
-  assert.match(r, /🟡 F5 — คาดปิด 97\.5%\n• ตัน 390\.18 \/ 500\.00 \(78\.0%\)\n• สปีด 19\.51 \| ต้องทำ [\d.]+ \/วัน\n• คาดปิด 487\.73 ตัน/);
+  assert.match(r, /F5 · 390\.2 · 500\.0 · 78% · 98%/);
+  assert.match(r, /F5 · 19\.5 · 22\.0 · −2\.5/);
   const f5 = bot.say('F5');
-  assert.match(f5, /💰 มูลค่า \(ล้านบาท\)\n• ทำได้ 13\.58 \/ 15\.64 \(86\.9%\)\n• สปีด 0\.68 \/วัน\n• ต้องทำ [\d.]+ \/วัน ✅\n• คาดปิด 16\.98 \(108\.6%\)/);
+  assert.match(f5, /คาดปิดเดือน · 97\.5% · ใกล้เป้า/);
+  assert.match(f5, /ทำได้ · 390\.2 · 13\.58\nเป้า · 500\.0 · 15\.64\nสำเร็จ · 78\.0% · 86\.9%\nสปีด \/ วัน · 19\.5 · 0\.68\nต้องทำ \/ วัน · 22\.0 · 0\.41\nส่วนต่าง \/ วัน · −2\.5 · \+0\.27\nคาดปิดเดือน · 487\.7 · 16\.98\nคาดปิด % เป้า · 97\.5% · 108\.6%/);
   assert.doesNotMatch(f5, /Challenge/);
-  assert.match(f5, /\n\n📅 ปีก่อน \(เดือนเดียวกัน\)\n• 521\.32 ตัน · 16\.76 ล้านบาท/);
+  assert.match(f5, /ปีก่อน · 521\.3 · 16\.76/);
   bot.props.SHOW_CHALLENGE = 'true';
-  assert.match(bot.say('F5'), /🎯 Challenge\n• ตัน คาดปิด 88\.7% ของ 550\.00\n• มูลค่า คาดปิด 98\.7% ของ 17\.20/);
+  assert.match(bot.say('F5'), /Challenge · 550\.0 · 17\.20\nคาดปิด % Challenge · 88\.7% · 98\.7%/);
   delete bot.props.SHOW_CHALLENGE;
   // แท็บ Targets ที่กรอกเองมีผลเหนือเป้าในไฟล์
   bot.sheets.Targets.data.push(['2026-11', 'F5', '', 400, 14]);
-  assert.match(bot.say('F5'), /ทำได้ 390\.18 \/ 400\.00/);
+  assert.match(bot.say('F5'), /ทำได้ · 390\.2 · 13\.58\nเป้า · 400\.0 · 14\.00/);
 });
 
 test('ไฟล์รายเขตวันถัดไป → ยอดรายวันต่อเขต (ทั้งตันและบาท); ไฟล์ห่างหลายวันบอกช่วงวัน', () => {
@@ -642,8 +663,8 @@ test('ไฟล์รายเขตวันถัดไป → ยอดรา
   bot.driveFiles.push({ id: 'z24', name: 'data_24.xlsx', mime: XLSX, table: zoneTable(390.18, 13582442.39), updated: D(2026, 11, 25, 8) });
   bot.say('อัปเดตยอด');
   const d = bot.say('ยอดเมื่อวาน');
-  assert.match(d, /📅 ยอด 21–24 พ\.ย\.: 90\.18 ตัน · 3\.58 ล้านบาท/);
-  assert.match(d, /• F5 90\.18 ตัน · 3\.58 ล้านบาท/);
+  assert.match(d, /📅 ยอด 21–24 พ\.ย\.\nรวม \+90\.2 ตัน · \+3\.58 ล้านบาท/);
+  assert.match(d, /F5 · \+90\.2 · \+3\.58/);
   assert.doesNotMatch(d, /F1/);
 });
 
@@ -655,11 +676,11 @@ test('ไฟล์รายลูกค้าแล้วตามด้วย�
   bot.say('อัปเดตยอด');
   const d = bot.say('ยอดเมื่อวาน');
   assert.match(d, /📅 ยอด 19–24 พ\.ย\./);
-  assert.match(d, /• F1 58\.94 ตัน/); // 114.14 − 55.2
-  assert.match(d, /• F5 390\.18 ตัน/);
-  assert.match(bot.say('ยอด'), /ทำได้ 504\.32/);
+  assert.match(d, /F1 · \+58\.9/); // 114.14 − 55.2
+  assert.match(d, /F5 · \+390\.2/);
+  assert.match(bot.say('ยอด'), /ทำได้ · 504\.3/);
   const c = bot.say('นลินรัตน์ฟาร์ม');
-  assert.match(c, /สะสมถึง พ\. 18 พ\.ย\. · วันทำงาน 15\/25/);
+  assert.match(c, /ข้อมูลถึง พ\. 18 พ\.ย\. 69 · วันทำงาน 15\/25/);
   assert.doesNotMatch(c, /มูลค่า|คิดเป็น/);
 });
 
@@ -667,7 +688,7 @@ test('ส่งไฟล์ Excel เข้ากลุ่ม → บอทน�
   const bot = createBot({ now: D(2026, 11, 25, 9), props: { IMPORT_FOLDER_ID: 'x', GROUP_ID: 'Cgroup1' } });
   bot.ctx.setupSalesSheets();
   const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39));
-  assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24 พ\.ย\. 2569[\s\S]*🏢 รวมทุกเขต[\s\S]*F5 —/);
+  assert.match(r, /นำเข้าไฟล์ยอดแล้วค่ะ[\s\S]*ยอดสะสมถึง อ\. 24 พ\.ย\. 69[\s\S]*📊 ยอดขายสะสม · ทุกเขต[\s\S]*F5 · 390\.2/);
   assert.strictEqual(bot.driveFiles.filter((f) => !f.trashed).length, 1, 'เก็บไฟล์ไว้ใน Drive');
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 0, 'ไฟล์ที่ส่งในแชทแล้วต้องไม่รายงานซ้ำทุกชั่วโมง');
@@ -687,13 +708,13 @@ test('กลุ่มอัปโหลด: ส่งไฟล์ในกลุ
   assert.match(bot.say('กลุ่มอัปโหลด', { groupId: 'Cmine' }), /ตั้งกลุ่มนี้เป็นกลุ่มอัปโหลดแล้ว/);
   assert.strictEqual(bot.props.UPLOAD_GROUP_ID, 'Cmine');
   const r = bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' });
-  assert.match(r, /นำเข้ายอดสะสม ณ อังคาร 24/);
+  assert.match(r, /ยอดสะสมถึง อ\. 24/);
   assert.strictEqual(bot.pushes().length, 0);
   bot.ctx.importSalesHourly();
   assert.strictEqual(bot.pushes().length, 0);
-  assert.match(bot.say('ยอดขาย'), /ทำได้ 504\.32/);
-  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /ทำได้ 504\.32/);
-  assert.match(bot.say('ยอดขาย', { groupId: 'Cstranger' }), /ทำได้ 504\.32/);
+  assert.match(bot.say('ยอดขาย'), /ทำได้ · 504\.3/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmine' }), /ทำได้ · 504\.3/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cstranger' }), /ทำได้ · 504\.3/);
   assert.strictEqual(bot.sendFile('data_24.xlsx', zoneTable(1, 1), { groupId: 'Cstranger' }), null);
 });
 
@@ -745,7 +766,8 @@ test('น้องขุนศึกพูดแบบผู้หญิง: ไ
   bot.ctx.setupSalesSheets();
   const replies = [bot.say('ลงทะเบียน'), bot.say('ลงทะเบียน'), bot.say('กลุ่มอัปโหลด', { groupId: 'Cmine' }),
     bot.say('เมนู'), bot.say('ยอดเซลส์'), bot.say('วิเคราะห์'),
-    bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' }), bot.say('สรุปเช้า')];
+    bot.sendFile('data_24.xlsx', zoneTable(390.18, 13582442.39), { groupId: 'Cmine' }), bot.say('สรุปเช้า', { groupId: 'Cmine' })];
+  assert.strictEqual(bot.say('สรุปเช้า'), null, 'ตัวอย่างข้อความเช้าใช้ในห้องสั่งการ');
   replies.forEach((r) => assert.doesNotMatch(String(r), /ครับ|ผมคือ/));
   assert.match(replies[0], /ลงทะเบียนกลุ่มนี้แล้วค่ะ/);
   assert.match(replies[7], /สวัสดีตอนเช้าค่ะ/);
@@ -771,10 +793,10 @@ test('วันที่ข้อมูล = วันที่ส่งไฟ�
   bot.ctx.setupSalesSheets();
   assert.strictEqual(bot.props.IMPORT_FOLDER_ID, undefined);
   const r = bot.sendFile('data (19).xlsx', zoneTable(390.18, 13582442.39));
-  assert.match(r, /นำเข้ายอดสะสม ณ อาทิตย์ 22 พ\.ย\. 2569/);
+  assert.match(r, /ยอดสะสมถึง อา\. 22 พ\.ย\. 69/);
   assert.match(String(bot.props.IMPORT_FOLDER_ID), /^folder_/, 'สร้างโฟลเดอร์และจำ ID ไว้');
   assert.match(bot.say('ยอดขาย'), /วันทำงาน 18\/25 · เหลือ 7 วัน/);
-  assert.match(bot.say('อัปเดตยอด 21/11'), /ณ เสาร์ 21 พ\.ย\./);
+  assert.match(bot.say('อัปเดตยอด 21/11'), /ยอดสะสมถึง ส\. 21 พ\.ย\./);
 });
 
 test('ยังไม่มีไฟล์ยอด: ยอดขายบอกให้ส่งไฟล์ (ไม่ใช้ข้อมูลเก่า dashboard.json), ข้อความเช้าไม่มีส่วนยอด', () => {
@@ -805,11 +827,11 @@ test('ห้องสั่งการ: ประกาศ / ส่งยอด
   p = bot.pushes()[1].body;
   assert.strictEqual(p.to, 'Cmain');
   assert.strictEqual(p.messages.length, 2);
-  assert.match(p.messages[0].text, /🏢 รวมทุกเขต/);
+  assert.match(bot.msgText(p.messages[0]), /📊 ยอดขายสะสม · ทุกเขต/);
   assert.match(bot.say('ส่งยอด f5', { groupId: 'Cmine' }), /ส่งยอด F5 เข้ากลุ่มหลักแล้วค่ะ/);
-  assert.match(bot.pushes()[2].body.messages[0].text, /📊 F5 —/);
+  assert.match(bot.pushTexts()[2], /📊 F5 · ยอดสะสม/);
   assert.match(bot.say('ส่งวันเกิด', { groupId: 'Cmine' }), /ส่งวันเกิดลูกค้าเข้ากลุ่มหลักแล้วค่ะ/);
-  assert.match(bot.pushes()[3].body.messages[0].text, /บำรุงการเกษตร/);
+  assert.match(bot.pushTexts()[3], /บำรุงการเกษตร/);
 
   // ในกลุ่มหลักหรือกลุ่มอื่น คำเหล่านี้เป็นแชทปกติ บอทเงียบ
   assert.strictEqual(bot.say('ส่งยอด', { groupId: 'Cmain' }), null);
@@ -866,7 +888,7 @@ function locate(bot, o) {
     message: { type: 'location', id: 'loc1', title: 'ตำแหน่ง', address: o.address, latitude: 13.7, longitude: 100.5 } };
   bot.ctx.doPost({ postData: { contents: JSON.stringify({ destination: 'Ubot', events: [ev] }) } });
   const reply = bot.lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));
-  return reply ? reply.body.messages.map((m) => m.text).join('\n') : null;
+  return reply ? reply.body.messages.map(bot.msgText).join('\n') : null;
 }
 
 test('เยี่ยมลูกค้า: บันทึกในกลุ่มใหญ่ + แชร์ตำแหน่ง + ดูเยี่ยม + ไม่ได้เยี่ยม; คำชม "เยี่ยมมาก" ไม่บันทึก', () => {
@@ -893,10 +915,12 @@ test('เยี่ยมลูกค้า: บันทึกในกลุ่
 
   const v = bot.say('ดูเยี่ยม');
   assert.match(v, /7 วันล่าสุด \(2 ครั้ง\)/);
-  assert.match(v, /นลินรัตน์ฟาร์ม[\s\S]*📍 ราชบุรี/);
+  assert.match(v, /นลินรัตน์ฟาร์ม[\s\S]*📌 ราชบุรี/);
   assert.match(bot.say('ดูเยี่ยม นลินรัตน์'), /บันทึกเยี่ยม "นลินรัตน์" \(1 ครั้ง/);
   const nv = bot.say('ไม่ได้เยี่ยม');
-  assert.match(nv, /ยังไม่ได้เยี่ยม 30 วันขึ้นไป/);
+  assert.match(nv, /📍 ยังไม่ได้เยี่ยม 30 วัน\n\d+ ราย · เรียงตามยอดเดือนนี้[\s\S]*# · ลูกค้า · เขต · ตัน · เยี่ยมล่าสุด/);
+  assert.match(nv, /อานนท์ฟาร์ม · F3 · [\d.,]+ · ยังไม่เคย/);
+  assert.match(bot.say('ไม่ได้เยี่ยม F9'), /ไม่มีเขต F9/);
   assert.doesNotMatch(nv, /นลินรัตน์ฟาร์ม|ร้านบุญสว่าง/);
   assert.match(nv, /อานนท์ฟาร์ม/);
   assert.match(bot.say('เยี่ยม นลินรัตน์ฟาร์ม ทดสอบ', { groupId: 'Cstranger' }), /บันทึกเยี่ยม/, 'กลุ่มอื่นบันทึกได้');
@@ -920,8 +944,14 @@ test('ถาม AI: แท็กบอทแล้วถาม → Claude ตอ
   assert.strictEqual(bot.say('ถาม F1 เป็นยังไงบ้าง', { groupId: 'Cmine' }), '🤖 • F5 ต้องขายวันละ 15.69 ตันค่ะ');
   assert.strictEqual(bot.say('ถาม F1 เป็นยังไงบ้าง', { groupId: 'Cmain' }), null, 'กลุ่มหลักต้องแท็กบอท');
   assert.strictEqual(bot.say('F5 ต้องขายวันละเท่าไหร่', { groupId: 'Cmain' }), null, 'ไม่แท็ก ไม่ตอบ');
-  assert.match(bot.say('@น้องขุนศึก ยอด', { groupId: 'Cmain', mention }), /🏢 รวมทุกเขต/, 'แท็ก + คำสั่ง = คำสั่งปกติ');
-  assert.strictEqual(bot.aiCalls.length, 3, '2 คำถาม + บทวิเคราะห์ที่แนบกับรายงานยอด');
+  assert.match(bot.say('@น้องขุนศึก ยอด', { groupId: 'Cmain', mention }), /📊 ยอดขายสะสม · ทุกเขต/, 'แท็ก + คำสั่ง = คำสั่งปกติ');
+  assert.strictEqual(bot.aiCalls.length, 2, '"ยอด" ไม่เรียก AI ใหม่ (ตอบไว)');
+  // "วิเคราะห์" สร้างบทวิเคราะห์ → "ยอด" ครั้งต่อไปแนบให้โดยไม่เรียก AI ซ้ำ (แม้ cache หมดอายุ)
+  bot.setAiResponse({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '📌 ภาพรวม\n• F5 ใกล้เป้า' }] } });
+  assert.match(bot.say('วิเคราะห์', { groupId: 'Cmain' }), /🤖 วิเคราะห์โดย AI\n\n📌 ภาพรวม\n• F5 ใกล้เป้า/);
+  bot.ctx.CacheService.getScriptCache().remove(bot.props.AI_SALES_KEY);
+  assert.match(bot.say('ยอด', { groupId: 'Cmain' }), /📊 ยอดขายสะสม[\s\S]*🤖 วิเคราะห์โดย AI\n\n📌 ภาพรวม/);
+  assert.strictEqual(bot.aiCalls.length, 3);
 });
 
 test('บันทึกด้วยหลายคำ: ติดตาม / เข้าพบ / เข้าเยี่ยม / ลงพื้นที่ + บอทตอบรับ; แชทปกติไม่บันทึก', () => {
@@ -941,7 +971,7 @@ test('บันทึกด้วยหลายคำ: ติดตาม / เ
     assert.strictEqual(bot.say(t), null, t);
   }
   assert.strictEqual(bot.sheets['บันทึกเยี่ยม'].data.length, 6);
-  assert.match(bot.say('ดูติดตาม นลินรัตน์'), /ติดตาม นลินรัตน์ฟาร์ม/);
+  assert.match(bot.say('ดูติดตาม นลินรัตน์'), /📞 นลินรัตน์ฟาร์ม \[F4\]\n   .* · ติดตาม · 👤/);
 });
 
 test('บันทึกข้อความยาวหลายย่อหน้า: "ติดตามลูกค้าใหม่ ร้านกุ้งทอง 1 (เจ๊มะลิ)" + รายละเอียด', () => {
@@ -956,7 +986,7 @@ test('บันทึกข้อความยาวหลายย่อห�
   assert.strictEqual(row[3], 'ร้านกุ้งทอง 1 (เจ๊มะลิ)');
   assert.strictEqual(row[9], 'ติดตาม (ลูกค้าใหม่)');
   assert.match(row[5], /^ลูกค้ากลุ่มอาหารปลานิล[\s\S]*\n\nแนวโน้ม: ลูกค้ามีความสนใจครับ$/, 'เก็บย่อหน้าตามเดิม');
-  assert.match(bot.say('ดูเยี่ยม กุ้งทอง'), /ติดตาม \(ลูกค้าใหม่\) ร้านกุ้งทอง 1 \(เจ๊มะลิ\)/);
+  assert.match(bot.say('ดูเยี่ยม กุ้งทอง'), /📞 ร้านกุ้งทอง 1 \(เจ๊มะลิ\)\n   .* · ติดตาม \(ลูกค้าใหม่\) · 👤/);
   assert.match(bot.say('ติดตามผล นลินรัตน์ฟาร์ม ลูกค้าพอใจ'), /บันทึกติดตามลูกค้าแล้วค่ะ\n📞 นลินรัตน์ฟาร์ม/);
   assert.match(bot.say('เข้าพบลูกค้าใหม่ ฟาร์มปลาดุกลุงแดง\nสนใจลองสูตร 2'), /บันทึกเข้าพบลูกค้าใหม่แล้วค่ะ\n🤝 ฟาร์มปลาดุกลุงแดง/);
   assert.strictEqual(bot.say('ติดตามด้วยนะครับ'), null);
@@ -1064,14 +1094,14 @@ test('ไฟล์ export มีเวลาในชื่อ = ยอดถึ
     for (const k of order) {
       const r = k === 'zone' ? bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' })
         : bot.sendFile('data - 2026-11-24T053547.165.xlsx', cust, { groupId: 'Cmine' });
-      assert.match(r, /ณ จันทร์ 23/, order + ' ' + k);
+      assert.match(r, /ยอดสะสมถึง จ\. 23 พ\.ย\. 69/, order + ' ' + k);
     }
     const y = bot.say('ยอดขาย', { groupId: 'Cmine' });
     assert.match(y, /19\/25/, order.join());
-    assert.match(y, /ทำได้ 512\.72/, order.join()); // ยอดรวมจากไฟล์รายเขต (114.14 + 398.58)
+    assert.match(y, /ทำได้ · 512\.7/, order.join()); // ยอดรวมจากไฟล์รายเขต (114.14 + 398.58)
     assert.match(y, /500/, 'เป้าจากไฟล์รายเขตยังอยู่');
-    assert.match(bot.say('ร้านทดสอบหนึ่ง', { groupId: 'Cmine' }), /ตัน: 70\.22/);
-    assert.match(bot.say('F5', { groupId: 'Cmine' }), /398\.58/);
+    assert.match(bot.say('ร้านทดสอบหนึ่ง', { groupId: 'Cmine' }), /ยอดเดือนนี้ · 70\.2 ตัน/);
+    assert.match(bot.say('F5', { groupId: 'Cmine' }), /398\.6/);
   }
 });
 
@@ -1107,11 +1137,11 @@ test('ลูกค้า F5: รายชื่อลูกค้าทั้ง
   const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
   bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
   const r = bot.say('ลูกค้า F5', { groupId: 'Cmain' });
-  assert.match(r, /ลูกค้า F5[\s\S]*2 ราย · รวม 100\.00 ตัน[\s\S]*1\. ร้านทดสอบสอง\n   70\.00 ตัน · 70%[\s\S]*2\. ร้านทดสอบหนึ่ง/);
+  assert.match(r, /👥 ลูกค้า F5\n2 ราย · รวม 100\.0 ตัน[\s\S]*1 · ร้านทดสอบสอง · 70\.0 · 70%\n2 · ร้านทดสอบหนึ่ง · 30\.0 · 30%/);
   assert.ok(!/ร้านทดสอบสาม/.test(r));
   assert.strictEqual(bot.say('ยอดลูกค้า fish5', { groupId: 'Cmain' }), r);
   assert.strictEqual(bot.say('ลูกค้า ร้านนี้สั่งเพิ่ม', { groupId: 'Cmain' }), null);
-  assert.match(bot.say('ยอดลูกค้า', { groupId: 'Cmain' }), /ดูทั้งเขต พิมพ์: ลูกค้า F3/);
+  assert.match(bot.say('ยอดลูกค้า', { groupId: 'Cmain' }), /ดูลูกค้าทั้งเขต พิมพ์: ลูกค้า F3/);
 });
 
 test('พิมพ์ชื่อเซลส์ (ชื่อต้นหรือชื่อเต็ม) → ยอด + ลูกค้าทุกราย', () => {
@@ -1123,7 +1153,7 @@ test('พิมพ์ชื่อเซลส์ (ชื่อต้นหรื
   const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
   bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
   const r = bot.say('สมหญิง', { groupId: 'Cmain' });
-  assert.match(r, /👤 สมหญิง ทดสอบ · F5[\s\S]*ยอดเดือนนี้ 100\.00 ตัน[\s\S]*ลูกค้า 2 ราย[\s\S]*1\. ร้านทดสอบสอง\n   70\.00 ตัน · 70%[\s\S]*2\. ร้านทดสอบหนึ่ง/);
+  assert.match(r, /👤 สมหญิง ทดสอบ\nเขต F5[\s\S]*ยอดเดือนนี้ · 100\.0 ตัน[\s\S]*👥 ลูกค้า 2 ราย[\s\S]*1 · ร้านทดสอบสอง · 70\.0 · 70%\n2 · ร้านทดสอบหนึ่ง · 30\.0 · 30%/);
   assert.ok(!/ร้านทดสอบสาม/.test(r));
   assert.strictEqual(bot.say('สมหญิง ทดสอบ', { groupId: 'Cmain' }), r);
   assert.strictEqual(bot.say('สม', { groupId: 'Cmain' }), null); // บางส่วนไม่ตอบ
@@ -1138,13 +1168,13 @@ test('พิมพ์ชื่อผิด: เดาให้ / บอกให
   const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
   bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
   // สะกดผิดเล็กน้อย → เดาให้ พร้อมบอกชื่อที่ถูก
-  assert.match(bot.say('สมสัก', { groupId: 'Cmain' }), /^🔎 พิมพ์ว่า "สมสัก" — ชื่อที่ถูกคือ "สมศักดิ์ ทดสอบ" ค่ะ\n\n👤 สมศักดิ์ ทดสอบ/);
-  assert.match(bot.say('รุ่งเรืองซับ', { groupId: 'Cmain' }), /ชื่อที่ถูกคือ "ร้านรุ่งเรืองทรัพย์ \(1999\)"[\s\S]*ตัน: 30\.00/);
+  assert.match(bot.say('สมสัก', { groupId: 'Cmain' }), /^🔎 พิมพ์ว่า "สมสัก" — ชื่อที่ถูกคือ "สมศักดิ์ ทดสอบ" ค่ะ\n👤 สมศักดิ์ ทดสอบ/);
+  assert.match(bot.say('รุ่งเรืองซับ', { groupId: 'Cmain' }), /ชื่อที่ถูกคือ "ร้านรุ่งเรืองทรัพย์ \(1999\)"[\s\S]*ยอดเดือนนี้ · 30\.0 ตัน/);
   assert.match(bot.say('นวลจันฟาม', { groupId: 'Cmain' }), /ชื่อที่ถูกคือ "นวลจันทร์ฟาร์ม"/);
   // แชทปกติไม่ตอบ
   ['สวัสดี', 'รับทราบ', 'ประชุม', 'ราคาใหม่', 'ส่งของแล้ว'].forEach((t) => assert.strictEqual(bot.say(t, { groupId: 'Cmain' }), null, t));
   // "ยอด <ชื่อ>" ไม่พบ → บอกให้สะกดให้ถูก + ชื่อที่น่าจะใช่
-  assert.match(bot.say('ยอด นวลจัน', { groupId: 'Cmain' }), /👥 นวลจันทร์ฟาร์ม|ไม่พบชื่อ/);
+  assert.match(bot.say('ยอด นวลจัน', { groupId: 'Cmain' }), /🏪 นวลจันทร์ฟาร์ม|ไม่พบชื่อ/);
   const miss = bot.say('ยอด สมศัก ทดลอง', { groupId: 'Cmain' });
   assert.match(miss, /ไม่พบชื่อ "สมศัก ทดลอง" ค่ะ\nช่วยสะกดชื่อให้ถูกอีกครั้งนะคะ[\s\S]*• สมศักดิ์ ทดสอบ/);
   assert.match(bot.say('ยอด กขคงจ', { groupId: 'Cmain' }), /ไม่พบชื่อ "กขคงจ"[\s\S]*สะกดชื่อให้ถูก/);
@@ -1159,8 +1189,8 @@ test('พิมพ์ชื่อผิด: เดาให้ / บอกให
 test('กลุ่มอื่นที่มีน้องขุนศึก: ใช้คำสั่งทีมได้ แต่คำสั่งผู้ดูแล/ส่งไฟล์ไม่ได้; LOCK_GROUPS ปิดได้', () => {
   const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
   bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' });
-  assert.match(bot.say('ยอดขาย', { groupId: 'Cteam2' }), /ทำได้ 512\.72/);
-  assert.match(bot.say('F5', { groupId: 'Cteam2' }), /398\.58/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cteam2' }), /ทำได้ · 512\.7/);
+  assert.match(bot.say('F5', { groupId: 'Cteam2' }), /398\.6/);
   assert.match(bot.say('เมนู', { groupId: 'Cteam2' }), /คำสั่งน้องขุนศึก/);
   assert.ok(!/เฉพาะห้องสั่งการ/.test(bot.say('เมนู', { groupId: 'Cteam2' })));
   assert.strictEqual(bot.say('ประกาศ ทดสอบ', { groupId: 'Cteam2' }), null);
@@ -1183,7 +1213,7 @@ test('ชื่อเซลส์: ใช้ได้แม้ cache ราย�
   const cache = bot.ctx.CacheService.getScriptCache();
   cache.remove('sales_index_v1'); // จำลองเวอร์ชันเก่าที่ยังไม่มีรายชื่อเซลส์
   assert.ok(cache.get('cust_index_v1'));
-  assert.match(bot.say('วิภา', { groupId: 'Cteam2' }), /👤 วิภา ทดสอบ · F4/);
+  assert.match(bot.say('วิภา', { groupId: 'Cteam2' }), /👤 วิภา ทดสอบ\nเขต F4/);
 });
 
 test('เยี่ยม: ชื่อย่อที่พิมพ์ (ไม่มี ร้าน/(2006)/ฟาร์ม) จับคู่กับลูกค้าในไฟล์ยอด', () => {
@@ -1194,7 +1224,7 @@ test('เยี่ยม: ชื่อย่อที่พิมพ์ (ไม�
   bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
   assert.match(bot.say('เยี่ยม ทดสอบสว่าง ส่งของ', { groupId: 'Cmain' }), /📍 ทดสอบสว่าง \[F3\]/);
   const nv = bot.say('ไม่ได้เยี่ยม F3', { groupId: 'Cmain' });
-  assert.match(nv, /\(1 ราย\)[\s\S]*ทดสอบสองฟาร์ม/);
+  assert.match(nv, /\n1 ราย · [\s\S]*1 · ทดสอบสองฟาร์ม · 20\.0 · ยังไม่เคย/);
   assert.ok(!/ทดสอบสว่าง/.test(nv));
 });
 
@@ -1210,13 +1240,60 @@ test('ทบทวน: ไฟล์ลูกค้าไฟล์แรกไม
   assert.ok(!/เซลส์ ก — 420/.test(y), 'ยอดสะสมทั้งก้อนไม่ใช่ยอดเมื่อวาน');
   assert.ok(!/วันล่าสุด/.test(bot.say('เซลส์ ก', { groupId: 'Cmain' }) || ''));
   bot.setNow(D(2026, 11, 28, 9));
-  assert.match(bot.say('ยอดขาย', { groupId: 'Cmain' }), /⚠️ ยอดยังไม่อัปเดต — ข้อมูลล่าสุดถึง จ\. 23 พ\.ย\. \(5 วันก่อน\)/);
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmain' }), /⚠️ ยอดยังไม่อัปเดต — ข้อมูลล่าสุด 5 วันก่อน/);
   assert.match(bot.say('F9', { groupId: 'Cmain' }), /ไม่มีเขต F9 ค่ะ/);
   assert.match(bot.say('ลูกค้า F9', { groupId: 'Cmain' }), /ไม่มีเขต F9 ค่ะ/);
   assert.match(bot.say('F๕', { groupId: 'Cmain' }), /📊 F5/);
   assert.match(bot.sendFile('รายชื่อ.xlsx', [['ชื่อ', 'เบอร์'], ['ก', '1']], { groupId: 'Cmine' }), /ไม่ใช่ไฟล์ยอดขาย/);
   assert.match(bot.say('ประกาศ', { groupId: 'Cmine' }), /ตามด้วยข้อความ/);
   assert.strictEqual(bot.pushes().length, 0);
+});
+
+test('คำทั่วไปในแชท ไม่ทำให้บอทตอบ (คำสั่งงาน/นัดเลิกใช้แล้ว)', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
+  ['งาน', 'วันนี้', 'พรุ่งนี้', 'นัด', 'ประจำ', 'สัปดาห์นี้', 'เลื่อน', 'เสร็จ 1', 'เช็ค 1', '?', 'ai', 'สรุปวันนี้', 'สรุปสัปดาห์']
+    .forEach((t) => assert.strictEqual(bot.say(t, { groupId: 'Cmain' }), null, t));
+  assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /คำสั่งน้องขุนศึก/);
+});
+
+test('การ์ด (Flex): ผ่านตัวตรวจสเปก LINE · ถ้า LINE ไม่รับ ส่งเป็นข้อความธรรมดาแทนอัตโนมัติ', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' });
+  const n0 = bot.lineCalls.length;
+  bot.say('ยอดขาย', { groupId: 'Cmain' });
+  const sent = bot.lineCalls.slice(n0).filter((c) => c.url.endsWith('/reply'));
+  assert.strictEqual(sent.length, 1);
+  assert.deepStrictEqual(sent[0].body.messages.map((m) => m.type), ['flex', 'flex']);
+  assert.ok(sent[0].body.messages.every((m) => m.altText && m.altText.length <= 400));
+  // LINE ตอบ 400 → ส่งซ้ำเป็นข้อความธรรมดา (เนื้อหาเดียวกัน)
+  bot.setRejectFlex(true);
+  const n1 = bot.lineCalls.length;
+  const text = bot.say('ยอดขาย', { groupId: 'Cmain' });
+  const calls = bot.lineCalls.slice(n1).filter((c) => c.url.endsWith('/reply'));
+  assert.strictEqual(calls.length, 2, 'ส่งการ์ดก่อน แล้วส่งข้อความสำรอง');
+  assert.deepStrictEqual(calls[1].body.messages.map((m) => m.type), ['text', 'text']);
+  assert.match(calls[1].body.messages[0].text, /📊 ยอดขายสะสม · ทุกเขต[\s\S]*ทำได้ · 512\.7/);
+  assert.match(text, /ทำได้ · 512\.7/);
+  // push (ข้อความเช้า / ส่งยอด) ก็สำรองเหมือนกัน
+  bot.say('ส่งยอด', { groupId: 'Cmine' });
+  const pushes = bot.pushes();
+  assert.strictEqual(pushes.length, 2);
+  assert.strictEqual(pushes[1].body.messages[0].type, 'text');
+});
+
+test('วันหยุด (HOLIDAYS): ปี พ.ศ. 2 หลัก (69) / ค.ศ. / ไม่ใส่ปี นับถูก', () => {
+  const bot = createBot({ props: { HOLIDAYS: '5/12/69, 10/12/2026, 31/12' } });
+  const wd = bot.ctx.workingDays_(new Date(2026, 11, 31));
+  // ธ.ค. 2026 จ–ส = 27 วัน − 5/12 (ส.) − 10/12 (พฤ.) − 31/12 (พฤ.) = 24
+  assert.strictEqual(wd.total, 24);
+});
+
+test('สรุปสัปดาห์ (คำสั่งเดิม เปิดด้วย LEGACY_COMMANDS) ใช้กับยอดจากไฟล์ได้ ไม่ error', () => {
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x', LEGACY_COMMANDS: 'true' } });
+  bot.sendFile('data - 2026-11-24T053525.911.xlsx', zoneTable(398.58, 13838057.41), { groupId: 'Cmine' });
+  const r = bot.say('สรุปสัปดาห์', { groupId: 'Cmain' });
+  assert.ok(r && !/ขออภัย|error|undefined/i.test(r), r);
+  assert.match(r, /📊 ยอดถึง จ\. 23 พ\.ย\./);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

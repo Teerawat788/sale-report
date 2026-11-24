@@ -145,9 +145,11 @@ function readVisits_() {
 }
 
 function visitLine_(x) {
-  return '• ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' ' + x.type + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
-    '\n   👤 ' + x.sales + (x.note ? ' — ' + truncate_(x.note.replace(/\n+/g, ' '), 120) : '') +
-    (x.lat !== '' && x.lat !== undefined ? '\n   📍 ' + (x.place ? truncate_(x.place, 60) : 'แชร์ตำแหน่งแล้ว') : '');
+  const icon = x.type.indexOf('ติดตาม') === 0 ? '📞' : x.type.indexOf('เข้าพบ') === 0 ? '🤝' : '📍';
+  return icon + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
+    '\n   ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' · ' + x.type + ' · 👤 ' + x.sales +
+    (x.note ? '\n   🗒️ ' + truncate_(x.note.replace(/\n+/g, ' '), 140) : '') +
+    (x.lat !== '' && x.lat !== undefined ? '\n   📌 ' + (x.place ? truncate_(x.place, 60) : 'แชร์ตำแหน่งแล้ว') : '');
 }
 
 /** ดูเยี่ยม [คำค้น] — ไม่มีคำค้น = 7 วันล่าสุดสรุปรายคน; มีคำค้น = ลูกค้า/เซลส์/เขต ย้อน 90 วัน */
@@ -162,21 +164,25 @@ function formatVisits_(query, now) {
     const bySales = {};
     recent.forEach(function (x) { bySales[x.sales] = (bySales[x.sales] || 0) + 1; });
     const ranking = Object.keys(bySales).sort(function (a, b) { return bySales[b] - bySales[a]; })
-      .map(function (s) { return '• ' + s + ' ' + bySales[s] + ' ราย'; });
+      .map(function (s) { return '• ' + s + ' — ' + bySales[s] + ' ครั้ง'; });
     return '📍 เยี่ยม/เข้าพบ/ติดตามลูกค้า 7 วันล่าสุด (' + recent.length + ' ครั้ง)\n\n👤 รายคน\n' + ranking.join('\n') +
-      '\n\n🗒️ ล่าสุด\n' + recent.slice(0, 15).map(visitLine_).join('\n') +
-      (recent.length > 15 ? '\n…และอีก ' + (recent.length - 15) + ' ครั้ง' : '');
+      '\n\n🗒️ ล่าสุด\n\n' + recent.slice(0, 15).map(visitLine_).join('\n\n') +
+      (recent.length > 15 ? '\n\n…และอีก ' + (recent.length - 15) + ' ครั้ง' : '');
   }
   const since = addDays_(startOfDay_(now), -90);
   const zoneQ = /^(f|fish|เขต)\d$/.test(q) ? teamKey_(query).toUpperCase() : '';
   const hits = all.filter(function (x) {
     if (x.at < since) return false;
     if (zoneQ) return x.zone === zoneQ;
-    return normName_(x.customer).indexOf(q) >= 0 || normName_(x.sales).indexOf(q) >= 0;
+    if (normName_(x.customer).indexOf(q) >= 0 || normName_(x.sales).indexOf(q) >= 0) return true;
+    // พิมพ์ชื่อเต็ม "ร้านบุญสว่าง (2006)" แต่บันทึกไว้ว่า "บุญสว่าง" (หรือกลับกัน)
+    const a = visitKey_(x.customer);
+    const b = visitKey_(query);
+    return a.length >= 3 && b.length >= 3 && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0);
   }).sort(function (a, b) { return b.at - a.at; });
   if (!hits.length) return '📍 ไม่พบบันทึกเยี่ยมของ "' + query + '" ใน 90 วันค่ะ';
   return '📍 บันทึกเยี่ยม "' + query + '" (' + hits.length + ' ครั้ง ใน 90 วัน)\n\n' +
-    hits.slice(0, 20).map(visitLine_).join('\n') + (hits.length > 20 ? '\n…' : '');
+    hits.slice(0, 20).map(visitLine_).join('\n\n') + (hits.length > 20 ? '\n\n…และอีก ' + (hits.length - 20) + ' ครั้ง' : '');
 }
 
 /** ไม่ได้เยี่ยม [เขต] — ลูกค้าที่มียอดเดือนนี้ แต่ไม่ได้เยี่ยม 30 วันขึ้นไป */
@@ -184,6 +190,10 @@ function formatNotVisited_(zoneArg, now) {
   const snap = getSalesSnapshot_();
   if (snap.source !== 'sheet') return NO_SHEET_SALES_TEXT;
   const zone = zoneArg ? teamKey_(zoneArg).toUpperCase() : '';
+  if (zone && !snap.teams.some(function (t) { return t.name === zone; })) {
+    return /^F\d+$/.test(zone) ? 'ไม่มีเขต ' + zone + ' ค่ะ — มีเขต ' + snap.teams.map(function (t) { return t.name; }).join(', ') + ' นะคะ'
+      : 'พิมพ์ "ไม่ได้เยี่ยม" หรือ "ไม่ได้เยี่ยม F3" นะคะ';
+  }
   const last = {};
   readVisits_().forEach(function (x) {
     const k = visitKey_(x.customer);
@@ -195,16 +205,28 @@ function formatNotVisited_(zoneArg, now) {
     const c = cust[r.customer] || (cust[r.customer] = { name: r.customer, team: r.team, ton: 0 });
     c.ton += r.ton;
   });
+  if (!Object.keys(cust).length) return 'ยังไม่มีข้อมูลยอดรายลูกค้า' + (zone ? 'ของ ' + zone : '') + 'ค่ะ (ต้องใช้ไฟล์รายลูกค้า)';
   const cutoff = addDays_(startOfDay_(now), -30);
   const list = Object.keys(cust).map(function (k) { return cust[k]; })
-    .filter(function (c) { const lv = last[visitKey_(c.name)]; return !lv || lv < cutoff; })
+    .filter(function (c) { const lv = last[visitKey_(c.name)]; return c.ton > 1e-9 && (!lv || lv < cutoff); })
     .sort(function (a, b) { return b.ton - a.ton; });
-  if (!Object.keys(cust).length) return 'ยังไม่มีข้อมูลยอดรายลูกค้า' + (zone ? 'ของ ' + zone : '') + 'ค่ะ (ต้องใช้ไฟล์รายลูกค้า)';
   if (!list.length) return '✅ ลูกค้าที่มียอดเดือนนี้' + (zone ? 'ของ ' + zone : '') + ' ได้เยี่ยมครบใน 30 วันแล้วค่ะ';
-  return '📍 ลูกค้าที่ยังไม่ได้เยี่ยม 30 วันขึ้นไป' + (zone ? ' — ' + zone : '') + ' (' + list.length + ' ราย)\nเรียงตามยอดเดือนนี้\n\n' +
-    list.slice(0, 25).map(function (c, i) {
-      const lv = last[visitKey_(c.name)];
-      return (i + 1) + '. ' + c.name + '\n   ' + (zone ? '' : c.team + ' · ') + fmtNum_(c.ton) + ' ตัน' +
-        (lv ? ' · เยี่ยมล่าสุด ' + fmtDate_(lv) : '');
-    }).join('\n') + (list.length > 25 ? '\n\n…และอีก ' + (list.length - 25) + ' ราย' : '');
+  const SHOW = 30;
+  const cols = [{ label: '#', flex: 1, align: 'end' }, { label: 'ลูกค้า', flex: 8, wrap: true }];
+  if (!zone) cols.push({ label: 'เขต', flex: 2 });
+  cols.push({ label: 'ตัน', flex: 3, align: 'end' }, { label: 'เยี่ยมล่าสุด', flex: 4, align: 'end' });
+  const rows = list.slice(0, SHOW).map(function (c, i) {
+    const lv = last[visitKey_(c.name)];
+    const r = [String(i + 1), c.name];
+    if (!zone) r.push(c.team || '-');
+    r.push(fmtTon_(c.ton), lv ? fmtDate_(lv).replace(/^\S+ /, '') : { t: 'ยังไม่เคย', color: FX.red });
+    return r;
+  });
+  const title = '📍 ยังไม่ได้เยี่ยม 30 วัน' + (zone ? ' · ' + zone : '');
+  return fxMessage_(title + ' (' + list.length + ' ราย)', fxBubble_({
+    title: title,
+    lines: [list.length + ' ราย · เรียงตามยอดเดือนนี้ (ถึง ' + fmtDate_(snap.detailAsOf || snap.asOf) + ')'],
+    body: [fxTable_(cols, rows, { margin: 'none' })],
+    footer: (list.length > SHOW ? '…และอีก ' + (list.length - SHOW) + ' ราย · ' : '') + 'บันทึกเยี่ยม: พิมพ์ เยี่ยม <ลูกค้า> <รายละเอียด>',
+  }));
 }

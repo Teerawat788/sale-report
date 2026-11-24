@@ -123,7 +123,10 @@ function handleEvent_(ev) {
   }
 
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
-  const parsed = parseCommand_(stripped.text) || lookupCommand_(stripped.text);
+  let parsed = parseCommand_(stripped.text);
+  // คำสั่งงาน/นัด/งานประจำ (ฟีเจอร์เดิมที่เลิกใช้) — ปิดไว้ กันคำทั่วไป เช่น "งาน" "วันนี้" "นัด" ทำให้บอทตอบ
+  if (parsed && LEGACY_CMDS.indexOf(parsed.cmd) >= 0 && !flag_('LEGACY_COMMANDS', false)) parsed = null;
+  parsed = parsed || lookupCommand_(stripped.text);
   if (!parsed) {
     // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์อะไรก็ได้ (มี "ถาม" นำหน้าหรือไม่ก็ได้) → AI ตอบจากข้อมูลจริง
     const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
@@ -152,10 +155,21 @@ function handleEvent_(ev) {
   if (reply && parsed.guessedFrom) {
     // เดาชื่อจากที่พิมพ์ผิด → บอกชื่อที่ถูกไว้ด้านบน
     const note = '🔎 พิมพ์ว่า "' + parsed.guessedFrom + '" — ชื่อที่ถูกคือ "' + parsed.argText + '" ค่ะ';
-    reply = Array.isArray(reply) ? [note + '\n\n' + reply[0]].concat(reply.slice(1)) : note + '\n\n' + reply;
+    const list = Array.isArray(reply) ? reply.slice() : [reply];
+    if (typeof list[0] === 'string') list[0] = note + '\n\n' + list[0];
+    else list.unshift(note);
+    reply = list.slice(0, 5);
   }
   if (reply) lineReply_(ev.replyToken, reply);
 }
+
+/** คำสั่งผู้ดูแล: มีห้องสั่งการแล้ว → ใช้ได้เฉพาะห้องสั่งการ (และแชท 1:1) */
+function adminAllowed_(ctx) {
+  return !prop_('UPLOAD_GROUP_ID', '') || ctx.source.type === 'user' || isControlRoom_(ctx.source);
+}
+
+const LEGACY_CMDS = ['tasks', 'mytasks', 'addtask', 'done', 'deltask', 'movetask', 'today', 'tomorrow', 'week',
+  'addevent', 'weekly', 'addweekly', 'weeklydone', 'delweekly', 'review'];
 
 function runCommand_(p, ctx) {
   const now = ctx.now;
@@ -197,12 +211,13 @@ function runCommand_(p, ctx) {
     }
 
     case 'whoami':
+      if (!adminAllowed_(ctx)) return null;
       return 'chat: ' + chatId_(ctx.source) + '\nuser: ' + (ctx.source.userId || '-');
 
     case 'sales': {
       if (!p.argText) {
         const all = getSalesSnapshot_();
-        const ai = aiSalesComment_(all);
+        const ai = aiSalesComment_(all, true); // ใช้บทวิเคราะห์ที่มีอยู่แล้ว ไม่รอ AI
         return salesMessages_(all, null).concat(ai ? [ai] : []);
       }
       let snap;
@@ -299,8 +314,7 @@ function runCommand_(p, ctx) {
     }
 
     case 'importsales': {
-      // มีห้องสั่งการแล้ว → ใช้ได้เฉพาะห้องสั่งการ (และแชท 1:1)
-      if (prop_('UPLOAD_GROUP_ID', '') && ctx.source.type !== 'user' && !isControlRoom_(ctx.source)) return null;
+      if (!adminAllowed_(ctx)) return null;
       const asOf = p.args[0] ? parseDateToken_(p.args[0], now) : null;
       if (asOf && asOf > startOfDay_(now)) return 'วันที่ของข้อมูลต้องไม่เกินวันนี้นะคะ';
       const r = importSalesFromDrive_(true, asOf);
@@ -401,6 +415,7 @@ function runCommand_(p, ctx) {
     }
 
     case 'brief': {
+      if (!adminAllowed_(ctx)) return null; // ตัวอย่างข้อความเช้า (นำเข้าไฟล์ + เรียก AI — ช้า) ใช้ในห้องสั่งการ
       const msgs = buildMorningMessages_(now);
       if (msgs.length) return msgs;
       return flag_('BRIEF_ENABLED') || flag_('BIRTHDAY_ENABLED') ? 'ยังไม่มีข้อมูลยอดขายหรือวันเกิดสำหรับข้อความเช้าค่ะ' : 'ข้อความเช้าปิดอยู่ค่ะ';
@@ -475,6 +490,7 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '',
   '📤 ส่งไฟล์ Excel ยอดขายในห้องนี้',
   '• อัปเดตยอด 23/11 — แก้วันที่ของไฟล์ล่าสุด',
+  '• สรุปเช้า — ดูตัวอย่างข้อความเช้า',
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',

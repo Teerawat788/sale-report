@@ -39,15 +39,33 @@ function toMessages_(input) {
   return out.slice(0, 5);
 }
 
+/** การ์ด (Flex) → ข้อความธรรมดา (ใช้เมื่อ LINE ไม่รับการ์ด) */
+function flexFallback_(m) {
+  if (!m || m.type !== 'flex') return m;
+  const t = { type: 'text', text: truncate_(flexToText_(m.contents), LINE_TEXT_MAX) };
+  if (m.quickReply) t.quickReply = m.quickReply;
+  return t;
+}
+
+/** ส่ง แล้วถ้า LINE ไม่รับการ์ด (400) ส่งซ้ำเป็นข้อความธรรมดา — รายงานต้องถึงกลุ่มเสมอ */
+function lineSend_(path, body) {
+  const res = lineFetch_(path, 'post', body);
+  if (res.code === 400 && body.messages.some(function (m) { return m.type === 'flex'; })) {
+    console.error('LINE ไม่รับการ์ด → ส่งเป็นข้อความแทน: ' + res.body);
+    return lineFetch_(path, 'post', Object.assign({}, body, { messages: body.messages.map(flexFallback_) }));
+  }
+  return res;
+}
+
 /** ตอบกลับ (reply ไม่นับโควตาข้อความ) */
 function lineReply_(replyToken, messages) {
-  return lineFetch_('/message/reply', 'post', { replyToken: replyToken, messages: toMessages_(messages) });
+  return lineSend_('/message/reply', { replyToken: replyToken, messages: toMessages_(messages) });
 }
 
 /** ส่งหาแบบ push (นับโควตาข้อความของ LINE OA ตามจำนวนสมาชิกในกลุ่ม) */
 function linePush_(to, messages) {
   if (!to) { console.warn('ไม่มีปลายทาง push — พิมพ์ "ลงทะเบียน" ในกลุ่มก่อน'); return null; }
-  return lineFetch_('/message/push', 'post', { to: to, messages: toMessages_(messages) });
+  return lineSend_('/message/push', { to: to, messages: toMessages_(messages) });
 }
 
 /** ไฟล์ที่ส่งในแชท (ดาวน์โหลดได้ภายในเวลาจำกัดหลังส่ง) */
