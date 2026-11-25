@@ -1332,14 +1332,14 @@ test('ไฟล์รายงานเยี่ยม: ส่งบันทึ
   assert.match(bot.mails[0].subject, /^NKS-VISIT - ร้านทดลอง 2$/);
   assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: '-', customer: 'ร้านทดลอง 2',
     activity: 'ติดตาม (ลูกค้าใหม่)', detail: 'สนใจอาหารปลา / นัดสัปดาห์หน้า', reporter: 'ผู้ทดสอบ' });
-  assert.match(bot.say('ลิงก์รายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกเยี่ยม[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
-  assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /ไฟล์รายงาน/);
+  assert.match(bot.say('ดูรายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกเยี่ยม[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
+  assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /ดูรายงาน/);
 });
 
 test('วิธีบันทึก: บอทอธิบายในกลุ่ม / ห้องสั่งการส่งเข้ากลุ่มหลัก', () => {
   const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
   const t = bot.say('วิธีบันทึก', { groupId: 'Cmain' });
-  assert.match(t, /📍 วิธีบันทึกเยี่ยม[\s\S]*เยี่ยม กบทองฟาร์ม[\s\S]*ไฟล์รายงาน/);
+  assert.match(t, /📍 วิธีบันทึกเยี่ยม[\s\S]*เยี่ยม กบทองฟาร์ม[\s\S]*ดูรายงาน/);
   assert.strictEqual(bot.say('วิธีบันทึก', { groupId: 'Cmain' }), t);
   assert.strictEqual(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmain' }), null);
   assert.match(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmine' }), /ส่งวิธีบันทึกเยี่ยมเข้ากลุ่มหลักแล้ว/);
