@@ -182,7 +182,7 @@ const COMMANDS = {
   notvisited: ['ยังไม่ได้เข้าพบ', 'ไม่ได้เข้าพบ', 'ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   visithelp: ['วิธีบันทึก', 'วิธีบันทึกการเข้าพบ', 'วิธีบันทึกเยี่ยม', 'สอนบันทึก', 'บันทึกยังไง'],
   sendvisithelp: ['ส่งวิธีบันทึก'],
-  formlinks: ['แบบฟอร์ม', 'ฟอร์ม', 'ลิงก์ฟอร์ม', 'กรอกผลการเลี้ยง', 'ไฟล์กรอกข้อมูล'],
+  formlinks: ['แบบฟอร์ม', 'ฟอร์ม', 'ลิงก์ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
   sendformlinks: ['ส่งแบบฟอร์ม'],
   reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
@@ -4149,21 +4149,30 @@ function formLinks_() {
   }).filter(function (x) { return x && x.label; });
 }
 
-/** การ์ดปุ่มเปิดแบบฟอร์ม (คำสั่ง "แบบฟอร์ม") */
-function formLinksCard_() {
+/** พิมพ์ชื่อฟอร์ม เช่น "ข้อมูลลูกปลา" / "ผลการเลี้ยง" → ฟอร์มนั้นฟอร์มเดียว (null = ไม่ตรงชื่อไหน) */
+function findFormByName_(text) {
+  const q = normName_(text);
+  if (Array.from(q).length < 4) return null;
   const forms = formLinks_();
+  return forms.find(function (f) { return normName_(f.label) === q; }) ||
+    forms.find(function (f) { return normName_(f.label).indexOf(q) === 0 || q.indexOf(normName_(f.label)) === 0; }) || null;
+}
+
+/** การ์ดปุ่มเปิดแบบฟอร์ม (คำสั่ง "แบบฟอร์ม") — only = ฟอร์มเดียว */
+function formLinksCard_(only) {
+  const forms = only ? [only] : formLinks_();
   if (!forms.length) return 'ยังไม่ได้ตั้งลิงก์แบบฟอร์มค่ะ (ผู้ดูแลใส่ FORM_LINKS ใน Script Properties)';
   const body = [];
   forms.forEach(function (f, i) {
     if (i) body.push(fxSep_('md'));
-    const block = [fxText_((i + 1) + '. ' + f.label, { size: 'sm', weight: 'bold', color: FX.text, wrap: true })];
+    const block = [fxText_((only ? '' : (i + 1) + '. ') + f.label, { size: 'sm', weight: 'bold', color: FX.text, wrap: true })];
     if (f.note) block.push(fxText_(f.note, { size: 'xs', color: FX.sub, wrap: true }));
     block.push({ type: 'button', style: 'primary', height: 'sm', color: FX.band, margin: 'sm',
       action: { type: 'uri', label: 'เปิดไฟล์', uri: f.url } });
     body.push(fxBox_('vertical', block, { margin: i ? 'md' : 'none' }));
   });
-  return fxMessage_('📝 แบบฟอร์มกรอกข้อมูล ทีมปลา (' + forms.length + ' ไฟล์)', fxBubble_({
-    title: '📝 แบบฟอร์มกรอกข้อมูล',
+  return fxMessage_('📝 ' + (only ? only.label : 'แบบฟอร์มกรอกข้อมูล ทีมปลา (' + forms.length + ' ไฟล์)'), fxBubble_({
+    title: '📝 ' + (only ? only.label : 'แบบฟอร์มกรอกข้อมูล'),
     lines: ['ทีมปลา TFM · กรอกได้ทุกคน · ไฟล์อยู่บน OneDrive บริษัท'],
     body: body,
     footer: 'กด "เปิดไฟล์" แล้วล็อกอินบัญชี thaiunion · กรอกในไฟล์เดิม ไม่ต้องดาวน์โหลด',
@@ -4502,6 +4511,10 @@ function handleEvent_(ev) {
     const r = setVisitZone_({ userId: source.userId || '', name: lineDisplayName_(source) }, 'F' + zoneAns[1], now_());
     if (r) { lineReply_(ev.replyToken, r); return; }
   }
+
+  // พิมพ์ชื่อแบบฟอร์ม เช่น "ข้อมูลลูกปลา" / "ผลการเลี้ยง" → ปุ่มเปิดไฟล์นั้น
+  const form = !blocked && findFormByName_(stripped.text);
+  if (form) { lineReply_(ev.replyToken, formLinksCard_(form)); return; }
 
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
   let parsed = parseCommand_(stripped.text);
@@ -4883,7 +4896,10 @@ const HELP_TEXT = [
   '• วิธีบันทึก — อธิบายวิธีพิมพ์แบบละเอียด',
   '• ดูรายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
-  '📝 แบบฟอร์ม — ลิงก์ไฟล์กรอกผลการเลี้ยง / ลูกปลา / ราคาปลา',
+  '📝 แบบฟอร์มกรอกข้อมูล',
+  '• ข้อมูลลูกปลา — ไฟล์กรอกการลงลูกปลา',
+  '• ผลการเลี้ยง — ไฟล์กรอกผลการเลี้ยงปลา',
+  '• แบบฟอร์ม — ทั้ง 2 ไฟล์',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');

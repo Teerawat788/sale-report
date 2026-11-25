@@ -1392,4 +1392,17 @@ test('แบบฟอร์ม: การ์ดปุ่มเปิดไฟล
   assert.strictEqual(bot.pushes()[0].body.messages[0].type, 'flex');
 });
 
+test('แบบฟอร์ม: พิมพ์ชื่อฟอร์ม (ข้อมูลลูกปลา / ผลการเลี้ยง) ได้ปุ่มเฉพาะไฟล์นั้น', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine',
+    FORM_LINKS: 'ข้อมูลลูกปลา | ปี 2026 ทุกเขต | https://x.sharepoint.com/1.xlsx ;; ผลการเลี้ยงปลา | ทุกเขต | https://x.sharepoint.com/2.xlsx' } });
+  const a = bot.say('ข้อมูลลูกปลา', { groupId: 'Cmain' });
+  assert.match(a, /📝 ข้อมูลลูกปลา[\s\S]*https:\/\/x\.sharepoint\.com\/1\.xlsx/);
+  assert.doesNotMatch(a, /2\.xlsx/);
+  const b = bot.say('ผลการเลี้ยง', { groupId: 'Cmain' });
+  assert.match(b, /📝 ผลการเลี้ยงปลา[\s\S]*2\.xlsx/);
+  assert.doesNotMatch(b, /1\.xlsx/);
+  assert.match(bot.say('แบบฟอร์ม', { groupId: 'Cmain' }), /1\. ข้อมูลลูกปลา[\s\S]*2\. ผลการเลี้ยงปลา/);
+  assert.strictEqual(bot.say('ผลการเลี้ยงดีมาก', { groupId: 'Cmain' }), null);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
