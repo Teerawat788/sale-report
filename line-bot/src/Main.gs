@@ -193,7 +193,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน', 'แบบฟอร์ม']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -284,6 +284,16 @@ function runCommand_(p, ctx) {
 
     case 'visithelp':
       return VISIT_HELP_TEXT;
+
+    case 'formlinks':
+      return formLinksCard_();
+
+    case 'sendformlinks': {
+      if (!isControlRoom_(ctx.source)) return null;
+      const card = formLinksCard_();
+      if (typeof card === 'string') return card;
+      return sendToMainGroup_([card], 'แบบฟอร์มกรอกข้อมูล');
+    }
 
     case 'sendvisithelp':
       if (!isControlRoom_(ctx.source)) return null;
@@ -507,6 +517,8 @@ const HELP_TEXT = [
   '• วิธีบันทึก — อธิบายวิธีพิมพ์แบบละเอียด',
   '• ดูรายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
+  '📝 แบบฟอร์ม — ลิงก์ไฟล์กรอกผลการเลี้ยง / ลูกปลา / ราคาปลา',
+  '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');
 
@@ -522,7 +534,7 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',
-  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก',
+  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก · ส่งแบบฟอร์ม',
   '',
   '🗓️ แผนงานประจำ',
   '• แผน — ดูแผน · แผน <รายการ> — ตั้งแผน',

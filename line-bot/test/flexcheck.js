@@ -11,6 +11,7 @@ const KEYS = {
   text: ['type', 'text', 'flex', 'margin', 'size', 'align', 'gravity', 'wrap', 'lineSpacing', 'maxLines', 'weight', 'color',
     'style', 'decoration', 'action', 'adjustMode', 'scaling'],
   separator: ['type', 'margin', 'color'],
+  button: ['type', 'action', 'flex', 'margin', 'height', 'style', 'color', 'gravity', 'adjustMode', 'scaling'],
 };
 
 function fail(path, msg) { throw new Error('Flex ไม่ถูกต้องที่ ' + path + ': ' + msg); }
@@ -48,6 +49,18 @@ function checkComponent(node, path, parentLayout) {
     if (node.color !== undefined && !COLOR.test(node.color)) fail(path, 'color = ' + node.color);
     if (node.wrap !== undefined && typeof node.wrap !== 'boolean') fail(path, 'wrap ต้องเป็น boolean');
     if (node.flex !== undefined && !(Number.isInteger(node.flex) && node.flex >= 0)) fail(path, 'flex ต้องเป็นจำนวนเต็ม ≥ 0');
+    return;
+  }
+  if (node.type === 'button') {
+    checkKeys(node, 'button', path);
+    const a = node.action || {};
+    if (a.type !== 'uri' || !/^https:\/\//.test(a.uri || '') || a.uri.length > 1000) fail(path, 'button ต้องมี action uri https ≤1000');
+    if (!a.label || a.label.length > 20) fail(path, 'label ปุ่ม 1–20 ตัวอักษร');
+    if (/\s/.test(a.uri)) fail(path, 'uri มีช่องว่าง (ต้อง encode)');
+    if (node.style !== undefined && ['primary', 'secondary', 'link'].indexOf(node.style) < 0) fail(path, 'style');
+    if (node.height !== undefined && ['sm', 'md'].indexOf(node.height) < 0) fail(path, 'height');
+    if (node.color !== undefined && !COLOR.test(node.color)) fail(path, 'color');
+    if (node.margin !== undefined && !SPACING.test(node.margin)) fail(path, 'margin');
     return;
   }
   if (node.type === 'separator') {

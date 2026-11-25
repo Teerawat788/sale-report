@@ -21,6 +21,7 @@
  *  LEGACY_COMMANDS            (ไม่บังคับ) true = เปิดคำสั่งงาน/นัด/งานประจำแบบเดิม (ค่าเริ่มต้นปิด กันคำทั่วไปทำให้บอทตอบ)
  *  REPORT_LINK                (ไม่บังคับ) ลิงก์แชร์ไฟล์ Excel รวมบันทึกเยี่ยมบน OneDrive (คำสั่ง "ไฟล์รายงาน")
  *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกเยี่ยมทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
+ *  FORM_LINKS                 (ไม่บังคับ) ลิงก์แบบฟอร์มกรอกข้อมูล บรรทัดละ 1 ไฟล์: ชื่อ | รายละเอียด | https://... (คำสั่ง "แบบฟอร์ม")
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
  *  GEMINI_API_KEY             (ไม่บังคับ) เปิด AI ด้วย Google Gemini (aistudio.google.com) / GEMINI_MODEL
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิด AI ด้วย Claude / AI_PROVIDER = gemini | claude

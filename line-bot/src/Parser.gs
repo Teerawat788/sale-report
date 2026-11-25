@@ -32,6 +32,8 @@ const COMMANDS = {
   notvisited: ['ยังไม่ได้เข้าพบ', 'ไม่ได้เข้าพบ', 'ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   visithelp: ['วิธีบันทึก', 'วิธีบันทึกการเข้าพบ', 'วิธีบันทึกเยี่ยม', 'สอนบันทึก', 'บันทึกยังไง'],
   sendvisithelp: ['ส่งวิธีบันทึก'],
+  formlinks: ['แบบฟอร์ม', 'ฟอร์ม', 'ลิงก์ฟอร์ม', 'กรอกผลการเลี้ยง', 'ไฟล์กรอกข้อมูล'],
+  sendformlinks: ['ส่งแบบฟอร์ม'],
   reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
@@ -39,7 +41,7 @@ const COMMANDS = {
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 

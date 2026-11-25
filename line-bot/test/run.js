@@ -1377,4 +1377,19 @@ test('เขตของบันทึกเข้าพบ: พิมพ์ร
   assert.match(bot.say('วิธีบันทึก', { groupId: 'Cmain' }), /ต้องใส่เขตไหม\?[\s\S]*เข้าพบ F3 ร้านกุ้งทอง/);
 });
 
+test('แบบฟอร์ม: การ์ดปุ่มเปิดไฟล์ OneDrive จาก FORM_LINKS (ลิงก์ภาษาไทย/ช่องว่างถูก encode) + ส่งจากห้องสั่งการ', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
+  assert.match(bot.say('แบบฟอร์ม', { groupId: 'Cmain' }), /ยังไม่ได้ตั้งลิงก์แบบฟอร์ม/);
+  bot.props.FORM_LINKS = 'ผลการเลี้ยงปลา | กรอกได้ทุกคน | https://x.sharepoint.com/Documents/ไฟล์ ทดสอบ/2.ผลการเลี้ยง (ทุกคน).xlsx ;; ราคาปลารายสัปดาห์ | https://x.sharepoint.com/a.xlsx\nบรรทัดผิด';
+  const n0 = bot.lineCalls.length;
+  const t = bot.say('แบบฟอร์ม', { groupId: 'Cother' });
+  const msg = bot.lineCalls.slice(n0).find((c) => c.url.endsWith('/reply')).body.messages[0];
+  assert.strictEqual(msg.type, 'flex');
+  assert.match(t, /📝 แบบฟอร์มกรอกข้อมูล[\s\S]*1\. ผลการเลี้ยงปลา\nกรอกได้ทุกคน\n▸ เปิดไฟล์\nhttps:\/\/x\.sharepoint\.com\/Documents\/%E0[^\s]*%20[^\s]*xlsx[\s\S]*2\. ราคาปลารายสัปดาห์/);
+  assert.doesNotMatch(t, /บรรทัดผิด/);
+  assert.strictEqual(bot.say('ส่งแบบฟอร์ม', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('ส่งแบบฟอร์ม', { groupId: 'Cmine' }), /ส่งแบบฟอร์มกรอกข้อมูลเข้ากลุ่มหลักแล้ว/);
+  assert.strictEqual(bot.pushes()[0].body.messages[0].type, 'flex');
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

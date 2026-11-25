@@ -157,6 +157,7 @@ function flexToText_(node) {
       .filter(Boolean).join('\n\n');
   }
   if (node.type === 'text') return node.text || '';
+  if (node.type === 'button') return node.action ? '▸ ' + node.action.label + '\n' + node.action.uri : '';
   if (node.type !== 'box') return '';
   if (node.layout === 'vertical') {
     const out = [];

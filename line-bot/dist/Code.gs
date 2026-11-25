@@ -24,6 +24,7 @@
  *  LEGACY_COMMANDS            (ไม่บังคับ) true = เปิดคำสั่งงาน/นัด/งานประจำแบบเดิม (ค่าเริ่มต้นปิด กันคำทั่วไปทำให้บอทตอบ)
  *  REPORT_LINK                (ไม่บังคับ) ลิงก์แชร์ไฟล์ Excel รวมบันทึกเยี่ยมบน OneDrive (คำสั่ง "ไฟล์รายงาน")
  *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกเยี่ยมทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
+ *  FORM_LINKS                 (ไม่บังคับ) ลิงก์แบบฟอร์มกรอกข้อมูล บรรทัดละ 1 ไฟล์: ชื่อ | รายละเอียด | https://... (คำสั่ง "แบบฟอร์ม")
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
  *  GEMINI_API_KEY             (ไม่บังคับ) เปิด AI ด้วย Google Gemini (aistudio.google.com) / GEMINI_MODEL
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิด AI ด้วย Claude / AI_PROVIDER = gemini | claude
@@ -181,6 +182,8 @@ const COMMANDS = {
   notvisited: ['ยังไม่ได้เข้าพบ', 'ไม่ได้เข้าพบ', 'ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   visithelp: ['วิธีบันทึก', 'วิธีบันทึกการเข้าพบ', 'วิธีบันทึกเยี่ยม', 'สอนบันทึก', 'บันทึกยังไง'],
   sendvisithelp: ['ส่งวิธีบันทึก'],
+  formlinks: ['แบบฟอร์ม', 'ฟอร์ม', 'ลิงก์ฟอร์ม', 'กรอกผลการเลี้ยง', 'ไฟล์กรอกข้อมูล'],
+  sendformlinks: ['ส่งแบบฟอร์ม'],
   reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
@@ -188,7 +191,7 @@ const COMMANDS = {
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 
@@ -669,6 +672,7 @@ function flexToText_(node) {
       .filter(Boolean).join('\n\n');
   }
   if (node.type === 'text') return node.text || '';
+  if (node.type === 'button') return node.action ? '▸ ' + node.action.label + '\n' + node.action.uri : '';
   if (node.type !== 'box') return '';
   if (node.layout === 'vertical') {
     const out = [];
@@ -4132,6 +4136,40 @@ function formatNotVisited_(zoneArg, now) {
   }));
 }
 
+// ---------------------------------------------------------------- แบบฟอร์มกรอกข้อมูล (ลิงก์ OneDrive)
+
+/** Script Property FORM_LINKS: ฟอร์มละ "ชื่อ | รายละเอียด | ลิงก์" คั่นแต่ละฟอร์มด้วย ;; หรือขึ้นบรรทัดใหม่ (รายละเอียดเว้นได้) */
+function formLinks_() {
+  return String(prop_('FORM_LINKS', '')).split(/\r?\n|;;/).map(function (line) {
+    const p = line.split('|').map(function (x) { return x.trim(); });
+    if (p.length < 2) return null;
+    const url = p[p.length - 1];
+    if (!/^https:\/\//.test(url)) return null;
+    return { label: p[0], note: p.length > 2 ? p.slice(1, -1).join(' ') : '', url: encodeURI(decodeURI(url)) };
+  }).filter(function (x) { return x && x.label; });
+}
+
+/** การ์ดปุ่มเปิดแบบฟอร์ม (คำสั่ง "แบบฟอร์ม") */
+function formLinksCard_() {
+  const forms = formLinks_();
+  if (!forms.length) return 'ยังไม่ได้ตั้งลิงก์แบบฟอร์มค่ะ (ผู้ดูแลใส่ FORM_LINKS ใน Script Properties)';
+  const body = [];
+  forms.forEach(function (f, i) {
+    if (i) body.push(fxSep_('md'));
+    const block = [fxText_((i + 1) + '. ' + f.label, { size: 'sm', weight: 'bold', color: FX.text, wrap: true })];
+    if (f.note) block.push(fxText_(f.note, { size: 'xs', color: FX.sub, wrap: true }));
+    block.push({ type: 'button', style: 'primary', height: 'sm', color: FX.band, margin: 'sm',
+      action: { type: 'uri', label: 'เปิดไฟล์', uri: f.url } });
+    body.push(fxBox_('vertical', block, { margin: i ? 'md' : 'none' }));
+  });
+  return fxMessage_('📝 แบบฟอร์มกรอกข้อมูล ทีมปลา (' + forms.length + ' ไฟล์)', fxBubble_({
+    title: '📝 แบบฟอร์มกรอกข้อมูล',
+    lines: ['ทีมปลา TFM · กรอกได้ทุกคน · ไฟล์อยู่บน OneDrive บริษัท'],
+    body: body,
+    footer: 'กด "เปิดไฟล์" แล้วล็อกอินบัญชี thaiunion · กรอกในไฟล์เดิม ไม่ต้องดาวน์โหลด',
+  }));
+}
+
 // ---------- Schedule.gs ----------
 /**
  * งานตั้งเวลา
@@ -4521,7 +4559,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน', 'แบบฟอร์ม']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -4612,6 +4650,16 @@ function runCommand_(p, ctx) {
 
     case 'visithelp':
       return VISIT_HELP_TEXT;
+
+    case 'formlinks':
+      return formLinksCard_();
+
+    case 'sendformlinks': {
+      if (!isControlRoom_(ctx.source)) return null;
+      const card = formLinksCard_();
+      if (typeof card === 'string') return card;
+      return sendToMainGroup_([card], 'แบบฟอร์มกรอกข้อมูล');
+    }
 
     case 'sendvisithelp':
       if (!isControlRoom_(ctx.source)) return null;
@@ -4835,6 +4883,8 @@ const HELP_TEXT = [
   '• วิธีบันทึก — อธิบายวิธีพิมพ์แบบละเอียด',
   '• ดูรายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
+  '📝 แบบฟอร์ม — ลิงก์ไฟล์กรอกผลการเลี้ยง / ลูกปลา / ราคาปลา',
+  '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');
 
@@ -4850,7 +4900,7 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',
-  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก',
+  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก · ส่งแบบฟอร์ม',
   '',
   '🗓️ แผนงานประจำ',
   '• แผน — ดูแผน · แผน <รายการ> — ตั้งแผน',

@@ -374,3 +374,37 @@ function formatNotVisited_(zoneArg, now) {
     footer: (list.length > SHOW ? '…และอีก ' + (list.length - SHOW) + ' ราย · ' : '') + 'บันทึก: พิมพ์ เข้าพบ <ลูกค้า> <รายละเอียด>',
   }));
 }
+
+// ---------------------------------------------------------------- แบบฟอร์มกรอกข้อมูล (ลิงก์ OneDrive)
+
+/** Script Property FORM_LINKS: ฟอร์มละ "ชื่อ | รายละเอียด | ลิงก์" คั่นแต่ละฟอร์มด้วย ;; หรือขึ้นบรรทัดใหม่ (รายละเอียดเว้นได้) */
+function formLinks_() {
+  return String(prop_('FORM_LINKS', '')).split(/\r?\n|;;/).map(function (line) {
+    const p = line.split('|').map(function (x) { return x.trim(); });
+    if (p.length < 2) return null;
+    const url = p[p.length - 1];
+    if (!/^https:\/\//.test(url)) return null;
+    return { label: p[0], note: p.length > 2 ? p.slice(1, -1).join(' ') : '', url: encodeURI(decodeURI(url)) };
+  }).filter(function (x) { return x && x.label; });
+}
+
+/** การ์ดปุ่มเปิดแบบฟอร์ม (คำสั่ง "แบบฟอร์ม") */
+function formLinksCard_() {
+  const forms = formLinks_();
+  if (!forms.length) return 'ยังไม่ได้ตั้งลิงก์แบบฟอร์มค่ะ (ผู้ดูแลใส่ FORM_LINKS ใน Script Properties)';
+  const body = [];
+  forms.forEach(function (f, i) {
+    if (i) body.push(fxSep_('md'));
+    const block = [fxText_((i + 1) + '. ' + f.label, { size: 'sm', weight: 'bold', color: FX.text, wrap: true })];
+    if (f.note) block.push(fxText_(f.note, { size: 'xs', color: FX.sub, wrap: true }));
+    block.push({ type: 'button', style: 'primary', height: 'sm', color: FX.band, margin: 'sm',
+      action: { type: 'uri', label: 'เปิดไฟล์', uri: f.url } });
+    body.push(fxBox_('vertical', block, { margin: i ? 'md' : 'none' }));
+  });
+  return fxMessage_('📝 แบบฟอร์มกรอกข้อมูล ทีมปลา (' + forms.length + ' ไฟล์)', fxBubble_({
+    title: '📝 แบบฟอร์มกรอกข้อมูล',
+    lines: ['ทีมปลา TFM · กรอกได้ทุกคน · ไฟล์อยู่บน OneDrive บริษัท'],
+    body: body,
+    footer: 'กด "เปิดไฟล์" แล้วล็อกอินบัญชี thaiunion · กรอกในไฟล์เดิม ไม่ต้องดาวน์โหลด',
+  }));
+}
