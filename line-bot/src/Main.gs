@@ -264,6 +264,9 @@ function runCommand_(p, ctx) {
     case 'visits':
       return formatVisits_(p.argText, now);
 
+    case 'reportlink':
+      return reportLinkText_();
+
     case 'notvisited':
       return formatNotVisited_(p.argText, now);
 
@@ -479,6 +482,7 @@ const HELP_TEXT = [
   '  เช่น เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่',
   '  (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูเยี่ยม · ดูเยี่ยม F4 · ไม่ได้เยี่ยม F4',
+  '• ไฟล์รายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');

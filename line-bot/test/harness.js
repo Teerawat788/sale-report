@@ -65,6 +65,7 @@ function createBot(opts = {}) {
     getSheets: () => Object.values(sheets),
   };
   const aiCalls = [];
+  const mails = [];
   const geminiCalls = [];
   const geminiListCalls = [];
   let geminiModels = opts.geminiModels || [];
@@ -132,6 +133,7 @@ const folderObj = () => ctx.DriveApp._folder();
       createFolder: (n) => Object.assign(folderObj(), { getId: () => 'folder_' + n }),
     },
     CalendarApp: { getDefaultCalendar: () => calendar, getCalendarById: () => calendar },
+    MailApp: { sendEmail: (to, subject, body) => mails.push({ to, subject, body }) },
     ContentService: {
       createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }),
       MimeType: { JSON: 'json' },
@@ -207,7 +209,7 @@ const folderObj = () => ctx.DriveApp._folder();
   const msgText = (m) => (m.type === 'flex' ? ctx.flexToText_(m.contents) : m.text);
 
   return {
-    ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls, msgText,
+    ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls, msgText, mails,
     setRejectFlex(v) { rejectFlex = v; },
     /** ข้อความของ push แต่ละครั้ง (การ์ดแปลงเป็นข้อความ) */
     pushTexts() { return lineCalls.filter((c) => c.url.endsWith('/message/push')).map((c) => c.body.messages.map(msgText).join('\n')); },

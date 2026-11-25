@@ -111,7 +111,40 @@ function logVisit_(sender, visit, now) {
   withLock_(function () {
     sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '', visit.type || 'เยี่ยม']);
   });
+  forwardVisit_(sender, visit, zone, now);
   return zone;
+}
+
+/**
+ * ส่งบันทึกเยี่ยมไปที่อีเมล VISIT_EMAIL (ถ้าตั้งไว้) — Power Automate รับอีเมลแล้วเพิ่มแถวในไฟล์ Excel บน OneDrive
+ * เนื้อหาอีเมลเป็น JSON 1 บรรทัด: date, time, zone, customer, activity, detail, reporter
+ */
+function forwardVisit_(sender, visit, zone, now) {
+  const to = prop_('VISIT_EMAIL', '');
+  if (!to) return false;
+  const rec = {
+    date: pad2_(now.getDate()) + '/' + pad2_(now.getMonth() + 1) + '/' + now.getFullYear(),
+    time: fmtTime_(now),
+    zone: zone || '-',
+    customer: visit.customer,
+    activity: visit.type || 'เยี่ยม',
+    detail: String(visit.note || '').replace(/\s*\n+\s*/g, ' / '),
+    reporter: sender.name,
+  };
+  try {
+    MailApp.sendEmail(to, 'NKS-VISIT ' + rec.zone + ' ' + rec.customer, JSON.stringify(rec));
+    return true;
+  } catch (e) {
+    console.error('ส่งบันทึกเยี่ยมไปอีเมลไม่สำเร็จ: ' + (e && e.message || e));
+    return false;
+  }
+}
+
+/** ลิงก์ไฟล์รวมรายงานเยี่ยม (OneDrive) — ตั้งที่ Script Property REPORT_LINK */
+function reportLinkText_() {
+  const link = prop_('REPORT_LINK', '');
+  if (!link) return 'ยังไม่ได้ตั้งลิงก์ไฟล์รายงานค่ะ (ผู้ดูแลใส่ REPORT_LINK ใน Script Properties)';
+  return '📂 ไฟล์รวมบันทึกเยี่ยม / ติดตาม / เข้าพบลูกค้า\nแยกชีทรายเขต F1–F5 + รวมทุกเขต (อัปเดตอัตโนมัติ)\n\n' + link;
 }
 
 /** แชร์ตำแหน่ง → แนบกับรายการเยี่ยมล่าสุดของคนนั้น (ภายใน 30 นาที) */

@@ -30,13 +30,14 @@ const COMMANDS = {
   sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
   visits: ['ดูเยี่ยม', 'ประวัติเยี่ยม', 'ดูติดตาม', 'ดูเข้าพบ', 'ประวัติติดตาม'],
   notvisited: ['ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
+  reportlink: ['ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 

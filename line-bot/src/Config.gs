@@ -19,6 +19,8 @@
  *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
  *  AI_ANALYSIS                (ไม่บังคับ) true = แนบบทวิเคราะห์ AI ท้ายรายงานยอด + คำสั่ง "วิเคราะห์" (ค่าเริ่มต้นปิด)
  *  LEGACY_COMMANDS            (ไม่บังคับ) true = เปิดคำสั่งงาน/นัด/งานประจำแบบเดิม (ค่าเริ่มต้นปิด กันคำทั่วไปทำให้บอทตอบ)
+ *  REPORT_LINK                (ไม่บังคับ) ลิงก์แชร์ไฟล์ Excel รวมบันทึกเยี่ยมบน OneDrive (คำสั่ง "ไฟล์รายงาน")
+ *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกเยี่ยมทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
  *  GEMINI_API_KEY             (ไม่บังคับ) เปิด AI ด้วย Google Gemini (aistudio.google.com) / GEMINI_MODEL
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิด AI ด้วย Claude / AI_PROVIDER = gemini | claude

@@ -22,6 +22,8 @@
  *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
  *  AI_ANALYSIS                (ไม่บังคับ) true = แนบบทวิเคราะห์ AI ท้ายรายงานยอด + คำสั่ง "วิเคราะห์" (ค่าเริ่มต้นปิด)
  *  LEGACY_COMMANDS            (ไม่บังคับ) true = เปิดคำสั่งงาน/นัด/งานประจำแบบเดิม (ค่าเริ่มต้นปิด กันคำทั่วไปทำให้บอทตอบ)
+ *  REPORT_LINK                (ไม่บังคับ) ลิงก์แชร์ไฟล์ Excel รวมบันทึกเยี่ยมบน OneDrive (คำสั่ง "ไฟล์รายงาน")
+ *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกเยี่ยมทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
  *  GEMINI_API_KEY             (ไม่บังคับ) เปิด AI ด้วย Google Gemini (aistudio.google.com) / GEMINI_MODEL
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิด AI ด้วย Claude / AI_PROVIDER = gemini | claude
@@ -177,13 +179,14 @@ const COMMANDS = {
   sendsales: ['ส่งยอด', 'ส่งยอดขาย'],
   visits: ['ดูเยี่ยม', 'ประวัติเยี่ยม', 'ดูติดตาม', 'ดูเข้าพบ', 'ประวัติติดตาม'],
   notvisited: ['ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
+  reportlink: ['ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 
@@ -3863,7 +3866,40 @@ function logVisit_(sender, visit, now) {
   withLock_(function () {
     sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '', visit.type || 'เยี่ยม']);
   });
+  forwardVisit_(sender, visit, zone, now);
   return zone;
+}
+
+/**
+ * ส่งบันทึกเยี่ยมไปที่อีเมล VISIT_EMAIL (ถ้าตั้งไว้) — Power Automate รับอีเมลแล้วเพิ่มแถวในไฟล์ Excel บน OneDrive
+ * เนื้อหาอีเมลเป็น JSON 1 บรรทัด: date, time, zone, customer, activity, detail, reporter
+ */
+function forwardVisit_(sender, visit, zone, now) {
+  const to = prop_('VISIT_EMAIL', '');
+  if (!to) return false;
+  const rec = {
+    date: pad2_(now.getDate()) + '/' + pad2_(now.getMonth() + 1) + '/' + now.getFullYear(),
+    time: fmtTime_(now),
+    zone: zone || '-',
+    customer: visit.customer,
+    activity: visit.type || 'เยี่ยม',
+    detail: String(visit.note || '').replace(/\s*\n+\s*/g, ' / '),
+    reporter: sender.name,
+  };
+  try {
+    MailApp.sendEmail(to, 'NKS-VISIT ' + rec.zone + ' ' + rec.customer, JSON.stringify(rec));
+    return true;
+  } catch (e) {
+    console.error('ส่งบันทึกเยี่ยมไปอีเมลไม่สำเร็จ: ' + (e && e.message || e));
+    return false;
+  }
+}
+
+/** ลิงก์ไฟล์รวมรายงานเยี่ยม (OneDrive) — ตั้งที่ Script Property REPORT_LINK */
+function reportLinkText_() {
+  const link = prop_('REPORT_LINK', '');
+  if (!link) return 'ยังไม่ได้ตั้งลิงก์ไฟล์รายงานค่ะ (ผู้ดูแลใส่ REPORT_LINK ใน Script Properties)';
+  return '📂 ไฟล์รวมบันทึกเยี่ยม / ติดตาม / เข้าพบลูกค้า\nแยกชีทรายเขต F1–F5 + รวมทุกเขต (อัปเดตอัตโนมัติ)\n\n' + link;
 }
 
 /** แชร์ตำแหน่ง → แนบกับรายการเยี่ยมล่าสุดของคนนั้น (ภายใน 30 นาที) */
@@ -4442,6 +4478,9 @@ function runCommand_(p, ctx) {
     case 'visits':
       return formatVisits_(p.argText, now);
 
+    case 'reportlink':
+      return reportLinkText_();
+
     case 'notvisited':
       return formatNotVisited_(p.argText, now);
 
@@ -4657,6 +4696,7 @@ const HELP_TEXT = [
   '  เช่น เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่',
   '  (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูเยี่ยม · ดูเยี่ยม F4 · ไม่ได้เยี่ยม F4',
+  '• ไฟล์รายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');

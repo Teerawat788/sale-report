@@ -1319,4 +1319,21 @@ test('บทวิเคราะห์ AI ปิดเป็นค่าเร�
   assert.match(bot.say('@น้องขุนศึก วิเคราะห์ยอด F3', { groupId: 'Cmain', mention }), /^🤖/, 'แท็กแล้วพิมพ์วิเคราะห์ = ถาม AI');
 });
 
+test('ไฟล์รายงานเยี่ยม: ส่งบันทึกไปอีเมล (Power Automate → Excel OneDrive) + คำสั่ง "ไฟล์รายงาน" ส่งลิงก์', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10, 5), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
+  assert.match(bot.say('ไฟล์รายงาน', { groupId: 'Cmain' }), /ยังไม่ได้ตั้งลิงก์/);
+  bot.say('เยี่ยม ร้านทดสอบ ส่งของ', { groupId: 'Cmain' });
+  assert.strictEqual(bot.mails.length, 0, 'ยังไม่ตั้ง VISIT_EMAIL ไม่ส่ง');
+  bot.props.VISIT_EMAIL = 'report@example.com';
+  bot.props.REPORT_LINK = 'https://example.sharepoint.com/x';
+  bot.say('ติดตามลูกค้าใหม่ ร้านทดลอง 2\nสนใจอาหารปลา\nนัดสัปดาห์หน้า', { groupId: 'Cother' });
+  assert.strictEqual(bot.mails.length, 1);
+  assert.strictEqual(bot.mails[0].to, 'report@example.com');
+  assert.match(bot.mails[0].subject, /^NKS-VISIT - ร้านทดลอง 2$/);
+  assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: '-', customer: 'ร้านทดลอง 2',
+    activity: 'ติดตาม (ลูกค้าใหม่)', detail: 'สนใจอาหารปลา / นัดสัปดาห์หน้า', reporter: 'ผู้ทดสอบ' });
+  assert.match(bot.say('ลิงก์รายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกเยี่ยม[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
+  assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /ไฟล์รายงาน/);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
