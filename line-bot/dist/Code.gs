@@ -4155,7 +4155,7 @@ function findFormByName_(text) {
   if (Array.from(q).length < 4) return null;
   const forms = formLinks_();
   return forms.find(function (f) { return normName_(f.label) === q; }) ||
-    forms.find(function (f) { return normName_(f.label).indexOf(q) === 0 || q.indexOf(normName_(f.label)) === 0; }) || null;
+    forms.find(function (f) { return normName_(f.label).indexOf(q) === 0; }) || null; // พิมพ์ชื่อสั้นลงได้ (ผลการเลี้ยง) แต่ข้อความยาวกว่าชื่อ = แชทปกติ
 }
 
 /** การ์ดปุ่มเปิดแบบฟอร์ม (คำสั่ง "แบบฟอร์ม") — only = ฟอร์มเดียว */

@@ -1403,6 +1403,10 @@ test('แบบฟอร์ม: พิมพ์ชื่อฟอร์ม (ข�
   assert.doesNotMatch(b, /1\.xlsx/);
   assert.match(bot.say('แบบฟอร์ม', { groupId: 'Cmain' }), /1\. ข้อมูลลูกปลา[\s\S]*2\. ผลการเลี้ยงปลา/);
   assert.strictEqual(bot.say('ผลการเลี้ยงดีมาก', { groupId: 'Cmain' }), null);
+  assert.strictEqual(bot.say('ผลการเลี้ยงปลาของฟาร์มเอดีมาก', { groupId: 'Cmain' }), null);
+  assert.strictEqual(bot.say('ข้อมูลลูกปลาเดือนนี้ส่งหรือยัง', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('เข้าพบ ร้านทดสอบ ส่งข้อมูลลูกปลาให้แล้ว', { groupId: 'Cmain' }), /บันทึกการเข้าพบลูกค้าแล้วค่ะ/);
+  assert.match(bot.say('ติดตาม ฟาร์มบี ผลการเลี้ยงดี', { groupId: 'Cmain' }), /บันทึกการติดตามลูกค้าแล้วค่ะ/);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
