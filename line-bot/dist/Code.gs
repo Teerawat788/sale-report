@@ -3763,7 +3763,7 @@ function handlePlanCommand_(raw, now) {
  */
 
 const VISIT_SHEET = 'บันทึกเยี่ยม';
-const VISIT_HEADERS = ['วันที่เวลา', 'เซลส์', 'userId', 'ลูกค้า', 'เขต', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'สถานที่', 'ประเภท'];
+const VISIT_HEADERS = ['วันที่เวลา', 'เซลส์', 'userId', 'ลูกค้า', 'เขต', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'สถานที่', 'ประเภท', 'ส่งรายงาน'];
 const VISIT_STOPWORDS = ['ด้วย', 'ต่อ', 'ให้', 'งาน', 'เรื่อง', 'มาก', 'มากๆ', 'มากเลย', 'เลย', 'จริง', 'จริงๆ', 'ครับ', 'ค่ะ', 'คะ', 'นะ', 'ไปเลย', 'สุด', 'สุดๆ', 'ที่สุด', 'มากมาก'];
 
 /**
@@ -3805,6 +3805,10 @@ function parseVisitText_(text) {
     head = after.trim();
   }
   if (!kw) return null;
+  // ระบุเขตต่อจากคำขึ้นต้นได้: "เข้าพบ F3 ร้าน…" / "เข้าพบ เขต 3 ร้าน…"
+  let zoneTyped = '';
+  const zm = head.match(/^(?:f|fish|เขต)\s*([1-5])(?=\s|$)\s*/i);
+  if (zm) { zoneTyped = 'F' + zm[1]; head = head.slice(zm[0].length).trim(); }
   const isNew = /ใหม่/.test(filler) || /ใหม่/.test(kw.word);
   const type = kw.type + (isNew ? ' (ลูกค้าใหม่)' : '');
   if (!head) return null;
@@ -3823,14 +3827,14 @@ function parseVisitText_(text) {
     let i = 0;
     while (i < head.length && count > 0) { if (!/\s/.test(head[i])) count--; i++; }
     const rest = head.slice(i).trim();
-    return { customer: best, note: [rest, body].filter(Boolean).join('\n'), type: type, isNew: isNew };
+    return { customer: best, note: [rest, body].filter(Boolean).join('\n'), type: type, isNew: isNew, zone: zoneTyped };
   }
   // มีรายละเอียดบรรทัดถัดไป → ทั้งบรรทัดแรกคือชื่อลูกค้า
-  if (body) return { customer: head, note: body, type: type, isNew: isNew };
+  if (body) return { customer: head, note: body, type: type, isNew: isNew, zone: zoneTyped };
   const parts = head.split(/\s+/);
   // คำทั่วไป: ลูกค้าที่ไม่รู้จักต้องมีรายละเอียดต่อท้าย (กันแชทปกติ เช่น "ติดตาม ด้วย")
   if (kw.strict && !filler && parts.length < 2) return null;
-  return { customer: parts[0], note: parts.slice(1).join(' '), type: type, isNew: isNew };
+  return { customer: parts[0], note: parts.slice(1).join(' '), type: type, isNew: isNew, zone: zoneTyped };
 }
 
 function knownCustomerNames_() {
@@ -3863,13 +3867,81 @@ function visitKey_(name) {
   return coreName_(name) || normName_(name);
 }
 
+/**
+ * บันทึก 1 รายการ — เขตหาจาก: พิมพ์ระบุเอง > ลูกค้าในไฟล์ยอด/วันเกิด > เขตประจำของคนบันทึก (บอทจำไว้)
+ * ยังไม่รู้เขต → บอทถามเขต (ปุ่ม F1–F5) และยังไม่ส่งเข้ารายงานจนกว่าจะได้เขต (หรือครบ 30 นาที)
+ */
 function logVisit_(sender, visit, now) {
-  const zone = customerZone_(visit.customer);
+  const zone = visit.zone || customerZone_(visit.customer) || userZone_(sender.userId);
   withLock_(function () {
-    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '', visit.type || 'เข้าพบ']);
+    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '',
+      visit.type || 'เข้าพบ', zone ? 'ส่งแล้ว' : 'รอเขต']);
   });
-  forwardVisit_(sender, visit, zone, now);
+  if (zone) forwardVisit_(sender, visit, zone, now);
+  if (visit.zone && sender.userId) rememberUserZone_(sender.userId, visit.zone);
   return zone;
+}
+
+/** เขตประจำของแต่ละคน (จำจากครั้งที่บอกเขต) */
+function userZone_(userId) {
+  if (!userId) return '';
+  try { return JSON.parse(prop_('USER_ZONES', '{}'))[userId] || ''; } catch (e) { return ''; }
+}
+
+function rememberUserZone_(userId, zone) {
+  let map = {};
+  try { map = JSON.parse(prop_('USER_ZONES', '{}')); } catch (e) { map = {}; }
+  if (map[userId] === zone) return;
+  map[userId] = zone;
+  setProp_('USER_ZONES', JSON.stringify(map));
+}
+
+/**
+ * "เขต F3" หลังบันทึก → ใส่เขตให้รายการล่าสุดที่ยังไม่มีเขต (ภายใน 30 นาที), ส่งเข้ารายงาน และจำเป็นเขตประจำ
+ * คืนข้อความตอบ หรือ null ถ้าไม่มีรายการรอเขต (= แชทปกติ ไม่ตอบ)
+ */
+function setVisitZone_(sender, zone, now) {
+  const hit = withLock_(function () {
+    const sh = spreadsheet_().getSheetByName(VISIT_SHEET);
+    if (!sh) return null;
+    const values = sh.getDataRange().getValues();
+    for (let i = values.length - 1; i >= 1; i--) {
+      const v = values[i];
+      if (cleanText_(v[2]) !== sender.userId) continue;
+      const at = toDate_(v[0]);
+      if (!at || now - at > 30 * 60000) return null;
+      if (cleanText_(v[4])) return null;
+      sh.getRange(i + 1, 5).setValue(zone);
+      sh.getRange(i + 1, 11).setValue('ส่งแล้ว');
+      return { at: at, customer: cleanText_(v[3]), note: String(v[5] || '').trim(), type: cleanText_(v[9]) || 'เข้าพบ' };
+    }
+    return null;
+  });
+  if (!hit) return null;
+  forwardVisit_(sender, { customer: hit.customer, note: hit.note, type: hit.type }, zone, hit.at);
+  rememberUserZone_(sender.userId, zone);
+  return '✅ ใส่เขต ' + zone + ' ให้ "' + hit.customer + '" แล้วค่ะ\n' +
+    'ครั้งต่อไป ลูกค้าใหม่ที่คุณบันทึก น้องขุนศึกจะใส่ ' + zone + ' ให้อัตโนมัติ\n' +
+    '(ถ้าเป็นเขตอื่น พิมพ์ระบุได้ เช่น เข้าพบ F2 ร้าน…)';
+}
+
+/** รายการที่รอเขตเกิน 30 นาที → ส่งเข้ารายงานโดยไม่มีเขต (เรียกจาก tick) */
+function flushPendingVisits_(now) {
+  const sh = spreadsheet_().getSheetByName(VISIT_SHEET);
+  if (!sh) return 0;
+  const values = sh.getDataRange().getValues();
+  let n = 0;
+  for (let i = 1; i < values.length; i++) {
+    const v = values[i];
+    if (cleanText_(v[10]) !== 'รอเขต') continue;
+    const at = toDate_(v[0]);
+    if (!at || now - at <= 30 * 60000) continue;
+    sh.getRange(i + 1, 11).setValue('ส่งแล้ว');
+    forwardVisit_({ name: cleanText_(v[1]), userId: cleanText_(v[2]) },
+      { customer: cleanText_(v[3]), note: String(v[5] || '').trim(), type: cleanText_(v[9]) || 'เข้าพบ' }, '', at);
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -3903,7 +3975,7 @@ const VISIT_HELP_TEXT = [
   'พิมพ์ในกลุ่มนี้ได้เลย น้องขุนศึกจะบันทึกลงรายงานรวมทุกเขตให้ค่ะ',
   '',
   '✍️ รูปแบบ',
-  'คำขึ้นต้น + ชื่อลูกค้า + รายละเอียด',
+  'คำขึ้นต้น + (เขต) + ชื่อลูกค้า + รายละเอียด',
   '',
   '🔑 คำขึ้นต้น (ต้องอยู่ต้นข้อความ)',
   '• เข้าพบ / พบลูกค้า / ลงพื้นที่',
@@ -3918,6 +3990,12 @@ const VISIT_HELP_TEXT = [
   'สนใจอาหารปลานิล 2 ตัน',
   'นัดชิมสินค้าอาทิตย์หน้า',
   '→ บรรทัดแรก = ชื่อลูกค้า · บรรทัดต่อไป = รายละเอียด',
+  '',
+  '📍 ต้องใส่เขตไหม?',
+  '• ลูกค้าเดิม (มีในไฟล์ยอด) ไม่ต้องใส่ น้องขุนศึกรู้เขตเอง',
+  '• ลูกค้าใหม่ ใส่เขตต่อจากคำขึ้นต้น เช่น เข้าพบ F3 ร้านกุ้งทอง …',
+  '• ลืมใส่ไม่เป็นไร น้องขุนศึกจะถามเขต ให้กดปุ่ม F1–F5',
+  '  ครั้งต่อไปจะจำเขตของคุณไว้ให้อัตโนมัติค่ะ',
   '',
   '✅ บันทึกสำเร็จ น้องขุนศึกจะตอบ "บันทึกการเข้าพบ…แล้วค่ะ"',
   '📌 แชร์ตำแหน่งต่อได้ภายใน 30 นาที',
@@ -4083,6 +4161,7 @@ function tick() {
   const now = now_();
   try { runMorning_(now); } catch (e) { console.error('ข้อความเช้า: ' + (e && e.message || e)); }
   try { runReminders_(now); } catch (e) { console.error('แจ้งเตือน: ' + (e && e.message || e)); }
+  try { flushPendingVisits_(now); } catch (e) { console.error('ส่งรายงานที่รอเขต: ' + (e && e.message || e)); }
 }
 
 /** ส่งข้อความเช้าวันละครั้ง เมื่อถึง MORNING_TIME (ค่าเริ่มต้น 07:30) ในวัน MORNING_DAYS (จ.–ส.) */
@@ -4365,10 +4444,25 @@ function handleEvent_(ev) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
     const icon = visit.type.indexOf('ติดตาม') === 0 ? '📞' : '🤝';
-    lineReply_(ev.replyToken, '✅ บันทึกการ' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+    const ack = '✅ บันทึกการ' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
       '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
-      (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+      (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '');
+    if (zone) {
+      lineReply_(ev.replyToken, ack + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+    } else {
+      // ไม่รู้เขต → ถาม พร้อมปุ่ม และสอนวิธีพิมพ์ครั้งหน้า
+      lineReply_(ev.replyToken, withQuickReply_(ack + '\n\n❓ ลูกค้านี้อยู่เขตไหนคะ? กดปุ่มด้านล่าง หรือพิมพ์ เขต F3\n' +
+        '💡 ครั้งหน้าใส่เขตต่อจากคำขึ้นต้นได้เลย เช่น เข้าพบ F3 ' + visit.customer,
+        ['เขต F1', 'เขต F2', 'เขต F3', 'เขต F4', 'เขต F5']));
+    }
     return;
+  }
+
+  // ตอบเขตหลังบันทึก: "เขต F3" → ใส่เขตให้รายการล่าสุดที่ยังไม่มีเขต
+  const zoneAns = !blocked && stripped.text.match(/^เขต\s*(?:f|fish)?\s*([1-5])$/i);
+  if (zoneAns && /f/i.test(stripped.text)) {
+    const r = setVisitZone_({ userId: source.userId || '', name: lineDisplayName_(source) }, 'F' + zoneAns[1], now_());
+    if (r) { lineReply_(ev.replyToken, r); return; }
   }
 
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ

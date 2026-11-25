@@ -116,10 +116,25 @@ function handleEvent_(ev) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
     const icon = visit.type.indexOf('ติดตาม') === 0 ? '📞' : '🤝';
-    lineReply_(ev.replyToken, '✅ บันทึกการ' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+    const ack = '✅ บันทึกการ' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
       '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
-      (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+      (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '');
+    if (zone) {
+      lineReply_(ev.replyToken, ack + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
+    } else {
+      // ไม่รู้เขต → ถาม พร้อมปุ่ม และสอนวิธีพิมพ์ครั้งหน้า
+      lineReply_(ev.replyToken, withQuickReply_(ack + '\n\n❓ ลูกค้านี้อยู่เขตไหนคะ? กดปุ่มด้านล่าง หรือพิมพ์ เขต F3\n' +
+        '💡 ครั้งหน้าใส่เขตต่อจากคำขึ้นต้นได้เลย เช่น เข้าพบ F3 ' + visit.customer,
+        ['เขต F1', 'เขต F2', 'เขต F3', 'เขต F4', 'เขต F5']));
+    }
     return;
+  }
+
+  // ตอบเขตหลังบันทึก: "เขต F3" → ใส่เขตให้รายการล่าสุดที่ยังไม่มีเขต
+  const zoneAns = !blocked && stripped.text.match(/^เขต\s*(?:f|fish)?\s*([1-5])$/i);
+  if (zoneAns && /f/i.test(stripped.text)) {
+    const r = setVisitZone_({ userId: source.userId || '', name: lineDisplayName_(source) }, 'F' + zoneAns[1], now_());
+    if (r) { lineReply_(ev.replyToken, r); return; }
   }
 
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ

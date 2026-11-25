@@ -26,6 +26,7 @@ function tick() {
   const now = now_();
   try { runMorning_(now); } catch (e) { console.error('ข้อความเช้า: ' + (e && e.message || e)); }
   try { runReminders_(now); } catch (e) { console.error('แจ้งเตือน: ' + (e && e.message || e)); }
+  try { flushPendingVisits_(now); } catch (e) { console.error('ส่งรายงานที่รอเขต: ' + (e && e.message || e)); }
 }
 
 /** ส่งข้อความเช้าวันละครั้ง เมื่อถึง MORNING_TIME (ค่าเริ่มต้น 07:30) ในวัน MORNING_DAYS (จ.–ส.) */

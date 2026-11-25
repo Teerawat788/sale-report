@@ -1327,10 +1327,12 @@ test('ไฟล์รายงานเยี่ยม: ส่งบันทึ
   bot.props.VISIT_EMAIL = 'report@example.com';
   bot.props.REPORT_LINK = 'https://example.sharepoint.com/x';
   bot.say('ติดตามลูกค้าใหม่ ร้านทดลอง 2\nสนใจอาหารปลา\nนัดสัปดาห์หน้า', { groupId: 'Cother' });
+  assert.strictEqual(bot.mails.length, 0, 'ยังไม่รู้เขต รอเขตก่อนส่ง');
+  assert.match(bot.say('เขต F2', { groupId: 'Cother' }), /ใส่เขต F2 ให้ "ร้านทดลอง 2" แล้วค่ะ/);
   assert.strictEqual(bot.mails.length, 1);
   assert.strictEqual(bot.mails[0].to, 'report@example.com');
-  assert.match(bot.mails[0].subject, /^NKS-VISIT - ร้านทดลอง 2$/);
-  assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: '-', customer: 'ร้านทดลอง 2',
+  assert.match(bot.mails[0].subject, /^NKS-VISIT F2 ร้านทดลอง 2$/);
+  assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: 'F2', customer: 'ร้านทดลอง 2',
     activity: 'ติดตาม (ลูกค้าใหม่)', detail: 'สนใจอาหารปลา / นัดสัปดาห์หน้า', reporter: 'ผู้ทดสอบ' });
   assert.match(bot.say('ดูรายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกการเข้าพบลูกค้า[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
   assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /ดูรายงาน/);
@@ -1344,6 +1346,35 @@ test('วิธีบันทึก: บอทอธิบายในกลุ
   assert.strictEqual(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmain' }), null);
   assert.match(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmine' }), /ส่งวิธีบันทึกการเข้าพบลูกค้าเข้ากลุ่มหลักแล้ว/);
   assert.match(bot.pushTexts()[0], /🤝 วิธีบันทึกการเข้าพบลูกค้า/);
+});
+
+test('เขตของบันทึกเข้าพบ: พิมพ์ระบุ / บอทถาม (ปุ่ม F1–F5) / จำเขตประจำคน / ครบ 30 นาทีส่งแบบไม่มีเขต', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', VISIT_EMAIL: 'r@x.com' } });
+  // ระบุเขตต่อจากคำขึ้นต้น
+  assert.match(bot.say('เข้าพบ F3 ร้านใหม่หนึ่ง สนใจสูตรใหม่', { groupId: 'Cmain', userId: 'U1' }), /🤝 ร้านใหม่หนึ่ง \[F3\]\n[\s\S]*🗒️ สนใจสูตรใหม่/);
+  assert.strictEqual(JSON.parse(bot.mails[0].body).zone, 'F3');
+  // คนที่บอกเขตแล้ว → ลูกค้าใหม่ครั้งต่อไปได้เขตเดิมอัตโนมัติ
+  assert.match(bot.say('เข้าพบ ร้านใหม่สอง ส่งตัวอย่าง', { groupId: 'Cmain', userId: 'U1' }), /🤝 ร้านใหม่สอง \[F3\]/);
+  assert.strictEqual(bot.mails.length, 2);
+  // คนใหม่ ไม่รู้เขต → ถามพร้อมปุ่ม
+  const n0 = bot.lineCalls.length;
+  const ask = bot.say('ติดตาม ร้านใหม่สาม ทวงบิล', { groupId: 'Cmain', userId: 'U2' });
+  assert.match(ask, /❓ ลูกค้านี้อยู่เขตไหนคะ\?[\s\S]*เข้าพบ F3 ร้านใหม่สาม/);
+  const qr = bot.lineCalls.slice(n0).find((c) => c.url.endsWith('/reply')).body.messages[0].quickReply.items.map((i) => i.action.text);
+  assert.deepStrictEqual(qr, ['เขต F1', 'เขต F2', 'เขต F3', 'เขต F4', 'เขต F5']);
+  assert.strictEqual(bot.mails.length, 2, 'รอเขต');
+  assert.strictEqual(bot.say('เขต F5', { groupId: 'Cmain', userId: 'U1' }), null, 'คนอื่นตอบเขตแทนไม่ได้');
+  assert.match(bot.say('เขต F5', { groupId: 'Cmain', userId: 'U2' }), /ใส่เขต F5/);
+  assert.strictEqual(JSON.parse(bot.mails[2].body).zone, 'F5');
+  assert.strictEqual(bot.say('เขต F5', { groupId: 'Cmain', userId: 'U2' }), null, 'ไม่มีรายการรอเขต = ไม่ตอบ');
+  // ไม่ตอบเขตเลย → ครบ 30 นาที tick ส่งเข้ารายงานแบบไม่มีเขต
+  bot.say('ติดตาม ร้านใหม่สี่ นัดคุย', { groupId: 'Cmain', userId: 'U3' });
+  bot.setNow(D(2026, 11, 25, 10, 20)); bot.ctx.tick();
+  assert.strictEqual(bot.mails.length, 3);
+  bot.setNow(D(2026, 11, 25, 10, 35)); bot.ctx.tick(); bot.ctx.tick();
+  assert.strictEqual(bot.mails.length, 4);
+  assert.strictEqual(JSON.parse(bot.mails[3].body).zone, '-');
+  assert.match(bot.say('วิธีบันทึก', { groupId: 'Cmain' }), /ต้องใส่เขตไหม\?[\s\S]*เข้าพบ F3 ร้านกุ้งทอง/);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
