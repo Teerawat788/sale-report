@@ -85,7 +85,7 @@ function handleEvent_(ev) {
   if (ev.message.type === 'location') {
     if (blocked) return;
     const cust = attachVisitLocation_(source.userId, ev.message, now_());
-    if (cust) lineReply_(ev.replyToken, '📍 แนบตำแหน่งการเยี่ยม ' + cust + ' แล้วค่ะ');
+    if (cust) lineReply_(ev.replyToken, '📌 แนบตำแหน่งการเข้าพบ ' + cust + ' แล้วค่ะ');
     return;
   }
   if (ev.message.type !== 'text') return;
@@ -115,8 +115,8 @@ function handleEvent_(ev) {
   if (visit) {
     const sender = { userId: source.userId || '', name: lineDisplayName_(source) };
     const zone = logVisit_(sender, visit, now_());
-    const icon = visit.type.indexOf('ติดตาม') === 0 ? '📞' : visit.type.indexOf('เข้าพบ') === 0 ? '🤝' : '📍';
-    lineReply_(ev.replyToken, '✅ บันทึก' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
+    const icon = visit.type.indexOf('ติดตาม') === 0 ? '📞' : '🤝';
+    lineReply_(ev.replyToken, '✅ บันทึกการ' + visit.type.replace(' (ลูกค้าใหม่)', '') + (visit.isNew ? 'ลูกค้าใหม่' : 'ลูกค้า') + 'แล้วค่ะ\n' + icon + ' ' + visit.customer + (zone ? ' [' + zone + ']' : '') +
       '\n👤 ' + sender.name + ' · ' + fmtDate_(now_()) + ' ' + fmtTime_(now_()) +
       (visit.note ? '\n🗒️ ' + truncate_(visit.note.replace(/\n+/g, ' '), 120) : '') + '\n(แชร์ตำแหน่งต่อได้ภายใน 30 นาที)');
     return;
@@ -178,7 +178,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูเยี่ยม', 'ดูรายงาน']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -272,7 +272,7 @@ function runCommand_(p, ctx) {
 
     case 'sendvisithelp':
       if (!isControlRoom_(ctx.source)) return null;
-      return sendToMainGroup_([VISIT_HELP_TEXT], 'วิธีบันทึกเยี่ยม');
+      return sendToMainGroup_([VISIT_HELP_TEXT], 'วิธีบันทึกการเข้าพบลูกค้า');
 
     case 'notvisited':
       return formatNotVisited_(p.argText, now);
@@ -484,12 +484,12 @@ const HELP_TEXT = [
   '• วันเกิด — 30 วันข้างหน้า',
   '• วันเกิด ธ.ค. — ทั้งเดือน',
   '',
-  '📍 บันทึกเยี่ยมลูกค้า',
-  '• เยี่ยม / เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>',
+  '🤝 บันทึกการเข้าพบลูกค้า',
+  '• เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>',
   '  เช่น เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่',
   '  (แล้วแชร์ตำแหน่งต่อได้)',
-  '• ดูเยี่ยม · ดูเยี่ยม F4 · ไม่ได้เยี่ยม F4',
-  '• วิธีบันทึก — อธิบายวิธีพิมพ์บันทึกเยี่ยมแบบละเอียด',
+  '• ดูการเข้าพบ · ดูการเข้าพบ F4 · ยังไม่ได้เข้าพบ F4',
+  '• วิธีบันทึก — อธิบายวิธีพิมพ์แบบละเอียด',
   '• ดูรายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',

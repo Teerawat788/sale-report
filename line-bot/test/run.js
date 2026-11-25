@@ -902,12 +902,12 @@ test('เยี่ยมลูกค้า: บันทึกในกลุ่
   bot.say('อัปเดตยอด');
   bot.setNow(D(2026, 11, 20, 10, 0));
   const r = bot.say('เยี่ยม นลินรัตน์ฟาร์ม ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า', { userId: 'Usale1' });
-  assert.match(r, /✅ บันทึกเยี่ยมลูกค้าแล้วค่ะ\n📍 นลินรัตน์ฟาร์ม \[F4\]\n👤 ผู้ทดสอบ · ศ\. 20 พ\.ย\. 10:00\n🗒️ ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า/);
+  assert.match(r, /✅ บันทึกการเข้าพบลูกค้าแล้วค่ะ\n🤝 นลินรัตน์ฟาร์ม \[F4\]\n👤 ผู้ทดสอบ · ศ\. 20 พ\.ย\. 10:00\n🗒️ ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า/);
   const row = bot.sheets['บันทึกเยี่ยม'].data[1];
   assert.strictEqual(row[3], 'นลินรัตน์ฟาร์ม');
   assert.strictEqual(row[5], 'ลูกค้าสนใจสูตรใหม่ จะสั่งเพิ่มเดือนหน้า');
   bot.setNow(D(2026, 11, 20, 10, 10));
-  assert.match(locate(bot, { groupId: 'Cgroup1', userId: 'Usale1', address: 'ราชบุรี' }), /แนบตำแหน่งการเยี่ยม นลินรัตน์ฟาร์ม แล้วค่ะ/);
+  assert.match(locate(bot, { groupId: 'Cgroup1', userId: 'Usale1', address: 'ราชบุรี' }), /แนบตำแหน่งการเข้าพบ นลินรัตน์ฟาร์ม แล้วค่ะ/);
   assert.strictEqual(bot.sheets['บันทึกเยี่ยม'].data[1][8], 'ราชบุรี');
   assert.strictEqual(locate(bot, { groupId: 'Cgroup1', userId: 'Usale1', address: 'ซ้ำ' }), null, 'แนบแล้วไม่แนบซ้ำ');
   assert.strictEqual(locate(bot, { groupId: 'Cgroup1', userId: 'Uother' }), null);
@@ -921,14 +921,14 @@ test('เยี่ยมลูกค้า: บันทึกในกลุ่
   const v = bot.say('ดูเยี่ยม');
   assert.match(v, /7 วันล่าสุด \(2 ครั้ง\)/);
   assert.match(v, /นลินรัตน์ฟาร์ม[\s\S]*📌 ราชบุรี/);
-  assert.match(bot.say('ดูเยี่ยม นลินรัตน์'), /บันทึกเยี่ยม "นลินรัตน์" \(1 ครั้ง/);
+  assert.match(bot.say('ดูเยี่ยม นลินรัตน์'), /บันทึกการเข้าพบลูกค้า "นลินรัตน์" \(1 ครั้ง/);
   const nv = bot.say('ไม่ได้เยี่ยม');
-  assert.match(nv, /📍 ยังไม่ได้เยี่ยม 30 วัน\n\d+ ราย · เรียงตามยอดเดือนนี้[\s\S]*# · ลูกค้า · เขต · ตัน · เยี่ยมล่าสุด/);
+  assert.match(nv, /🤝 ยังไม่ได้เข้าพบ 30 วัน\n\d+ ราย · เรียงตามยอดเดือนนี้[\s\S]*# · ลูกค้า · เขต · ตัน · เข้าพบล่าสุด/);
   assert.match(nv, /อานนท์ฟาร์ม · F3 · [\d.,]+ · ยังไม่เคย/);
   assert.match(bot.say('ไม่ได้เยี่ยม F9'), /ไม่มีเขต F9/);
   assert.doesNotMatch(nv, /นลินรัตน์ฟาร์ม|ร้านบุญสว่าง/);
   assert.match(nv, /อานนท์ฟาร์ม/);
-  assert.match(bot.say('เยี่ยม นลินรัตน์ฟาร์ม ทดสอบ', { groupId: 'Cstranger' }), /บันทึกเยี่ยม/, 'กลุ่มอื่นบันทึกได้');
+  assert.match(bot.say('เยี่ยม นลินรัตน์ฟาร์ม ทดสอบ', { groupId: 'Cstranger' }), /บันทึกการเข้าพบ/, 'กลุ่มอื่นบันทึกได้');
 });
 
 test('ถาม AI: แท็กบอทแล้วถาม → Claude ตอบจากข้อมูล; ไม่มีคีย์บอกวิธีเปิด; ห้องสั่งการใช้ "ถาม"', () => {
@@ -964,13 +964,13 @@ test('บันทึกด้วยหลายคำ: ติดตาม / เ
   const bot = mtdBot();
   bot.say('อัปเดตยอด');
   bot.setNow(D(2026, 11, 20, 9, 30));
-  assert.match(bot.say('ติดตาม นลินรัตน์ฟาร์ม ทวงเช็คงวดพ.ย.'), /✅ บันทึกติดตามลูกค้าแล้วค่ะ\n📞 นลินรัตน์ฟาร์ม/);
-  assert.match(bot.say('เข้าพบ อานนท์ฟาร์ม เสนอโปรธันวา'), /✅ บันทึกเข้าพบลูกค้าแล้วค่ะ\n🤝 อานนท์ฟาร์ม/);
-  assert.match(bot.say('เข้าเยี่ยม ฟาร์มใหม่ลุงชัย ดูบ่อ 3 บ่อ'), /✅ บันทึกเยี่ยมลูกค้าแล้วค่ะ\n📍 ฟาร์มใหม่ลุงชัย/);
-  assert.match(bot.say('ลงพื้นที่ คุณนรินทร์ นฤภัย ตรวจคุณภาพน้ำ'), /บันทึกเยี่ยมลูกค้าแล้วค่ะ\n📍 คุณนรินทร์ นฤภัย/);
-  assert.match(bot.say('ติดตามลูกค้า ร้านใหม่ ส่งตัวอย่างอาหาร'), /บันทึกติดตามลูกค้าแล้วค่ะ/);
+  assert.match(bot.say('ติดตาม นลินรัตน์ฟาร์ม ทวงเช็คงวดพ.ย.'), /✅ บันทึกการติดตามลูกค้าแล้วค่ะ\n📞 นลินรัตน์ฟาร์ม/);
+  assert.match(bot.say('เข้าพบ อานนท์ฟาร์ม เสนอโปรธันวา'), /✅ บันทึกการเข้าพบลูกค้าแล้วค่ะ\n🤝 อานนท์ฟาร์ม/);
+  assert.match(bot.say('เข้าเยี่ยม ฟาร์มใหม่ลุงชัย ดูบ่อ 3 บ่อ'), /✅ บันทึกการเข้าพบลูกค้าแล้วค่ะ\n🤝 ฟาร์มใหม่ลุงชัย/);
+  assert.match(bot.say('ลงพื้นที่ คุณนรินทร์ นฤภัย ตรวจคุณภาพน้ำ'), /บันทึกการเข้าพบลูกค้าแล้วค่ะ\n🤝 คุณนรินทร์ นฤภัย/);
+  assert.match(bot.say('ติดตามลูกค้า ร้านใหม่ ส่งตัวอย่างอาหาร'), /บันทึกการติดตามลูกค้าแล้วค่ะ/);
   const rows = bot.sheets['บันทึกเยี่ยม'].data;
-  assert.deepStrictEqual(rows.slice(1).map((r) => r[9]), ['ติดตาม', 'เข้าพบ', 'เยี่ยม', 'เยี่ยม', 'ติดตาม']);
+  assert.deepStrictEqual(rows.slice(1).map((r) => r[9]), ['ติดตาม', 'เข้าพบ', 'เข้าพบ', 'เข้าพบ', 'ติดตาม']);
   assert.strictEqual(rows[1][5], 'ทวงเช็คงวดพ.ย.');
   // แชทปกติ
   for (const t of ['ติดตามด้วยนะ', 'ติดตาม ด้วยครับ', 'ติดตาม งานนี้ด้วย', 'เยี่ยมมาก', 'เยี่ยม เลย', 'เข้าพบ']) {
@@ -986,15 +986,15 @@ test('บันทึกข้อความยาวหลายย่อห�
   bot.say('อัปเดตยอด');
   const msg = 'ติดตามลูกค้าใหม่ ร้านกุ้งทอง 1 (เจ๊มะลิ)\n\nลูกค้ากลุ่มอาหารปลานิล เดิมใช้อาหารแบรนด์ฟิชเฟิร์ส และได้นำอาหาร ขุนศึก 3 ไปทดลองเลี้ยงจำนวน 1 ตัน\n\nแนวโน้ม: ลูกค้ามีความสนใจครับ';
   const r = bot.say(msg, { groupId: 'Cmine', userId: 'Usale9' });
-  assert.match(r, /✅ บันทึกติดตามลูกค้าใหม่แล้วค่ะ\n📞 ร้านกุ้งทอง 1 \(เจ๊มะลิ\)\n👤 ผู้ทดสอบ/);
+  assert.match(r, /✅ บันทึกการติดตามลูกค้าใหม่แล้วค่ะ\n📞 ร้านกุ้งทอง 1 \(เจ๊มะลิ\)\n👤 ผู้ทดสอบ/);
   assert.match(r, /🗒️ ลูกค้ากลุ่มอาหารปลานิล/);
   const row = bot.sheets['บันทึกเยี่ยม'].data[1];
   assert.strictEqual(row[3], 'ร้านกุ้งทอง 1 (เจ๊มะลิ)');
   assert.strictEqual(row[9], 'ติดตาม (ลูกค้าใหม่)');
   assert.match(row[5], /^ลูกค้ากลุ่มอาหารปลานิล[\s\S]*\n\nแนวโน้ม: ลูกค้ามีความสนใจครับ$/, 'เก็บย่อหน้าตามเดิม');
   assert.match(bot.say('ดูเยี่ยม กุ้งทอง'), /📞 ร้านกุ้งทอง 1 \(เจ๊มะลิ\)\n   .* · ติดตาม \(ลูกค้าใหม่\) · 👤/);
-  assert.match(bot.say('ติดตามผล นลินรัตน์ฟาร์ม ลูกค้าพอใจ'), /บันทึกติดตามลูกค้าแล้วค่ะ\n📞 นลินรัตน์ฟาร์ม/);
-  assert.match(bot.say('เข้าพบลูกค้าใหม่ ฟาร์มปลาดุกลุงแดง\nสนใจลองสูตร 2'), /บันทึกเข้าพบลูกค้าใหม่แล้วค่ะ\n🤝 ฟาร์มปลาดุกลุงแดง/);
+  assert.match(bot.say('ติดตามผล นลินรัตน์ฟาร์ม ลูกค้าพอใจ'), /บันทึกการติดตามลูกค้าแล้วค่ะ\n📞 นลินรัตน์ฟาร์ม/);
+  assert.match(bot.say('เข้าพบลูกค้าใหม่ ฟาร์มปลาดุกลุงแดง\nสนใจลองสูตร 2'), /บันทึกการเข้าพบลูกค้าใหม่แล้วค่ะ\n🤝 ฟาร์มปลาดุกลุงแดง/);
   assert.strictEqual(bot.say('ติดตามด้วยนะครับ'), null);
 });
 
@@ -1126,7 +1126,7 @@ test('กลุ่มใหญ่: เมนูไม่มีคำสั่ง
   const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
   const team = bot.say('เมนู', { groupId: 'Cmain' });
   assert.ok(!/ประกาศ|ส่งยอด|ส่งวันเกิด|อัปเดตยอด|แผน|ห้องสั่งการ|กลุ่มอัปโหลด|Script Properties/.test(team), team);
-  assert.match(team, /ยอดขาย[\s\S]*วันเกิด[\s\S]*เยี่ยม/);
+  assert.match(team, /ยอดขาย[\s\S]*วันเกิด[\s\S]*เข้าพบ/);
   const admin = bot.say('เมนู', { groupId: 'Cmine' });
   assert.match(admin, /เฉพาะห้องสั่งการ[\s\S]*ประกาศ[\s\S]*ส่งยอด[\s\S]*แผน/);
   assert.strictEqual(bot.say('อัปเดตยอด', { groupId: 'Cmain' }), null);
@@ -1228,7 +1228,7 @@ test('เยี่ยม: ชื่อย่อที่พิมพ์ (ไม�
     ['เซลส์ ก', 'TFM Fish3 East', 'เซลส์ ก', 'TFM Fish3 East', '2', 'ทดสอบสองฟาร์ม', 'Fish', 20]];
   const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
   bot.sendFile('data - 2026-11-24T061539.279.xlsx', cust, { groupId: 'Cmine' });
-  assert.match(bot.say('เยี่ยม ทดสอบสว่าง ส่งของ', { groupId: 'Cmain' }), /📍 ทดสอบสว่าง \[F3\]/);
+  assert.match(bot.say('เยี่ยม ทดสอบสว่าง ส่งของ', { groupId: 'Cmain' }), /🤝 ทดสอบสว่าง \[F3\]/);
   const nv = bot.say('ไม่ได้เยี่ยม F3', { groupId: 'Cmain' });
   assert.match(nv, /\n1 ราย · [\s\S]*1 · ทดสอบสองฟาร์ม · 20\.0 · ยังไม่เคย/);
   assert.ok(!/ทดสอบสว่าง/.test(nv));
@@ -1332,18 +1332,18 @@ test('ไฟล์รายงานเยี่ยม: ส่งบันทึ
   assert.match(bot.mails[0].subject, /^NKS-VISIT - ร้านทดลอง 2$/);
   assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: '-', customer: 'ร้านทดลอง 2',
     activity: 'ติดตาม (ลูกค้าใหม่)', detail: 'สนใจอาหารปลา / นัดสัปดาห์หน้า', reporter: 'ผู้ทดสอบ' });
-  assert.match(bot.say('ดูรายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกเยี่ยม[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
+  assert.match(bot.say('ดูรายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกการเข้าพบลูกค้า[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
   assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /ดูรายงาน/);
 });
 
 test('วิธีบันทึก: บอทอธิบายในกลุ่ม / ห้องสั่งการส่งเข้ากลุ่มหลัก', () => {
   const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
   const t = bot.say('วิธีบันทึก', { groupId: 'Cmain' });
-  assert.match(t, /📍 วิธีบันทึกเยี่ยม[\s\S]*เยี่ยม กบทองฟาร์ม[\s\S]*ดูรายงาน/);
+  assert.match(t, /🤝 วิธีบันทึกการเข้าพบลูกค้า[\s\S]*เข้าพบ กบทองฟาร์ม[\s\S]*ดูรายงาน/);
   assert.strictEqual(bot.say('วิธีบันทึก', { groupId: 'Cmain' }), t);
   assert.strictEqual(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmain' }), null);
-  assert.match(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmine' }), /ส่งวิธีบันทึกเยี่ยมเข้ากลุ่มหลักแล้ว/);
-  assert.match(bot.pushTexts()[0], /📍 วิธีบันทึกเยี่ยม/);
+  assert.match(bot.say('ส่งวิธีบันทึก', { groupId: 'Cmine' }), /ส่งวิธีบันทึกการเข้าพบลูกค้าเข้ากลุ่มหลักแล้ว/);
+  assert.match(bot.pushTexts()[0], /🤝 วิธีบันทึกการเข้าพบลูกค้า/);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

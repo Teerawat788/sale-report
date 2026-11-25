@@ -14,11 +14,11 @@ const VISIT_STOPWORDS = ['ด้วย', 'ต่อ', 'ให้', 'งาน', 
  * strict = คำที่ใช้ในแชทปกติบ่อย (เช่น "ติดตาม", "เยี่ยม") ต้องตามด้วยชื่อลูกค้าที่รู้จัก หรือมีรายละเอียดต่อท้าย
  */
 const VISIT_KEYWORDS = [
-  { word: 'บันทึกเข้าพบ', type: 'เข้าพบ' }, { word: 'บันทึกติดตาม', type: 'ติดตาม' }, { word: 'บันทึกเยี่ยม', type: 'เยี่ยม' },
-  { word: 'เข้าพบลูกค้า', type: 'เข้าพบ' }, { word: 'เข้าเยี่ยมลูกค้า', type: 'เยี่ยม' }, { word: 'ติดตามลูกค้า', type: 'ติดตาม' },
-  { word: 'เยี่ยมลูกค้า', type: 'เยี่ยม' }, { word: 'พบลูกค้า', type: 'เข้าพบ' }, { word: 'เยี่ยมฟาร์ม', type: 'เยี่ยม' },
-  { word: 'ลงพื้นที่', type: 'เยี่ยม' }, { word: 'เข้าเยี่ยม', type: 'เยี่ยม' }, { word: 'เข้าพบ', type: 'เข้าพบ' },
-  { word: 'ติดตาม', type: 'ติดตาม', strict: true }, { word: 'เยี่ยม', type: 'เยี่ยม', strict: true },
+  { word: 'บันทึกเข้าพบ', type: 'เข้าพบ' }, { word: 'บันทึกติดตาม', type: 'ติดตาม' }, { word: 'บันทึกเยี่ยม', type: 'เข้าพบ' },
+  { word: 'เข้าพบลูกค้า', type: 'เข้าพบ' }, { word: 'เข้าเยี่ยมลูกค้า', type: 'เข้าพบ' }, { word: 'ติดตามลูกค้า', type: 'ติดตาม' },
+  { word: 'เยี่ยมลูกค้า', type: 'เข้าพบ' }, { word: 'พบลูกค้า', type: 'เข้าพบ' }, { word: 'เยี่ยมฟาร์ม', type: 'เข้าพบ' },
+  { word: 'ลงพื้นที่', type: 'เข้าพบ' }, { word: 'เข้าเยี่ยม', type: 'เข้าพบ' }, { word: 'เข้าพบ', type: 'เข้าพบ' },
+  { word: 'ติดตาม', type: 'ติดตาม', strict: true }, { word: 'เยี่ยม', type: 'เข้าพบ', strict: true },
 ];
 
 /** คำต่อท้ายคำขึ้นต้นที่อนุญาต เช่น "ติดตามลูกค้าใหม่", "เข้าพบลูกค้าเก่า", "ติดตามผล" */
@@ -109,7 +109,7 @@ function visitKey_(name) {
 function logVisit_(sender, visit, now) {
   const zone = customerZone_(visit.customer);
   withLock_(function () {
-    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '', visit.type || 'เยี่ยม']);
+    sheet_(VISIT_SHEET, VISIT_HEADERS).appendRow([now, sender.name, sender.userId, visit.customer, zone, visit.note, '', '', '', visit.type || 'เข้าพบ']);
   });
   forwardVisit_(sender, visit, zone, now);
   return zone;
@@ -127,7 +127,7 @@ function forwardVisit_(sender, visit, zone, now) {
     time: fmtTime_(now),
     zone: zone || '-',
     customer: visit.customer,
-    activity: visit.type || 'เยี่ยม',
+    activity: visit.type || 'เข้าพบ',
     detail: String(visit.note || '').replace(/\s*\n+\s*/g, ' / '),
     reporter: sender.name,
   };
@@ -142,20 +142,19 @@ function forwardVisit_(sender, visit, zone, now) {
 
 /** คำอธิบายวิธีบันทึกเยี่ยม สำหรับทีม (คำสั่ง "วิธีบันทึก" / ห้องสั่งการ "ส่งวิธีบันทึก") */
 const VISIT_HELP_TEXT = [
-  '📍 วิธีบันทึกเยี่ยม / ติดตาม / เข้าพบลูกค้า',
+  '🤝 วิธีบันทึกการเข้าพบลูกค้า',
   'พิมพ์ในกลุ่มนี้ได้เลย น้องขุนศึกจะบันทึกลงรายงานรวมทุกเขตให้ค่ะ',
   '',
   '✍️ รูปแบบ',
   'คำขึ้นต้น + ชื่อลูกค้า + รายละเอียด',
   '',
   '🔑 คำขึ้นต้น (ต้องอยู่ต้นข้อความ)',
-  '• เยี่ยม / เข้าเยี่ยม / ลงพื้นที่',
-  '• เข้าพบ / พบลูกค้า',
+  '• เข้าพบ / พบลูกค้า / ลงพื้นที่',
   '• ติดตาม / ติดตามผล',
-  '• ลูกค้าใหม่ ใส่ต่อท้ายได้ เช่น ติดตามลูกค้าใหม่',
+  '• ลูกค้าใหม่ ใส่ต่อท้ายได้ เช่น เข้าพบลูกค้าใหม่',
   '',
   '📝 ตัวอย่าง 1 (บรรทัดเดียว)',
-  'เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่ จะสั่งเดือนหน้า',
+  'เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่ จะสั่งเดือนหน้า',
   '',
   '📝 ตัวอย่าง 2 (หลายบรรทัด)',
   'ติดตามลูกค้าใหม่ ร้านกุ้งทอง 1',
@@ -163,14 +162,14 @@ const VISIT_HELP_TEXT = [
   'นัดชิมสินค้าอาทิตย์หน้า',
   '→ บรรทัดแรก = ชื่อลูกค้า · บรรทัดต่อไป = รายละเอียด',
   '',
-  '✅ บันทึกสำเร็จ น้องขุนศึกจะตอบ "บันทึก…แล้วค่ะ"',
+  '✅ บันทึกสำเร็จ น้องขุนศึกจะตอบ "บันทึกการเข้าพบ…แล้วค่ะ"',
   '📌 แชร์ตำแหน่งต่อได้ภายใน 30 นาที',
   '',
   '⚠️ ไม่บันทึกถ้า',
-  '• คำขึ้นต้นไม่อยู่ต้นข้อความ (เช่น "วันนี้ไปเยี่ยม…")',
+  '• คำขึ้นต้นไม่อยู่ต้นข้อความ (เช่น "วันนี้ไปเข้าพบ…")',
   '• ลูกค้าใหม่แต่ไม่มีรายละเอียดต่อท้าย',
   '',
-  '🔎 ดูบันทึก: ดูเยี่ยม · ดูเยี่ยม F3 · ไม่ได้เยี่ยม F3',
+  '🔎 ดูบันทึก: ดูการเข้าพบ · ดูการเข้าพบ F3 · ยังไม่ได้เข้าพบ F3',
   '📂 ไฟล์รวมทุกเขต: พิมพ์ ดูรายงาน',
 ].join('\n');
 
@@ -178,7 +177,7 @@ const VISIT_HELP_TEXT = [
 function reportLinkText_() {
   const link = prop_('REPORT_LINK', '');
   if (!link) return 'ยังไม่ได้ตั้งลิงก์ไฟล์รายงานค่ะ (ผู้ดูแลใส่ REPORT_LINK ใน Script Properties)';
-  return '📂 ไฟล์รวมบันทึกเยี่ยม / ติดตาม / เข้าพบลูกค้า\nแยกชีทรายเขต F1–F5 + รวมทุกเขต (อัปเดตอัตโนมัติ)\n\n' + link;
+  return '📂 ไฟล์รวมบันทึกการเข้าพบลูกค้า\nแยกชีทรายเขต F1–F5 + รวมทุกเขต (อัปเดตอัตโนมัติ)\n\n' + link;
 }
 
 /** แชร์ตำแหน่ง → แนบกับรายการเยี่ยมล่าสุดของคนนั้น (ภายใน 30 นาที) */
@@ -207,12 +206,12 @@ function readVisits_() {
   if (!sh) return [];
   return sh.getDataRange().getValues().slice(1).map(function (v) {
     return { at: toDate_(v[0]), sales: cleanText_(v[1]), customer: cleanText_(v[3]), zone: cleanText_(v[4]),
-      note: cleanText_(v[5]), lat: v[6], lng: v[7], place: cleanText_(v[8]), type: cleanText_(v[9]) || 'เยี่ยม' };
+      note: cleanText_(v[5]), lat: v[6], lng: v[7], place: cleanText_(v[8]), type: (cleanText_(v[9]) || 'เข้าพบ').replace(/^เยี่ยม/, 'เข้าพบ') };
   }).filter(function (x) { return x.at && x.customer; });
 }
 
 function visitLine_(x) {
-  const icon = x.type.indexOf('ติดตาม') === 0 ? '📞' : x.type.indexOf('เข้าพบ') === 0 ? '🤝' : '📍';
+  const icon = x.type.indexOf('ติดตาม') === 0 ? '📞' : '🤝';
   return icon + ' ' + x.customer + (x.zone ? ' [' + x.zone + ']' : '') +
     '\n   ' + fmtDate_(x.at) + ' ' + fmtTime_(x.at) + ' · ' + x.type + ' · 👤 ' + x.sales +
     (x.note ? '\n   🗒️ ' + truncate_(x.note.replace(/\n+/g, ' '), 140) : '') +
@@ -222,17 +221,17 @@ function visitLine_(x) {
 /** ดูเยี่ยม [คำค้น] — ไม่มีคำค้น = 7 วันล่าสุดสรุปรายคน; มีคำค้น = ลูกค้า/เซลส์/เขต ย้อน 90 วัน */
 function formatVisits_(query, now) {
   const all = readVisits_();
-  if (!all.length) return 'ยังไม่มีบันทึกการเยี่ยม/ติดตามลูกค้าค่ะ\nพิมพ์ในกลุ่ม: เยี่ยม / เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>';
+  if (!all.length) return 'ยังไม่มีบันทึกการเข้าพบลูกค้าค่ะ\nพิมพ์ในกลุ่ม: เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>\nดูวิธีละเอียด พิมพ์: วิธีบันทึก';
   const q = normName_(query || '');
   if (!q) {
     const since = addDays_(startOfDay_(now), -6);
     const recent = all.filter(function (x) { return x.at >= since; }).sort(function (a, b) { return b.at - a.at; });
-    if (!recent.length) return '📍 7 วันล่าสุดยังไม่มีบันทึกเยี่ยมค่ะ';
+    if (!recent.length) return '🤝 7 วันล่าสุดยังไม่มีบันทึกการเข้าพบลูกค้าค่ะ';
     const bySales = {};
     recent.forEach(function (x) { bySales[x.sales] = (bySales[x.sales] || 0) + 1; });
     const ranking = Object.keys(bySales).sort(function (a, b) { return bySales[b] - bySales[a]; })
       .map(function (s) { return '• ' + s + ' — ' + bySales[s] + ' ครั้ง'; });
-    return '📍 เยี่ยม/เข้าพบ/ติดตามลูกค้า 7 วันล่าสุด (' + recent.length + ' ครั้ง)\n\n👤 รายคน\n' + ranking.join('\n') +
+    return '🤝 บันทึกการเข้าพบลูกค้า 7 วันล่าสุด (' + recent.length + ' ครั้ง)\n\n👤 รายคน\n' + ranking.join('\n') +
       '\n\n🗒️ ล่าสุด\n\n' + recent.slice(0, 15).map(visitLine_).join('\n\n') +
       (recent.length > 15 ? '\n\n…และอีก ' + (recent.length - 15) + ' ครั้ง' : '');
   }
@@ -247,8 +246,8 @@ function formatVisits_(query, now) {
     const b = visitKey_(query);
     return a.length >= 3 && b.length >= 3 && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0);
   }).sort(function (a, b) { return b.at - a.at; });
-  if (!hits.length) return '📍 ไม่พบบันทึกเยี่ยมของ "' + query + '" ใน 90 วันค่ะ';
-  return '📍 บันทึกเยี่ยม "' + query + '" (' + hits.length + ' ครั้ง ใน 90 วัน)\n\n' +
+  if (!hits.length) return '🤝 ไม่พบบันทึกการเข้าพบลูกค้าของ "' + query + '" ใน 90 วันค่ะ';
+  return '🤝 บันทึกการเข้าพบลูกค้า "' + query + '" (' + hits.length + ' ครั้ง ใน 90 วัน)\n\n' +
     hits.slice(0, 20).map(visitLine_).join('\n\n') + (hits.length > 20 ? '\n\n…และอีก ' + (hits.length - 20) + ' ครั้ง' : '');
 }
 
@@ -259,7 +258,7 @@ function formatNotVisited_(zoneArg, now) {
   const zone = zoneArg ? teamKey_(zoneArg).toUpperCase() : '';
   if (zone && !snap.teams.some(function (t) { return t.name === zone; })) {
     return /^F\d+$/.test(zone) ? 'ไม่มีเขต ' + zone + ' ค่ะ — มีเขต ' + snap.teams.map(function (t) { return t.name; }).join(', ') + ' นะคะ'
-      : 'พิมพ์ "ไม่ได้เยี่ยม" หรือ "ไม่ได้เยี่ยม F3" นะคะ';
+      : 'พิมพ์ "ยังไม่ได้เข้าพบ" หรือ "ยังไม่ได้เข้าพบ F3" นะคะ';
   }
   const last = {};
   readVisits_().forEach(function (x) {
@@ -277,11 +276,11 @@ function formatNotVisited_(zoneArg, now) {
   const list = Object.keys(cust).map(function (k) { return cust[k]; })
     .filter(function (c) { const lv = last[visitKey_(c.name)]; return c.ton > 1e-9 && (!lv || lv < cutoff); })
     .sort(function (a, b) { return b.ton - a.ton; });
-  if (!list.length) return '✅ ลูกค้าที่มียอดเดือนนี้' + (zone ? 'ของ ' + zone : '') + ' ได้เยี่ยมครบใน 30 วันแล้วค่ะ';
+  if (!list.length) return '✅ ลูกค้าที่มียอดเดือนนี้' + (zone ? 'ของ ' + zone : '') + ' ได้เข้าพบครบใน 30 วันแล้วค่ะ';
   const SHOW = 30;
   const cols = [{ label: '#', flex: 1, align: 'end' }, { label: 'ลูกค้า', flex: 8, wrap: true }];
   if (!zone) cols.push({ label: 'เขต', flex: 2 });
-  cols.push({ label: 'ตัน', flex: 3, align: 'end' }, { label: 'เยี่ยมล่าสุด', flex: 4, align: 'end' });
+  cols.push({ label: 'ตัน', flex: 3, align: 'end' }, { label: 'เข้าพบล่าสุด', flex: 4, align: 'end' });
   const rows = list.slice(0, SHOW).map(function (c, i) {
     const lv = last[visitKey_(c.name)];
     const r = [String(i + 1), c.name];
@@ -289,11 +288,11 @@ function formatNotVisited_(zoneArg, now) {
     r.push(fmtTon_(c.ton), lv ? fmtDate_(lv).replace(/^\S+ /, '') : { t: 'ยังไม่เคย', color: FX.red });
     return r;
   });
-  const title = '📍 ยังไม่ได้เยี่ยม 30 วัน' + (zone ? ' · ' + zone : '');
+  const title = '🤝 ยังไม่ได้เข้าพบ 30 วัน' + (zone ? ' · ' + zone : '');
   return fxMessage_(title + ' (' + list.length + ' ราย)', fxBubble_({
     title: title,
     lines: [list.length + ' ราย · เรียงตามยอดเดือนนี้ (ถึง ' + fmtDate_(snap.detailAsOf || snap.asOf) + ')'],
     body: [fxTable_(cols, rows, { margin: 'none' })],
-    footer: (list.length > SHOW ? '…และอีก ' + (list.length - SHOW) + ' ราย · ' : '') + 'บันทึกเยี่ยม: พิมพ์ เยี่ยม <ลูกค้า> <รายละเอียด>',
+    footer: (list.length > SHOW ? '…และอีก ' + (list.length - SHOW) + ' ราย · ' : '') + 'บันทึก: พิมพ์ เข้าพบ <ลูกค้า> <รายละเอียด>',
   }));
 }
