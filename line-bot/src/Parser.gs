@@ -32,16 +32,18 @@ const COMMANDS = {
   notvisited: ['ยังไม่ได้เข้าพบ', 'ไม่ได้เข้าพบ', 'ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   visithelp: ['วิธีบันทึก', 'วิธีบันทึกการเข้าพบ', 'วิธีบันทึกเยี่ยม', 'สอนบันทึก', 'บันทึกยังไง'],
   sendvisithelp: ['ส่งวิธีบันทึก'],
-  formlinks: ['แบบฟอร์ม', 'ฟอร์ม', 'ลิงก์ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
-  sendformlinks: ['ส่งแบบฟอร์ม'],
-  reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
+  reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'รายงานการเข้าพบ', 'ไฟล์เยี่ยม'],
+  resultlink: ['ผลการเลี้ยง', 'ผลการเลี้ยงปลา', 'ไฟล์ผลการเลี้ยง', 'ลิงก์ผลการเลี้ยง', 'ลิงค์ผลการเลี้ยง', 'กรอกผลการเลี้ยง', 'บันทึกผลการเลี้ยง'],
+  frylink: ['ข้อมูลลูกปลา', 'ไฟล์ลูกปลา', 'ไฟล์ข้อมูลลูกปลา', 'ลิงก์ลูกปลา', 'ลิงค์ลูกปลา', 'กรอกลูกปลา', 'ลงลูกปลา'],
+  formlinks: ['ลิงก์', 'ลิงค์', 'ลิงก์ทั้งหมด', 'ลิงค์ทั้งหมด', 'แบบฟอร์ม', 'ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
+  sendformlinks: ['ส่งลิงก์', 'ส่งลิงค์', 'ส่งแบบฟอร์ม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['resultlink', 'frylink', 'formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 

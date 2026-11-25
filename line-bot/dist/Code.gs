@@ -22,9 +22,10 @@
  *  AUTO_REPORT                true = มีไฟล์ใหม่ในโฟลเดอร์ Drive แล้วส่งรายงานเข้ากลุ่มหลักทันที (ค่าเริ่มต้น false)
  *  AI_ANALYSIS                (ไม่บังคับ) true = แนบบทวิเคราะห์ AI ท้ายรายงานยอด + คำสั่ง "วิเคราะห์" (ค่าเริ่มต้นปิด)
  *  LEGACY_COMMANDS            (ไม่บังคับ) true = เปิดคำสั่งงาน/นัด/งานประจำแบบเดิม (ค่าเริ่มต้นปิด กันคำทั่วไปทำให้บอทตอบ)
- *  REPORT_LINK                (ไม่บังคับ) ลิงก์แชร์ไฟล์ Excel รวมบันทึกเยี่ยมบน OneDrive (คำสั่ง "ไฟล์รายงาน")
- *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกเยี่ยมทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
- *  FORM_LINKS                 (ไม่บังคับ) ลิงก์แบบฟอร์มกรอกข้อมูล บรรทัดละ 1 ไฟล์: ชื่อ | รายละเอียด | https://... (คำสั่ง "แบบฟอร์ม")
+ *  REPORT_LINK                (ไม่บังคับ) ลิงก์ 1: ไฟล์รายงานการเข้าพบลูกค้า (คำสั่ง "ดูรายงาน")
+ *  RESULT_LINK                (ไม่บังคับ) ลิงก์ 2: ไฟล์กรอกผลการเลี้ยงปลา (คำสั่ง "ผลการเลี้ยง")
+ *  FRY_LINK                   (ไม่บังคับ) ลิงก์ 3: ไฟล์กรอกข้อมูลลูกปลา (คำสั่ง "ข้อมูลลูกปลา") · "ลิงก์" = ทั้ง 3
+ *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกการเข้าพบทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
  *  GEMINI_API_KEY             (ไม่บังคับ) เปิด AI ด้วย Google Gemini (aistudio.google.com) / GEMINI_MODEL
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิด AI ด้วย Claude / AI_PROVIDER = gemini | claude
@@ -182,16 +183,18 @@ const COMMANDS = {
   notvisited: ['ยังไม่ได้เข้าพบ', 'ไม่ได้เข้าพบ', 'ไม่ได้เยี่ยม', 'ยังไม่เยี่ยม'],
   visithelp: ['วิธีบันทึก', 'วิธีบันทึกการเข้าพบ', 'วิธีบันทึกเยี่ยม', 'สอนบันทึก', 'บันทึกยังไง'],
   sendvisithelp: ['ส่งวิธีบันทึก'],
-  formlinks: ['แบบฟอร์ม', 'ฟอร์ม', 'ลิงก์ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
-  sendformlinks: ['ส่งแบบฟอร์ม'],
-  reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'ไฟล์เยี่ยม'],
+  reportlink: ['ดูรายงาน', 'ไฟล์รายงาน', 'ลิงก์รายงาน', 'ลิงค์รายงาน', 'รายงานการเข้าพบ', 'ไฟล์เยี่ยม'],
+  resultlink: ['ผลการเลี้ยง', 'ผลการเลี้ยงปลา', 'ไฟล์ผลการเลี้ยง', 'ลิงก์ผลการเลี้ยง', 'ลิงค์ผลการเลี้ยง', 'กรอกผลการเลี้ยง', 'บันทึกผลการเลี้ยง'],
+  frylink: ['ข้อมูลลูกปลา', 'ไฟล์ลูกปลา', 'ไฟล์ข้อมูลลูกปลา', 'ลิงก์ลูกปลา', 'ลิงค์ลูกปลา', 'กรอกลูกปลา', 'ลงลูกปลา'],
+  formlinks: ['ลิงก์', 'ลิงค์', 'ลิงก์ทั้งหมด', 'ลิงค์ทั้งหมด', 'แบบฟอร์ม', 'ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
+  sendformlinks: ['ส่งลิงก์', 'ส่งลิงค์', 'ส่งแบบฟอร์ม'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['resultlink', 'frylink', 'formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 
@@ -3768,6 +3771,8 @@ function handlePlanCommand_(raw, now) {
 
 const VISIT_SHEET = 'บันทึกเยี่ยม';
 const VISIT_HEADERS = ['วันที่เวลา', 'เซลส์', 'userId', 'ลูกค้า', 'เขต', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'สถานที่', 'ประเภท', 'ส่งรายงาน'];
+/** คำที่ขึ้นต้นชื่อลูกค้าไม่ได้ (ใช้กับคำขึ้นต้นทั่วไป "ติดตาม"/"เยี่ยม") */
+const VISIT_NOT_NAME = ['ทุก', 'ของ', 'กับ', 'และ', 'หรือ', 'ทั้ง', 'แล้ว'];
 const VISIT_STOPWORDS = ['ด้วย', 'ต่อ', 'ให้', 'งาน', 'เรื่อง', 'มาก', 'มากๆ', 'มากเลย', 'เลย', 'จริง', 'จริงๆ', 'ครับ', 'ค่ะ', 'คะ', 'นะ', 'ไปเลย', 'สุด', 'สุดๆ', 'ที่สุด', 'มากมาก'];
 
 /**
@@ -3782,8 +3787,8 @@ const VISIT_KEYWORDS = [
   { word: 'ติดตาม', type: 'ติดตาม', strict: true }, { word: 'เยี่ยม', type: 'เข้าพบ', strict: true },
 ];
 
-/** คำต่อท้ายคำขึ้นต้นที่อนุญาต เช่น "ติดตามลูกค้าใหม่", "เข้าพบลูกค้าเก่า", "ติดตามผล" */
-const VISIT_FILLERS = ['ลูกค้าใหม่', 'ลูกค้าเก่า', 'ลูกค้ารายใหม่', 'ลูกค้า', 'ผล', 'งาน'];
+/** คำต่อท้ายคำขึ้นต้นที่อนุญาต เช่น "ติดตามลูกค้าใหม่", "เข้าพบลูกค้าเก่า", "ติดตามผลการเลี้ยง", "ติดตามผล" (คำยาวก่อน) */
+const VISIT_FILLERS = ['ลูกค้าใหม่', 'ลูกค้าเก่า', 'ลูกค้ารายใหม่', 'ลูกค้า', 'ผลการเลี้ยง', 'ผลเลี้ยง', 'ผล', 'งาน'];
 
 /**
  * "เยี่ยม กบทองฟาร์ม สนใจสูตรใหม่" → { customer, note, type, isNew }
@@ -3814,10 +3819,13 @@ function parseVisitText_(text) {
   const zm = head.match(/^(?:f|fish|เขต)\s*([1-5])(?=\s|$)\s*/i);
   if (zm) { zoneTyped = 'F' + zm[1]; head = head.slice(zm[0].length).trim(); }
   const isNew = /ใหม่/.test(filler) || /ใหม่/.test(kw.word);
+  // "ติดตามผลการเลี้ยง ฟาร์ม… ปลาโตดี" → หมายเหตุขึ้นต้น "ผลการเลี้ยง: ปลาโตดี"
+  const tag = /เลี้ยง/.test(filler) ? 'ผลการเลี้ยง' : '';
+  const withTag = function (note) { return tag ? tag + (note ? ': ' + note : '') : note; };
   const type = kw.type + (isNew ? ' (ลูกค้าใหม่)' : '');
   if (!head) return null;
   const firstTok = head.split(/\s+/)[0];
-  if (VISIT_STOPWORDS.indexOf(firstTok) >= 0) return null;
+  if (isChatFiller_(firstTok)) return null;
   // หาชื่อลูกค้าที่รู้จักที่ยาวที่สุดที่ขึ้นต้นบรรทัดแรก
   const known = knownCustomerNames_();
   const nHead = normName_(head);
@@ -3831,14 +3839,29 @@ function parseVisitText_(text) {
     let i = 0;
     while (i < head.length && count > 0) { if (!/\s/.test(head[i])) count--; i++; }
     const rest = head.slice(i).trim();
-    return { customer: best, note: [rest, body].filter(Boolean).join('\n'), type: type, isNew: isNew, zone: zoneTyped };
+    return { customer: best, note: withTag([rest, body].filter(Boolean).join('\n')), type: type, isNew: isNew, zone: zoneTyped };
   }
   // มีรายละเอียดบรรทัดถัดไป → ทั้งบรรทัดแรกคือชื่อลูกค้า
-  if (body) return { customer: head, note: body, type: type, isNew: isNew, zone: zoneTyped };
+  if (body) return { customer: head, note: withTag(body), type: type, isNew: isNew, zone: zoneTyped };
   const parts = head.split(/\s+/);
-  // คำทั่วไป: ลูกค้าที่ไม่รู้จักต้องมีรายละเอียดต่อท้าย (กันแชทปกติ เช่น "ติดตาม ด้วย")
-  if (kw.strict && !filler && parts.length < 2) return null;
-  return { customer: parts[0], note: parts.slice(1).join(' '), type: type, isNew: isNew, zone: zoneTyped };
+  // คำทั่วไป ("ติดตาม", "เยี่ยม"): ลูกค้าที่ไม่รู้จักต้องมีรายละเอียดต่อท้าย (กันแชทปกติ เช่น "ติดตาม ด้วย",
+  // "ติดตามผลการเลี้ยง ทุกฟาร์ม ด้วยนะ") — ยกเว้นพิมพ์ชัดว่า "ติดตามลูกค้า…"
+  if (kw.strict && !/ลูกค้า/.test(filler) &&
+      (parts.length < 2 || VISIT_NOT_NAME.some(function (w) { return parts[0].indexOf(w) === 0; }))) return null;
+  return { customer: parts[0], note: withTag(parts.slice(1).join(' ')), type: type, isNew: isNew, zone: zoneTyped };
+}
+
+/** คำแชทล้วน ๆ เช่น "ด้วย", "ด้วยนะ", "ให้หน่อย", "เลยค่ะ" (ไม่ใช่ชื่อลูกค้า) */
+function isChatFiller_(tok) {
+  const words = VISIT_STOPWORDS.concat(['หน่อย', 'จ้า', 'จ้ะ', 'คับ', 'ค่า', 'ๆ', 'กัน', 'ไว้'])
+    .sort(function (a, b) { return b.length - a.length; });
+  let t = String(tok || '');
+  for (let guard = 0; t && guard < 12; guard++) {
+    const w = words.find(function (x) { return t.indexOf(x) === 0; });
+    if (!w) return false;
+    t = t.slice(w.length);
+  }
+  return !t;
 }
 
 function knownCustomerNames_() {
@@ -3983,7 +4006,7 @@ const VISIT_HELP_TEXT = [
   '',
   '🔑 คำขึ้นต้น (ต้องอยู่ต้นข้อความ)',
   '• เข้าพบ / พบลูกค้า / ลงพื้นที่',
-  '• ติดตาม / ติดตามผล',
+  '• ติดตาม / ติดตามผล / ติดตามผลการเลี้ยง',
   '• ลูกค้าใหม่ ใส่ต่อท้ายได้ เช่น เข้าพบลูกค้าใหม่',
   '',
   '📝 ตัวอย่าง 1 (บรรทัดเดียว)',
@@ -4010,14 +4033,9 @@ const VISIT_HELP_TEXT = [
   '',
   '🔎 ดูบันทึก: ดูการเข้าพบ · ดูการเข้าพบ F3 · ยังไม่ได้เข้าพบ F3',
   '📂 ไฟล์รวมทุกเขต: พิมพ์ ดูรายงาน',
+  '🔗 ไฟล์กรอกข้อมูล: พิมพ์ ผลการเลี้ยง · ข้อมูลลูกปลา (หรือ ลิงก์)',
 ].join('\n');
 
-/** ลิงก์ไฟล์รวมรายงานเยี่ยม (OneDrive) — ตั้งที่ Script Property REPORT_LINK */
-function reportLinkText_() {
-  const link = prop_('REPORT_LINK', '');
-  if (!link) return 'ยังไม่ได้ตั้งลิงก์ไฟล์รายงานค่ะ (ผู้ดูแลใส่ REPORT_LINK ใน Script Properties)';
-  return '📂 ไฟล์รวมบันทึกการเข้าพบลูกค้า\nแยกชีทรายเขต F1–F5 + รวมทุกเขต (อัปเดตอัตโนมัติ)\n\n' + link;
-}
 
 /** แชร์ตำแหน่ง → แนบกับรายการเยี่ยมล่าสุดของคนนั้น (ภายใน 30 นาที) */
 function attachVisitLocation_(userId, loc, now) {
@@ -4136,46 +4154,97 @@ function formatNotVisited_(zoneArg, now) {
   }));
 }
 
-// ---------------------------------------------------------------- แบบฟอร์มกรอกข้อมูล (ลิงก์ OneDrive)
+// ---------------------------------------------------------------- ลิงก์ไฟล์ทีม 3 ลิงก์ (OneDrive)
+// 1 รายงานการเข้าพบลูกค้า (REPORT_LINK) · 2 ผลการเลี้ยงปลา (RESULT_LINK) · 3 ข้อมูลลูกปลา (FRY_LINK)
 
-/** Script Property FORM_LINKS: ฟอร์มละ "ชื่อ | รายละเอียด | ลิงก์" คั่นแต่ละฟอร์มด้วย ;; หรือขึ้นบรรทัดใหม่ (รายละเอียดเว้นได้) */
-function formLinks_() {
-  return String(prop_('FORM_LINKS', '')).split(/\r?\n|;;/).map(function (line) {
-    const p = line.split('|').map(function (x) { return x.trim(); });
-    if (p.length < 2) return null;
-    const url = p[p.length - 1];
-    if (!/^https:\/\//.test(url)) return null;
-    return { label: p[0], note: p.length > 2 ? p.slice(1, -1).join(' ') : '', url: encodeURI(decodeURI(url)) };
-  }).filter(function (x) { return x && x.label; });
+const TEAM_LINKS = [
+  { key: 'report', prop: 'REPORT_LINK', icon: '📂', label: 'รายงานการเข้าพบลูกค้า', cmd: 'ดูรายงาน',
+    note: 'รวมทุกเขต · บันทึกอัตโนมัติจากแชทในกลุ่ม' },
+  { key: 'result', prop: 'RESULT_LINK', icon: '🐟', label: 'ผลการเลี้ยงปลา', cmd: 'ผลการเลี้ยง',
+    note: 'ไฟล์กรอกผลการเลี้ยง ทุกเขต · กรอกได้ทุกคน', legacy: /ผลการเลี้ยง/ },
+  { key: 'fry', prop: 'FRY_LINK', icon: '🐠', label: 'ข้อมูลลูกปลา', cmd: 'ข้อมูลลูกปลา',
+    note: 'ไฟล์กรอกการลงลูกปลา ทุกเขต · กรอกได้ทุกคน', legacy: /ลูกปลา/ },
+];
+const LINK_URI_MAX = 1000; // LINE ปุ่มรับลิงก์ยาวไม่เกิน 1000 ตัวอักษร
+
+/**
+ * ลิงก์ให้กดได้ใน LINE — ภาษาไทย/ช่องว่าง → encode · %XX ที่ encode ไว้แล้ว (ลิงก์ที่คัดลอกจากเบราว์เซอร์) คงไว้ ไม่ encode ซ้ำ
+ * % ผิดรูปแบบต้องไม่ทำให้บอทพัง · ลิงก์ตรงไปไฟล์ Office บน SharePoint/OneDrive (…/ไฟล์.xlsx) เติม web=1 ให้เปิดใน Excel บนเว็บ (ไม่ดาวน์โหลด)
+ */
+function safeLink_(url) {
+  let u = String(url || '').trim().replace(/[\r\n\t]+/g, '').replace(/^https:/i, 'https:');
+  if (!/^https:\/\/[^\s\/]/.test(u)) return '';
+  try {
+    u = Array.from(u.replace(/%(?![0-9A-Fa-f]{2})/g, '%25')).map(function (c) {
+      return /[A-Za-z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]/.test(c) ? c : encodeURIComponent(c);
+    }).join('');
+  } catch (e) {
+    return '';
+  }
+  const cut = u.search(/[?#]/);
+  const path = (cut >= 0 ? u.slice(0, cut) : u).replace(/\+/g, '%2B'); // "ผลการเลี้ยง+ลูกปลา" — + ใน path ต้อง encode
+  let rest = cut >= 0 ? u.slice(cut) : '';
+  if (/^https:\/\/[^\/]+\.sharepoint\.com\//i.test(path) && /\.(xlsx|xlsm|xlsb|xls|docx|doc|pptx|ppt)$/i.test(path) &&
+      !/[?&]web=/i.test(rest.split('#')[0])) {
+    const hash = rest.indexOf('#') >= 0 ? rest.slice(rest.indexOf('#')) : '';
+    const query = rest.slice(0, rest.length - hash.length);
+    rest = (query ? query + '&' : '?') + 'web=1' + hash;
+  }
+  return path + rest;
 }
 
-/** พิมพ์ชื่อฟอร์ม เช่น "ข้อมูลลูกปลา" / "ผลการเลี้ยง" → ฟอร์มนั้นฟอร์มเดียว (null = ไม่ตรงชื่อไหน) */
-function findFormByName_(text) {
-  const q = normName_(text);
-  if (Array.from(q).length < 4) return null;
-  const forms = formLinks_();
-  return forms.find(function (f) { return normName_(f.label) === q; }) ||
-    forms.find(function (f) { return normName_(f.label).indexOf(q) === 0; }) || null; // พิมพ์ชื่อสั้นลงได้ (ผลการเลี้ยง) แต่ข้อความยาวกว่าชื่อ = แชทปกติ
+/** ลิงก์จาก Script Property ของแต่ละไฟล์ (รองรับ FORM_LINKS แบบเดิม "ชื่อ | รายละเอียด | ลิงก์ ;; …") */
+function teamLink_(item) {
+  const own = prop_(item.prop, '');
+  if (own) return safeLink_(own);
+  if (!item.legacy) return '';
+  const hit = String(prop_('FORM_LINKS', '')).split(/\r?\n|;;/).map(function (line) {
+    return line.split('|').map(function (x) { return x.trim(); });
+  }).find(function (p) { return p.length >= 2 && item.legacy.test(p[0]); });
+  return hit ? safeLink_(hit[hit.length - 1]) : '';
 }
 
-/** การ์ดปุ่มเปิดแบบฟอร์ม (คำสั่ง "แบบฟอร์ม") — only = ฟอร์มเดียว */
-function formLinksCard_(only) {
-  const forms = only ? [only] : formLinks_();
-  if (!forms.length) return 'ยังไม่ได้ตั้งลิงก์แบบฟอร์มค่ะ (ผู้ดูแลใส่ FORM_LINKS ใน Script Properties)';
+/**
+ * การ์ดปุ่มเปิดไฟล์ — keys = ['report'] / ['result'] / ['fry'] / ทั้ง 3
+ * ไม่มีลิงก์เลย → ข้อความบอกผู้ดูแล · ลิงก์ยาวเกินปุ่ม → ส่งเป็นข้อความธรรมดา (LINE ทำเป็นลิงก์ให้)
+ */
+function teamLinksMessage_(keys) {
+  const items = TEAM_LINKS.filter(function (l) { return keys.indexOf(l.key) >= 0; })
+    .map(function (l) { return Object.assign({ url: teamLink_(l) }, l); });
+  const multi = items.length > 1;
+  if (!items.some(function (l) { return l.url; })) {
+    return 'ยังไม่ได้ตั้งลิงก์' + (multi ? 'ไฟล์' : ' "' + items[0].label + '" ') + 'ค่ะ\n(ผู้ดูแลใส่ ' +
+      items.map(function (l) { return l.prop; }).join(' / ') + ' ใน Script Properties)';
+  }
+  if (items.some(function (l) { return l.url.length > LINK_URI_MAX; })) {
+    return items.map(function (l, i) {
+      return (multi ? (i + 1) + '. ' : '') + l.icon + ' ' + l.label + '\n' + (l.url || '(ยังไม่ได้ตั้งลิงก์)');
+    }).join('\n\n');
+  }
   const body = [];
-  forms.forEach(function (f, i) {
+  items.forEach(function (l, i) {
     if (i) body.push(fxSep_('md'));
-    const block = [fxText_((only ? '' : (i + 1) + '. ') + f.label, { size: 'sm', weight: 'bold', color: FX.text, wrap: true })];
-    if (f.note) block.push(fxText_(f.note, { size: 'xs', color: FX.sub, wrap: true }));
-    block.push({ type: 'button', style: 'primary', height: 'sm', color: FX.band, margin: 'sm',
-      action: { type: 'uri', label: 'เปิดไฟล์', uri: f.url } });
+    const block = [];
+    if (multi) block.push(fxText_((i + 1) + '. ' + l.icon + ' ' + l.label, { size: 'sm', weight: 'bold', color: FX.text, wrap: true }));
+    block.push(fxText_(l.note, { size: multi ? 'xs' : 'sm', color: FX.sub, wrap: true }));
+    if (l.url) {
+      block.push({ type: 'button', style: 'primary', height: 'sm', color: FX.band, margin: 'md',
+        action: { type: 'uri', label: 'เปิดไฟล์', uri: l.url } });
+    } else {
+      block.push(fxText_('ยังไม่ได้ตั้งลิงก์ (' + l.prop + ')', { size: 'xs', color: FX.muted, margin: 'sm' }));
+    }
+    if (multi) block.push(fxText_('หรือพิมพ์: ' + l.cmd, { size: 'xxs', color: FX.muted, margin: 'sm', align: 'center' }));
     body.push(fxBox_('vertical', block, { margin: i ? 'md' : 'none' }));
   });
-  return fxMessage_('📝 ' + (only ? only.label : 'แบบฟอร์มกรอกข้อมูล ทีมปลา (' + forms.length + ' ไฟล์)'), fxBubble_({
-    title: '📝 ' + (only ? only.label : 'แบบฟอร์มกรอกข้อมูล'),
-    lines: ['ทีมปลา TFM · กรอกได้ทุกคน · ไฟล์อยู่บน OneDrive บริษัท'],
+  const title = multi ? '🔗 ลิงก์ไฟล์ทีมปลา' : items[0].icon + ' ' + items[0].label;
+  const onlyReport = !multi && items[0].key === 'report';
+  return fxMessage_(multi ? title + ' (' + items.length + ' ไฟล์)' : title, fxBubble_({
+    title: title,
+    lines: ['ไฟล์บน OneDrive บริษัท · ทีมปลา TFM'],
     body: body,
-    footer: 'กด "เปิดไฟล์" แล้วล็อกอินบัญชี thaiunion · กรอกในไฟล์เดิม ไม่ต้องดาวน์โหลด',
+    footer: 'เปิดแล้วล็อกอินด้วยบัญชีบริษัท' + (multi ? '' : onlyReport
+      ? ' · บันทึกเพิ่ม: พิมพ์ เข้าพบ / ติดตาม ในกลุ่ม'
+      : ' · กรอกในไฟล์เดิมได้เลย ไม่ต้องดาวน์โหลด'),
   }));
 }
 
@@ -4512,10 +4581,6 @@ function handleEvent_(ev) {
     if (r) { lineReply_(ev.replyToken, r); return; }
   }
 
-  // พิมพ์ชื่อแบบฟอร์ม เช่น "ข้อมูลลูกปลา" / "ผลการเลี้ยง" → ปุ่มเปิดไฟล์นั้น
-  const form = !blocked && findFormByName_(stripped.text);
-  if (form) { lineReply_(ev.replyToken, formLinksCard_(form)); return; }
-
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
   let parsed = parseCommand_(stripped.text);
   // คำสั่งงาน/นัด/งานประจำ (ฟีเจอร์เดิมที่เลิกใช้) — ปิดไว้ กันคำทั่วไป เช่น "งาน" "วันนี้" "นัด" ทำให้บอทตอบ
@@ -4572,7 +4637,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน', 'แบบฟอร์ม']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน', 'ผลการเลี้ยง', 'ข้อมูลลูกปลา']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -4659,19 +4724,25 @@ function runCommand_(p, ctx) {
       return formatVisits_(p.argText, now);
 
     case 'reportlink':
-      return reportLinkText_();
+      return teamLinksMessage_(['report']);
+
+    case 'resultlink':
+      return teamLinksMessage_(['result']);
+
+    case 'frylink':
+      return teamLinksMessage_(['fry']);
 
     case 'visithelp':
       return VISIT_HELP_TEXT;
 
     case 'formlinks':
-      return formLinksCard_();
+      return teamLinksMessage_(['report', 'result', 'fry']);
 
     case 'sendformlinks': {
       if (!isControlRoom_(ctx.source)) return null;
-      const card = formLinksCard_();
-      if (typeof card === 'string') return card;
-      return sendToMainGroup_([card], 'แบบฟอร์มกรอกข้อมูล');
+      const links = teamLinksMessage_(['report', 'result', 'fry']);
+      if (typeof links === 'string' && /^ยังไม่ได้ตั้งลิงก์/.test(links)) return links;
+      return sendToMainGroup_([links], 'ลิงก์ไฟล์ทีม');
     }
 
     case 'sendvisithelp':
@@ -4894,12 +4965,12 @@ const HELP_TEXT = [
   '  (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูการเข้าพบ · ดูการเข้าพบ F4 · ยังไม่ได้เข้าพบ F4',
   '• วิธีบันทึก — อธิบายวิธีพิมพ์แบบละเอียด',
-  '• ดูรายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
-  '📝 แบบฟอร์มกรอกข้อมูล',
-  '• ข้อมูลลูกปลา — ไฟล์กรอกการลงลูกปลา',
-  '• ผลการเลี้ยง — ไฟล์กรอกผลการเลี้ยงปลา',
-  '• แบบฟอร์ม — ทั้ง 2 ไฟล์',
+  '🔗 ลิงก์ไฟล์ทีม (OneDrive)',
+  '• ดูรายงาน — 1. รายงานการเข้าพบลูกค้า',
+  '• ผลการเลี้ยง — 2. ไฟล์กรอกผลการเลี้ยงปลา',
+  '• ข้อมูลลูกปลา — 3. ไฟล์กรอกข้อมูลลูกปลา',
+  '• ลิงก์ — รวมทั้ง 3 ลิงก์',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');
@@ -4916,7 +4987,7 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',
-  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก · ส่งแบบฟอร์ม',
+  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก · ส่งลิงก์',
   '',
   '🗓️ แผนงานประจำ',
   '• แผน — ดูแผน · แผน <รายการ> — ตั้งแผน',

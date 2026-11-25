@@ -137,10 +137,6 @@ function handleEvent_(ev) {
     if (r) { lineReply_(ev.replyToken, r); return; }
   }
 
-  // พิมพ์ชื่อแบบฟอร์ม เช่น "ข้อมูลลูกปลา" / "ผลการเลี้ยง" → ปุ่มเปิดไฟล์นั้น
-  const form = !blocked && findFormByName_(stripped.text);
-  if (form) { lineReply_(ev.replyToken, formLinksCard_(form)); return; }
-
   // คำสั่งปกติ หรือพิมพ์ชื่อเขต (F4) / ชื่อลูกค้า เฉย ๆ
   let parsed = parseCommand_(stripped.text);
   // คำสั่งงาน/นัด/งานประจำ (ฟีเจอร์เดิมที่เลิกใช้) — ปิดไว้ กันคำทั่วไป เช่น "งาน" "วันนี้" "นัด" ทำให้บอทตอบ
@@ -197,7 +193,7 @@ function runCommand_(p, ctx) {
   switch (p.cmd) {
     case 'help':
       return withQuickReply_(isControlRoom_(ctx.source) ? ADMIN_HELP_TEXT : HELP_TEXT,
-        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน', 'แบบฟอร์ม']);
+        ['ยอดขาย', 'ยอดเมื่อวาน', 'ยอดเซลส์', 'ยอดลูกค้า', 'วันเกิด', 'ดูการเข้าพบ', 'ดูรายงาน', 'ผลการเลี้ยง', 'ข้อมูลลูกปลา']);
 
     case 'register': {
       const id = chatId_(ctx.source);
@@ -284,19 +280,25 @@ function runCommand_(p, ctx) {
       return formatVisits_(p.argText, now);
 
     case 'reportlink':
-      return reportLinkText_();
+      return teamLinksMessage_(['report']);
+
+    case 'resultlink':
+      return teamLinksMessage_(['result']);
+
+    case 'frylink':
+      return teamLinksMessage_(['fry']);
 
     case 'visithelp':
       return VISIT_HELP_TEXT;
 
     case 'formlinks':
-      return formLinksCard_();
+      return teamLinksMessage_(['report', 'result', 'fry']);
 
     case 'sendformlinks': {
       if (!isControlRoom_(ctx.source)) return null;
-      const card = formLinksCard_();
-      if (typeof card === 'string') return card;
-      return sendToMainGroup_([card], 'แบบฟอร์มกรอกข้อมูล');
+      const links = teamLinksMessage_(['report', 'result', 'fry']);
+      if (typeof links === 'string' && /^ยังไม่ได้ตั้งลิงก์/.test(links)) return links;
+      return sendToMainGroup_([links], 'ลิงก์ไฟล์ทีม');
     }
 
     case 'sendvisithelp':
@@ -519,12 +521,12 @@ const HELP_TEXT = [
   '  (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูการเข้าพบ · ดูการเข้าพบ F4 · ยังไม่ได้เข้าพบ F4',
   '• วิธีบันทึก — อธิบายวิธีพิมพ์แบบละเอียด',
-  '• ดูรายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
-  '📝 แบบฟอร์มกรอกข้อมูล',
-  '• ข้อมูลลูกปลา — ไฟล์กรอกการลงลูกปลา',
-  '• ผลการเลี้ยง — ไฟล์กรอกผลการเลี้ยงปลา',
-  '• แบบฟอร์ม — ทั้ง 2 ไฟล์',
+  '🔗 ลิงก์ไฟล์ทีม (OneDrive)',
+  '• ดูรายงาน — 1. รายงานการเข้าพบลูกค้า',
+  '• ผลการเลี้ยง — 2. ไฟล์กรอกผลการเลี้ยงปลา',
+  '• ข้อมูลลูกปลา — 3. ไฟล์กรอกข้อมูลลูกปลา',
+  '• ลิงก์ — รวมทั้ง 3 ลิงก์',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
 ].join('\n');
@@ -541,7 +543,7 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',
-  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก · ส่งแบบฟอร์ม',
+  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก · ส่งลิงก์',
   '',
   '🗓️ แผนงานประจำ',
   '• แผน — ดูแผน · แผน <รายการ> — ตั้งแผน',

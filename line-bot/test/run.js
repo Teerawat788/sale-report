@@ -1334,7 +1334,7 @@ test('ไฟล์รายงานเยี่ยม: ส่งบันทึ
   assert.match(bot.mails[0].subject, /^NKS-VISIT F2 ร้านทดลอง 2$/);
   assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: 'F2', customer: 'ร้านทดลอง 2',
     activity: 'ติดตาม (ลูกค้าใหม่)', detail: 'สนใจอาหารปลา / นัดสัปดาห์หน้า', reporter: 'ผู้ทดสอบ' });
-  assert.match(bot.say('ดูรายงาน', { groupId: 'Cother' }), /📂 ไฟล์รวมบันทึกการเข้าพบลูกค้า[\s\S]*https:\/\/example\.sharepoint\.com\/x/);
+  assert.match(bot.say('ดูรายงาน', { groupId: 'Cother' }), /^📂 รายงานการเข้าพบลูกค้า[\s\S]*▸ เปิดไฟล์\nhttps:\/\/example\.sharepoint\.com\/x\n/);
   assert.match(bot.say('เมนู', { groupId: 'Cmain' }), /ดูรายงาน/);
 });
 
@@ -1377,36 +1377,139 @@ test('เขตของบันทึกเข้าพบ: พิมพ์ร
   assert.match(bot.say('วิธีบันทึก', { groupId: 'Cmain' }), /ต้องใส่เขตไหม\?[\s\S]*เข้าพบ F3 ร้านกุ้งทอง/);
 });
 
-test('แบบฟอร์ม: การ์ดปุ่มเปิดไฟล์ OneDrive จาก FORM_LINKS (ลิงก์ภาษาไทย/ช่องว่างถูก encode) + ส่งจากห้องสั่งการ', () => {
-  const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
-  assert.match(bot.say('แบบฟอร์ม', { groupId: 'Cmain' }), /ยังไม่ได้ตั้งลิงก์แบบฟอร์ม/);
-  bot.props.FORM_LINKS = 'ผลการเลี้ยงปลา | กรอกได้ทุกคน | https://x.sharepoint.com/Documents/ไฟล์ ทดสอบ/2.ผลการเลี้ยง (ทุกคน).xlsx ;; ราคาปลารายสัปดาห์ | https://x.sharepoint.com/a.xlsx\nบรรทัดผิด';
+function replyOf(bot, text, groupId) {
   const n0 = bot.lineCalls.length;
-  const t = bot.say('แบบฟอร์ม', { groupId: 'Cother' });
-  const msg = bot.lineCalls.slice(n0).find((c) => c.url.endsWith('/reply')).body.messages[0];
-  assert.strictEqual(msg.type, 'flex');
-  assert.match(t, /📝 แบบฟอร์มกรอกข้อมูล[\s\S]*1\. ผลการเลี้ยงปลา\nกรอกได้ทุกคน\n▸ เปิดไฟล์\nhttps:\/\/x\.sharepoint\.com\/Documents\/%E0[^\s]*%20[^\s]*xlsx[\s\S]*2\. ราคาปลารายสัปดาห์/);
-  assert.doesNotMatch(t, /บรรทัดผิด/);
-  assert.strictEqual(bot.say('ส่งแบบฟอร์ม', { groupId: 'Cmain' }), null);
-  assert.match(bot.say('ส่งแบบฟอร์ม', { groupId: 'Cmine' }), /ส่งแบบฟอร์มกรอกข้อมูลเข้ากลุ่มหลักแล้ว/);
+  const t = bot.say(text, { groupId: groupId || 'Cmain' });
+  const call = bot.lineCalls.slice(n0).find((c) => c.url.endsWith('/reply'));
+  return { t, m: call && call.body.messages[0] };
+}
+
+test('ลิงก์ไฟล์ทีม 3 ลิงก์: ดูรายงาน / ผลการเลี้ยง / ข้อมูลลูกปลา แยกปุ่ม · "ลิงก์" รวมทั้ง 3 · ส่งจากห้องสั่งการ', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' } });
+  assert.match(bot.say('ลิงก์', { groupId: 'Cmain' }), /^ยังไม่ได้ตั้งลิงก์ไฟล์ค่ะ\n\(ผู้ดูแลใส่ REPORT_LINK \/ RESULT_LINK \/ FRY_LINK ใน Script Properties\)$/);
+  assert.match(bot.say('ผลการเลี้ยง', { groupId: 'Cmain' }), /^ยังไม่ได้ตั้งลิงก์ "ผลการเลี้ยงปลา" ค่ะ\n\(ผู้ดูแลใส่ RESULT_LINK/);
+  assert.match(bot.say('ส่งลิงก์', { groupId: 'Cmine' }), /^ยังไม่ได้ตั้งลิงก์/);
+  assert.strictEqual(bot.pushes().length, 0, 'ยังไม่มีลิงก์ ไม่ส่งการ์ดว่างเข้ากลุ่ม');
+
+  const base = 'https://x-my.sharepoint.com/personal/u_x_com/Documents/งานกลุ่ม ทีมปลา 2026/ไฟล์กรอกผลการเลี้ยง+ลูกปลา/';
+  bot.props.REPORT_LINK = 'https://x-my.sharepoint.com/:x:/g/personal/u_x_com/EAbc123?e=Zz9';
+  bot.props.RESULT_LINK = base + '2.ผลการเลี้ยงปลาทุกเขต (กรอกได้ทุกคน).xlsx';
+  bot.props.FRY_LINK = ' ' + base + '1.ข้อมูลการลงลูกปลาทุกเขต ปี 2026 (กรอกได้ทุกคน).xlsx \n';
+  const btns = (m) => JSON.stringify(m).match(/"type":"button"/g).length;
+  const uris = (m) => (JSON.stringify(m).match(/"uri":"[^"]*"/g) || []).map((x) => x.slice(7, -1));
+
+  // 1 รายงานการเข้าพบ — ลิงก์แชร์ใช้ตามเดิม
+  const r = replyOf(bot, 'ดูรายงาน', 'Cother');
+  assert.strictEqual(r.m.type, 'flex');
+  assert.strictEqual(btns(r.m), 1);
+  assert.deepStrictEqual(uris(r.m), ['https://x-my.sharepoint.com/:x:/g/personal/u_x_com/EAbc123?e=Zz9']);
+  assert.match(r.t, /^📂 รายงานการเข้าพบลูกค้า\nไฟล์บน OneDrive[\s\S]*รวมทุกเขต[\s\S]*พิมพ์ เข้าพบ \/ ติดตาม/);
+  // 2 ผลการเลี้ยง — ไทย/ช่องว่าง/+ ถูก encode + เปิดใน Excel บนเว็บ
+  const g = replyOf(bot, 'ผลการเลี้ยง');
+  assert.strictEqual(btns(g.m), 1);
+  const gu = uris(g.m)[0];
+  assert.match(gu, /^https:\/\/x-my\.sharepoint\.com\/personal\/u_x_com\/Documents\/%E0[^\s+]*%2B[^\s+]*\.xlsx\?web=1$/);
+  assert.strictEqual(decodeURIComponent(gu.replace('?web=1', '')), base + '2.ผลการเลี้ยงปลาทุกเขต (กรอกได้ทุกคน).xlsx');
+  assert.ok(gu.length <= 1000);
+  assert.match(g.t, /^🐟 ผลการเลี้ยงปลา[\s\S]*กรอกได้ทุกคน[\s\S]*▸ เปิดไฟล์/);
+  assert.doesNotMatch(g.t, /ลูกปลา\n|รายงานการเข้าพบ/);
+  // 3 ข้อมูลลูกปลา (ช่องว่าง/ขึ้นบรรทัดหัวท้ายลิงก์ถูกตัด)
+  const f = replyOf(bot, 'ข้อมูลลูกปลา');
+  assert.strictEqual(decodeURIComponent(uris(f.m)[0].replace('?web=1', '')), base + '1.ข้อมูลการลงลูกปลาทุกเขต ปี 2026 (กรอกได้ทุกคน).xlsx');
+  assert.match(f.t, /^🐠 ข้อมูลลูกปลา/);
+  ['ลิงก์ผลการเลี้ยง', 'กรอกผลการเลี้ยง', 'ผลการเลี้ยงปลา'].forEach((c) => assert.deepStrictEqual(uris(replyOf(bot, c).m), [gu], c));
+  ['ไฟล์ลูกปลา', 'ลิงค์ลูกปลา', 'กรอกลูกปลา'].forEach((c) => assert.deepStrictEqual(uris(replyOf(bot, c).m), uris(f.m), c));
+
+  // ลิงก์ = ทั้ง 3 ตามลำดับ
+  const all = replyOf(bot, 'ลิงก์');
+  assert.strictEqual(btns(all.m), 3);
+  assert.deepStrictEqual(uris(all.m), [uris(r.m)[0], gu, uris(f.m)[0]]);
+  assert.match(all.t, /^🔗 ลิงก์ไฟล์ทีมปลา[\s\S]*1\. 📂 รายงานการเข้าพบลูกค้า[\s\S]*หรือพิมพ์: ดูรายงาน[\s\S]*2\. 🐟 ผลการเลี้ยงปลา[\s\S]*หรือพิมพ์: ผลการเลี้ยง[\s\S]*3\. 🐠 ข้อมูลลูกปลา[\s\S]*หรือพิมพ์: ข้อมูลลูกปลา/);
+  ['ลิงค์', 'แบบฟอร์ม', 'ลิงก์ทั้งหมด'].forEach((c) => assert.strictEqual(replyOf(bot, c).t, all.t, c));
+
+  // ห้องสั่งการส่งเข้ากลุ่มหลัก · กลุ่มอื่นสั่งไม่ได้
+  assert.strictEqual(bot.say('ส่งลิงก์', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('ส่งลิงก์', { groupId: 'Cmine' }), /✅ ส่งลิงก์ไฟล์ทีมเข้ากลุ่มหลักแล้วค่ะ/);
   assert.strictEqual(bot.pushes()[0].body.messages[0].type, 'flex');
+  assert.strictEqual(btns(bot.pushes()[0].body.messages[0]), 3);
+  // เมนูมีครบ 3 ลิงก์ + ปุ่มลัด
+  const menu = replyOf(bot, 'เมนู');
+  assert.match(menu.t, /ดูรายงาน — 1\.[\s\S]*ผลการเลี้ยง — 2\.[\s\S]*ข้อมูลลูกปลา — 3\.[\s\S]*ลิงก์ — รวมทั้ง 3 ลิงก์/);
+  const qr = menu.m.quickReply.items.map((i) => i.action.text);
+  ['ดูรายงาน', 'ผลการเลี้ยง', 'ข้อมูลลูกปลา'].forEach((c) => assert.ok(qr.indexOf(c) >= 0, c));
+  assert.match(bot.say('เมนู', { groupId: 'Cmine' }), /ส่งลิงก์/);
 });
 
-test('แบบฟอร์ม: พิมพ์ชื่อฟอร์ม (ข้อมูลลูกปลา / ผลการเลี้ยง) ได้ปุ่มเฉพาะไฟล์นั้น', () => {
+test('ลิงก์: % ผิดรูปแบบไม่ทำให้บอทพัง · คำไม่ครบ/แชทไม่เด้งการ์ด · ลิงก์ยาวเกินปุ่ม → ข้อความ · FORM_LINKS แบบเดิมยังใช้ได้', () => {
   const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine',
-    FORM_LINKS: 'ข้อมูลลูกปลา | ปี 2026 ทุกเขต | https://x.sharepoint.com/1.xlsx ;; ผลการเลี้ยงปลา | ทุกเขต | https://x.sharepoint.com/2.xlsx' } });
-  const a = bot.say('ข้อมูลลูกปลา', { groupId: 'Cmain' });
-  assert.match(a, /📝 ข้อมูลลูกปลา[\s\S]*https:\/\/x\.sharepoint\.com\/1\.xlsx/);
-  assert.doesNotMatch(a, /2\.xlsx/);
-  const b = bot.say('ผลการเลี้ยง', { groupId: 'Cmain' });
-  assert.match(b, /📝 ผลการเลี้ยงปลา[\s\S]*2\.xlsx/);
-  assert.doesNotMatch(b, /1\.xlsx/);
-  assert.match(bot.say('แบบฟอร์ม', { groupId: 'Cmain' }), /1\. ข้อมูลลูกปลา[\s\S]*2\. ผลการเลี้ยงปลา/);
-  assert.strictEqual(bot.say('ผลการเลี้ยงดีมาก', { groupId: 'Cmain' }), null);
-  assert.strictEqual(bot.say('ผลการเลี้ยงปลาของฟาร์มเอดีมาก', { groupId: 'Cmain' }), null);
-  assert.strictEqual(bot.say('ข้อมูลลูกปลาเดือนนี้ส่งหรือยัง', { groupId: 'Cmain' }), null);
-  assert.match(bot.say('เข้าพบ ร้านทดสอบ ส่งข้อมูลลูกปลาให้แล้ว', { groupId: 'Cmain' }), /บันทึกการเข้าพบลูกค้าแล้วค่ะ/);
-  assert.match(bot.say('ติดตาม ฟาร์มบี ผลการเลี้ยงดี', { groupId: 'Cmain' }), /บันทึกการติดตามลูกค้าแล้วค่ะ/);
+    RESULT_LINK: 'https://x.sharepoint.com/Documents/ผล 100%.xlsx', FRY_LINK: 'https://x.sharepoint.com/a%2.xlsx',
+    REPORT_LINK: 'ไม่ใช่ลิงก์' } });
+  // เดิม: % ผิดรูปแบบทำให้ทุกข้อความตอบ "เกิดข้อผิดพลาด: URI malformed"
+  assert.strictEqual(bot.say('สวัสดีค่ะ', { groupId: 'Cmain' }), null);
+  assert.match(bot.say('เข้าพบ ร้านทดสอบ ส่งตัวอย่าง', { groupId: 'Cmain' }), /บันทึกการเข้าพบลูกค้าแล้วค่ะ/);
+  const uris = (m) => (JSON.stringify(m).match(/"uri":"[^"]*"/g) || []).map((x) => x.slice(7, -1));
+  assert.deepStrictEqual(uris(replyOf(bot, 'ผลการเลี้ยง').m), ['https://x.sharepoint.com/Documents/%E0%B8%9C%E0%B8%A5%20100%25.xlsx?web=1']);
+  assert.deepStrictEqual(uris(replyOf(bot, 'ข้อมูลลูกปลา').m), ['https://x.sharepoint.com/a%252.xlsx?web=1']);
+  assert.match(bot.say('ดูรายงาน', { groupId: 'Cmain' }), /^ยังไม่ได้ตั้งลิงก์ "รายงานการเข้าพบลูกค้า"/, 'ค่าที่ไม่ใช่ https ไม่ทำเป็นปุ่ม');
+  const all = replyOf(bot, 'ลิงก์');
+  assert.match(all.t, /1\. 📂 รายงานการเข้าพบลูกค้า[\s\S]*ยังไม่ได้ตั้งลิงก์ \(REPORT_LINK\)[\s\S]*2\. 🐟/);
+  assert.strictEqual(uris(all.m).length, 2);
+
+  // คำไม่ครบ / แชทที่ขึ้นต้นด้วยชื่อไฟล์ → เงียบ
+  ['ข้อมูล', 'ผลการ', 'ลูกปลา', 'รายงาน', 'ลิงก์ อยู่ไหน', 'ผลการเลี้ยงดีมาก', 'ผลการเลี้ยง ฟาร์มบีดีมาก',
+    'ข้อมูลลูกปลาเดือนนี้ส่งหรือยัง', 'ดูรายงานยอดหน่อย'].forEach((c) => {
+    assert.strictEqual(bot.say(c, { groupId: 'Cmain' }), null, c);
+  });
+
+  // ลิงก์ที่คัดลอกจากแถบที่อยู่เบราว์เซอร์ (มี %2B / %2F อยู่แล้ว) ต้องไม่ถูก encode ซ้ำเป็น %252B
+  [['https://x-my.sharepoint.com/personal/u/Documents/%E0%B8%9C%E0%B8%A5%2B%E0%B8%A5%20(1).xlsx',
+    'https://x-my.sharepoint.com/personal/u/Documents/%E0%B8%9C%E0%B8%A5%2B%E0%B8%A5%20(1).xlsx?web=1'],
+  ['https://x-my.sharepoint.com/personal/u/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fu%5Fx%2FDocuments&view=0',
+    'https://x-my.sharepoint.com/personal/u/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fu%5Fx%2FDocuments&view=0'],
+  ['https://x.sharepoint.com/:x:/r/personal/u/Documents/a.xlsx?d=w1&web=1&e=Ab', 'https://x.sharepoint.com/:x:/r/personal/u/Documents/a.xlsx?d=w1&web=1&e=Ab'],
+  ].forEach(([given, want]) => {
+    bot.props.RESULT_LINK = given;
+    assert.deepStrictEqual(uris(replyOf(bot, 'ผลการเลี้ยง').m), [want], given);
+  });
+
+  // ลิงก์ยาวเกิน 1000 ตัวอักษร (ปุ่ม LINE ไม่รับ) → ส่งเป็นข้อความ LINE ทำเป็นลิงก์ให้
+  bot.props.RESULT_LINK = 'https://x.sharepoint.com/Documents/' + 'ผลการเลี้ยง'.repeat(12) + '.xlsx';
+  const long = replyOf(bot, 'ผลการเลี้ยง');
+  assert.strictEqual(long.m.type, 'text');
+  assert.match(long.t, /^🐟 ผลการเลี้ยงปลา\nhttps:\/\/x\.sharepoint\.com\/Documents\/%E0\S+\.xlsx\?web=1$/);
+  assert.ok(long.t.length > 1000);
+
+  // FORM_LINKS แบบเดิม (ชื่อ | รายละเอียด | ลิงก์) ยังใช้ได้ ถ้าไม่ได้ตั้ง RESULT_LINK / FRY_LINK
+  delete bot.props.RESULT_LINK; delete bot.props.FRY_LINK;
+  bot.props.FORM_LINKS = 'ข้อมูลลูกปลา | ปี 2026 | https://x.sharepoint.com/1.xlsx ;; ผลการเลี้ยงปลา | ทุกเขต | https://x.sharepoint.com/2.xlsx\nบรรทัดผิด';
+  assert.deepStrictEqual(uris(replyOf(bot, 'ผลการเลี้ยง').m), ['https://x.sharepoint.com/2.xlsx?web=1']);
+  assert.deepStrictEqual(uris(replyOf(bot, 'ข้อมูลลูกปลา').m), ['https://x.sharepoint.com/1.xlsx?web=1']);
+});
+
+test('บันทึกการเข้าพบ: "ติดตามผลการเลี้ยง …" / "เข้าพบผลการเลี้ยง …" บันทึกได้ (เดิมเงียบ) · คำสั่งลิงก์ไม่กระทบ', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10, 5), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', VISIT_EMAIL: 'r@x.com',
+    RESULT_LINK: 'https://x.sharepoint.com/2.xlsx' } });
+  const a = bot.say('ติดตามผลการเลี้ยง F2 ฟาร์มทดสอบ ปลาโตดี FCR 1.2', { groupId: 'Cmain' });
+  assert.match(a, /✅ บันทึกการติดตามลูกค้าแล้วค่ะ[\s\S]*📞 ฟาร์มทดสอบ \[F2\][\s\S]*🗒️ ผลการเลี้ยง: ปลาโตดี FCR 1\.2/);
+  assert.deepStrictEqual(JSON.parse(bot.mails[0].body), { date: '25/11/2026', time: '10:05', zone: 'F2', customer: 'ฟาร์มทดสอบ',
+    activity: 'ติดตาม', detail: 'ผลการเลี้ยง: ปลาโตดี FCR 1.2', reporter: 'ผู้ทดสอบ' });
+  assert.match(bot.say('เข้าพบผลการเลี้ยง F2 ฟาร์มบี', { groupId: 'Cmain' }), /✅ บันทึกการเข้าพบลูกค้าแล้วค่ะ[\s\S]*🤝 ฟาร์มบี \[F2\][\s\S]*🗒️ ผลการเลี้ยง/);
+  assert.strictEqual(JSON.parse(bot.mails[1].body).detail, 'ผลการเลี้ยง');
+  assert.match(bot.say('ติดตามผลเลี้ยง F2 ฟาร์มซี\nตายน้อย\nจับปลาเดือนหน้า', { groupId: 'Cmain' }), /🗒️ ผลการเลี้ยง: ตายน้อย/);
+  assert.strictEqual(JSON.parse(bot.mails[2].body).detail, 'ผลการเลี้ยง: ตายน้อย / จับปลาเดือนหน้า');
+  // แบบเดิมยังได้เหมือนเดิม
+  assert.match(bot.say('ติดตาม F2 ฟาร์มบี ผลการเลี้ยงดี', { groupId: 'Cmain' }), /บันทึกการติดตามลูกค้าแล้วค่ะ[\s\S]*🗒️ ผลการเลี้ยงดี/);
+  assert.match(bot.say('เข้าพบ F2 ร้านทดสอบ ส่งข้อมูลลูกปลาให้แล้ว', { groupId: 'Cmain' }), /บันทึกการเข้าพบลูกค้าแล้วค่ะ/);
+  assert.strictEqual(bot.mails.length, 5);
+  // แชทปกติไม่บันทึก
+  ['ติดตามผลการเลี้ยงดีมาก', 'ติดตามผลการเลี้ยง', 'ติดตามผลการเลี้ยง ด้วยนะ', 'ติดตามผลการเลี้ยง ทุกฟาร์มด้วยนะ',
+    'ติดตามผลการเลี้ยง ทุกฟาร์ม ด้วยนะครับ', 'ติดตาม ด้วยนะ งานนี้', 'เยี่ยมผลการเลี้ยง ดีมาก', 'ติดตามงาน ร้านเอ'].forEach((c) => {
+    assert.strictEqual(bot.say(c, { groupId: 'Cmain' }), null, c);
+  });
+  assert.strictEqual(bot.mails.length, 5);
+  // คำสั่งลิงก์ = แค่ส่งปุ่ม ไม่เกิดบันทึก
+  assert.match(bot.say('ผลการเลี้ยง', { groupId: 'Cmain' }), /เปิดไฟล์/);
+  assert.strictEqual(bot.mails.length, 5);
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));
