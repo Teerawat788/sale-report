@@ -267,6 +267,13 @@ function runCommand_(p, ctx) {
     case 'reportlink':
       return reportLinkText_();
 
+    case 'visithelp':
+      return VISIT_HELP_TEXT;
+
+    case 'sendvisithelp':
+      if (!isControlRoom_(ctx.source)) return null;
+      return sendToMainGroup_([VISIT_HELP_TEXT], 'วิธีบันทึกเยี่ยม');
+
     case 'notvisited':
       return formatNotVisited_(p.argText, now);
 
@@ -482,6 +489,7 @@ const HELP_TEXT = [
   '  เช่น เข้าพบ กบทองฟาร์ม สนใจสูตรใหม่',
   '  (แล้วแชร์ตำแหน่งต่อได้)',
   '• ดูเยี่ยม · ดูเยี่ยม F4 · ไม่ได้เยี่ยม F4',
+  '• วิธีบันทึก — อธิบายวิธีพิมพ์บันทึกเยี่ยมแบบละเอียด',
   '• ไฟล์รายงาน — ลิงก์ไฟล์ Excel รวมทุกเขต (OneDrive)',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
@@ -499,7 +507,7 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',
-  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด',
+  '• ส่งยอด · ส่งยอด F4 · ส่งวันเกิด · ส่งวิธีบันทึก',
   '',
   '🗓️ แผนงานประจำ',
   '• แผน — ดูแผน · แผน <รายการ> — ตั้งแผน',
