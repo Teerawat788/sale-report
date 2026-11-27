@@ -50,11 +50,22 @@ function handleEvent_(ev) {
   const source = ev.source || {};
   const registered = prop_('GROUP_ID', '');
 
+  // จำกลุ่มที่น้องขุนศึกอยู่ (ข้อความเช้าส่งทุกกลุ่ม) — ถูกเชิญออกจากกลุ่ม = ลืม
+  if (ev.type === 'leave') {
+    try { forgetGroup_(chatId_(source)); } catch (e) { console.error('ลืมกลุ่มไม่ได้: ' + (e && e.message || e)); }
+    return;
+  }
+  try { rememberGroup_(source); } catch (e) { console.error('จำกลุ่มไม่ได้: ' + (e && e.message || e)); }
+
   if (ev.type === 'join') {
+    const morning = morningToAllGroups_()
+      ? '☀️ ทุกเช้า ' + morningWhenText_() + ' น้องขุนศึกจะส่งสรุปยอด + วันเกิดลูกค้าเข้ากลุ่มนี้ด้วยค่ะ\n' +
+        '(กลุ่มนี้ไม่ต้องการ พิมพ์: ไม่รับข้อความเช้า)\n'
+      : '';
     lineReply_(ev.replyToken, withQuickReply_(
       '👋 สวัสดีค่ะทีมขาย! น้องขุนศึกเป็นบอทผู้ช่วยของทีมค่ะ\n' +
-      (registered ? '' : 'พิมพ์ "ลงทะเบียน" เพื่อให้น้องขุนศึกส่งยอดและแจ้งเตือนเข้ากลุ่มนี้นะคะ\n') +
-      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมดได้เลยค่ะ', ['ลงทะเบียน', 'เมนู']));
+      (registered ? morning : 'พิมพ์ "ลงทะเบียน" เพื่อให้น้องขุนศึกส่งยอดและแจ้งเตือนเข้ากลุ่มนี้นะคะ\n') +
+      'พิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมดได้เลยค่ะ', registered ? ['เมนู', 'ยอดขาย'] : ['ลงทะเบียน', 'เมนู']));
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
@@ -457,6 +468,16 @@ function runCommand_(p, ctx) {
       return w ? '🗑️ ลบงานประจำ #' + w.id + ' ' + w.text : 'ไม่พบงานประจำนี้';
     }
 
+    case 'groups':
+      if (!adminAllowed_(ctx)) return null;
+      return groupsCard_(now);
+
+    case 'morningoff':
+      return setMorningOff_(ctx, p.argText, true);
+
+    case 'morningon':
+      return setMorningOff_(ctx, p.argText, false);
+
     case 'brief': {
       if (!adminAllowed_(ctx)) return null; // ตัวอย่างข้อความเช้า (นำเข้าไฟล์ + เรียก AI — ช้า) ใช้ในห้องสั่งการ
       const msgs = buildMorningMessages_(now);
@@ -529,6 +550,7 @@ const HELP_TEXT = [
   '• ลิงก์ — รวมทั้ง 3 ลิงก์',
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
+  '   ส่งทุกกลุ่มที่มีน้องขุนศึก · กลุ่มไหนไม่ต้องการ พิมพ์ ไม่รับข้อความเช้า',
 ].join('\n');
 
 // เมนูห้องสั่งการ — เพิ่มคำสั่งของผู้ดูแล
@@ -540,6 +562,10 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '📤 ส่งไฟล์ Excel ยอดขายในห้องนี้',
   '• อัปเดตยอด 23/11 — แก้วันที่ของไฟล์ล่าสุด',
   '• สรุปเช้า — ดูตัวอย่างข้อความเช้า',
+  '',
+  '👥 กลุ่มที่มีน้องขุนศึก',
+  '• กลุ่ม — รายชื่อกลุ่ม · ใครได้ข้อความเช้า · โควตาข้อความ',
+  '• ปิดข้อความเช้า 2 · เปิดข้อความเช้า 2 (เลขตามรายการ)',
   '',
   '📣 ให้บอทพูดในกลุ่มใหญ่',
   '• ประกาศ <ข้อความ> (ใส่ @All ได้)',

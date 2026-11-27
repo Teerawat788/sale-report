@@ -37,13 +37,16 @@ const COMMANDS = {
   frylink: ['ข้อมูลลูกปลา', 'ไฟล์ลูกปลา', 'ไฟล์ข้อมูลลูกปลา', 'ลิงก์ลูกปลา', 'ลิงค์ลูกปลา', 'กรอกลูกปลา', 'ลงลูกปลา'],
   formlinks: ['ลิงก์', 'ลิงค์', 'ลิงก์ทั้งหมด', 'ลิงค์ทั้งหมด', 'แบบฟอร์ม', 'ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
   sendformlinks: ['ส่งลิงก์', 'ส่งลิงค์', 'ส่งแบบฟอร์ม'],
+  groups: ['กลุ่ม', 'กลุ่มทั้งหมด', 'รายชื่อกลุ่ม', 'โควตา', 'โควต้า'],
+  morningoff: ['ไม่รับข้อความเช้า', 'ปิดข้อความเช้า', 'หยุดข้อความเช้า'],
+  morningon: ['รับข้อความเช้า', 'เปิดข้อความเช้า'],
   sendbirthday: ['ส่งวันเกิด'],
   aisales: ['วิเคราะห์', 'วิเคราะห์ยอด'],
   review: ['สรุปสัปดาห์', 'review'],
 };
 
 /** คำสั่งที่ต้องพิมพ์โดด ๆ (กันบอทตอบแชทปกติ เช่น "วันนี้ ไปไหนกัน") */
-const NO_ARG_COMMANDS = ['resultlink', 'frylink', 'formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
+const NO_ARG_COMMANDS = ['groups', 'resultlink', 'frylink', 'formlinks', 'sendformlinks', 'visithelp', 'sendvisithelp', 'reportlink', 'help', 'register', 'whoami', 'tasks', 'mytasks', 'today',
   'tomorrow', 'week', 'weekly', 'brief', 'review', 'salesday', 'salesrank',
   'salesprod', 'aisales'];
 
@@ -97,6 +100,7 @@ function parseCommand_(text) {
   // "ยอด <ทีม/ชื่อเซลส์>" — ถ้าหาไม่เจอบอทจะเงียบ (กันตอบแชทปกติ)
   if (cmd === 'sales' && args.length > 6) return null;
   if (cmd === 'registerupload' && args.length && args.join('') !== 'ยืนยัน') return null;
+  if ((cmd === 'morningoff' || cmd === 'morningon') && (args.length > 1 || (args.length && !/^\d{1,2}$/.test(args[0])))) return null;
   if ((cmd === 'visits' || cmd === 'notvisited') && args.length > 4) return null;
   if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;

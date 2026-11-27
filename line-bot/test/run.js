@@ -1512,4 +1512,129 @@ test('บันทึกการเข้าพบ: "ติดตามผล�
   assert.strictEqual(bot.mails.length, 5);
 });
 
+function groupApi(bot, members, names, quota) {
+  // จำลอง LINE: จำนวนสมาชิก / ชื่อกลุ่ม / โควตา (push เข้ากลุ่มนับตามจำนวนสมาชิก)
+  const q = Object.assign({ type: 'limited', value: 1000, used: 100, fail: {} }, quota);
+  bot.setLineResponder((c) => {
+    let m;
+    if ((m = c.url.match(/\/(?:group|room)\/([^/]+)\/members\/count$/))) {
+      return members[m[1]] === undefined ? { code: 404, body: { message: 'Not found' } } : { body: { count: members[m[1]] } };
+    }
+    if ((m = c.url.match(/\/group\/([^/]+)\/summary$/))) {
+      return names[m[1]] === undefined ? { code: 404, body: {} } : { body: { groupId: m[1], groupName: names[m[1]] } };
+    }
+    if (c.url.endsWith('/message/quota')) return { body: q.type === 'none' ? { type: 'none' } : { type: 'limited', value: q.value } };
+    if (c.url.endsWith('/message/quota/consumption')) return { body: { totalUsage: q.used } };
+    if (c.url.endsWith('/message/push')) {
+      if (q.fail[c.body.to]) return { code: q.fail[c.body.to], body: { message: 'You have reached your monthly limit.' } };
+      q.used += members[c.body.to] || 0;
+    }
+    return null;
+  });
+  return q;
+}
+
+test('ข้อความเช้าส่งทุกกลุ่มที่มีน้องขุนศึก: กลุ่มหลักก่อน · ไม่ส่งห้องสั่งการ / กลุ่มที่ปิด / กลุ่มที่เชิญออกแล้ว', () => {
+  const bot = bdBot(D(2026, 11, 27, 7, 0), { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' });
+  // น้องขุนศึกรู้จักกลุ่มเมื่อถูกเชิญเข้า หรือมีคนพิมพ์ในกลุ่ม (LINE ไม่มี API บอกว่าบอทอยู่กลุ่มไหน)
+  const welcome = bot.sendEvent({ type: 'join', replyToken: 'rt', source: { type: 'group', groupId: 'Cf3' } });
+  assert.match(welcome, /☀️ ทุกเช้า 7:30 \(จ\.–ส\.\) น้องขุนศึกจะส่งสรุปยอด \+ วันเกิดลูกค้าเข้ากลุ่มนี้ด้วยค่ะ\n\(กลุ่มนี้ไม่ต้องการ พิมพ์: ไม่รับข้อความเช้า\)/);
+  assert.doesNotMatch(welcome, /ลงทะเบียน/, 'มีกลุ่มหลักแล้ว ไม่ชวนลงทะเบียนซ้ำ');
+  bot.say('สวัสดีค่ะ', { groupId: 'Cother' });
+  bot.say('เมนู', { groupId: 'Cmine' });
+  bot.say('เมนู', { groupId: 'Cmain' });
+  bot.say('สวัสดีค่ะ', { groupId: 'Cleft' });
+  assert.strictEqual(bot.sendEvent({ type: 'leave', source: { type: 'group', groupId: 'Cleft' } }), null);
+  bot.sendEvent({ type: 'message', replyToken: 'rt', source: { type: 'room', roomId: 'Rroom1', userId: 'U1' }, message: { type: 'text', id: 'a', text: 'สวัสดี' } });
+  bot.sendEvent({ type: 'message', replyToken: 'rt', source: { type: 'user', userId: 'U9' }, message: { type: 'text', id: 'b', text: 'สวัสดี' } });
+  assert.deepStrictEqual(Object.keys(JSON.parse(bot.props.KNOWN_GROUPS)), ['Cf3', 'Cother', 'Cmine', 'Cmain', 'Rroom1'], 'แชท 1:1 ไม่นับ · ออกแล้วลืม');
+
+  // กลุ่มเลือกไม่รับได้เอง · กลุ่มหลักปิดไม่ได้ · แชทที่ขึ้นต้นด้วยคำสั่งไม่นับ
+  assert.match(bot.say('ไม่รับข้อความเช้า', { groupId: 'Cother' }), /^🔕 กลุ่มนี้จะไม่ได้รับข้อความเช้าแล้วค่ะ\n\(อยากได้อีก พิมพ์: รับข้อความเช้า\)/);
+  assert.match(bot.say('ไม่รับข้อความเช้า', { groupId: 'Cmain' }), /กลุ่มหลักได้รับข้อความเช้าเสมอค่ะ/);
+  assert.strictEqual(bot.say('ไม่รับข้อความเช้า เพราะอะไร', { groupId: 'Cf3' }), null);
+  assert.strictEqual(bot.sendEvent({ type: 'message', replyToken: 'rt', source: { type: 'user', userId: 'U9' }, message: { type: 'text', id: 'c', text: 'ไม่รับข้อความเช้า' } }), null);
+
+  bot.setNow(D(2026, 11, 27, 7, 30)); bot.ctx.tick();
+  assert.deepStrictEqual(bot.pushes().map((p) => p.body.to), ['Cmain', 'Cf3', 'Rroom1']);
+  const bodies = bot.pushes().map((p) => JSON.stringify(p.body.messages));
+  assert.ok(bodies.every((b) => b === bodies[0]), 'ทุกกลุ่มได้ข้อความเดียวกัน');
+  assert.match(bot.pushTexts()[1], /วันเกิด/);
+  bot.setNow(D(2026, 11, 27, 7, 35)); bot.ctx.tick();
+  assert.strictEqual(bot.pushes().length, 3, 'วันละครั้ง');
+
+  assert.match(bot.say('รับข้อความเช้า', { groupId: 'Cother' }), /^☀️ กลุ่มนี้จะได้รับข้อความเช้าทุก 7:30 \(จ\.–ส\.\) ค่ะ$/);
+  bot.setNow(D(2026, 11, 28, 7, 30)); bot.ctx.tick();
+  assert.deepStrictEqual(bot.pushes().slice(3).map((p) => p.body.to), ['Cmain', 'Cf3', 'Cother', 'Rroom1']);
+
+  // ส่งเฉพาะกลุ่มหลักได้: MORNING_ALL_GROUPS = false หรือ LOCK_GROUPS = true
+  bot.props.MORNING_ALL_GROUPS = 'false';
+  bot.setNow(D(2026, 11, 30, 7, 30)); bot.ctx.tick();
+  assert.deepStrictEqual(bot.pushes().slice(7).map((p) => p.body.to), ['Cmain']);
+  assert.match(bot.say('รับข้อความเช้า', { groupId: 'Cf3' }), /ส่งเฉพาะกลุ่มหลัก/);
+  delete bot.props.MORNING_ALL_GROUPS; bot.props.LOCK_GROUPS = 'true';
+  bot.setNow(D(2026, 12, 1, 7, 30)); bot.ctx.tick();
+  assert.deepStrictEqual(bot.pushes().slice(8).map((p) => p.body.to), ['Cmain']);
+});
+
+test('กลุ่ม (ห้องสั่งการ): รายชื่อกลุ่ม · จำนวนคน · ใครได้ข้อความเช้า · โควตา + ปิด/เปิดตามเลข', () => {
+  const bot = bdBot(D(2026, 11, 27, 9, 0), { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' });
+  groupApi(bot, { Cmain: 20, Cmine: 3, Cf3: 8, Cbig: 50 }, { Cmain: 'ทีมขายปลา', Cmine: 'ห้องสั่งการ', Cf3: 'ทีม F3', Cbig: 'กลุ่มทดสอบใหญ่' });
+  ['Cmain', 'Cmine', 'Cf3', 'Cbig', 'Cgone'].forEach((g) => bot.say('เมนู', { groupId: g }));
+  assert.strictEqual(bot.say('กลุ่ม', { groupId: 'Cmain' }), null, 'เฉพาะห้องสั่งการ');
+  assert.strictEqual(bot.say('กลุ่ม', { groupId: 'Cf3' }), null);
+  const card = replyOf(bot, 'กลุ่ม', 'Cmine');
+  assert.strictEqual(card.m.type, 'flex');
+  assert.match(card.t, /^👥 กลุ่มที่มีน้องขุนศึก\nข้อความเช้า 7:30 \(จ\.–ส\.\) ส่งทุกกลุ่มที่ ✅/);
+  assert.match(card.t, /1 · ทีมขายปลา · 20 · ⭐ หลัก\n2 · ทีม F3 · 8 · ✅ รับ\n3 · กลุ่มทดสอบใหญ่ · 50 · ✅ รับ\n4 · \(น้องขุนศึกไม่ได้อยู่ในกลุ่มนี้แล้ว\?\) · - · ✅ รับ\n5 · ห้องสั่งการ · 3 · 🛠️ สั่งการ/);
+  assert.match(card.t, /โควตาข้อความเดือนนี้ · 100 \/ 1,000\nข้อความเช้า 1 ครั้งใช้ · ≥ 78 ข้อความ\nถึงสิ้นเดือน \(2 วัน\) · ≈ 156 ข้อความ\nคงเหลือ · 900/);
+  assert.match(card.t, /LINE นับข้อความที่ส่งเข้ากลุ่มตามจำนวนสมาชิก/);
+  assert.match(card.t, /ปิดข้อความเช้า 2 · เปิดข้อความเช้า 2/);
+  assert.strictEqual(JSON.parse(bot.props.KNOWN_GROUPS).Cf3.name, 'ทีม F3', 'จำชื่อกลุ่มไว้');
+
+  assert.match(bot.say('ปิดข้อความเช้า 3', { groupId: 'Cmine' }), /^🔕 กลุ่มเลข 3 จะไม่ได้รับข้อความเช้าแล้วค่ะ\nคำสั่งต่าง ๆ ยังใช้ได้ตามปกตินะคะ$/);
+  assert.match(replyOf(bot, 'กลุ่ม', 'Cmine').t, /3 · กลุ่มทดสอบใหญ่ · 50 · 🔕 ปิด[\s\S]*ข้อความเช้า 1 ครั้งใช้ · ≥ 28 ข้อความ/);
+  assert.match(bot.say('เปิดข้อความเช้า 3', { groupId: 'Cmine' }), /☀️ กลุ่มเลข 3 จะได้รับข้อความเช้า/);
+  assert.match(bot.say('ปิดข้อความเช้า 1', { groupId: 'Cmine' }), /กลุ่มหลักได้รับข้อความเช้าเสมอ/);
+  assert.match(bot.say('ปิดข้อความเช้า 5', { groupId: 'Cmine' }), /ห้องสั่งการไม่ได้รับข้อความเช้าอยู่แล้วค่ะ/);
+  assert.match(bot.say('ปิดข้อความเช้า 9', { groupId: 'Cmine' }), /ไม่มีกลุ่มเลข 9 ค่ะ/);
+  assert.match(bot.say('ปิดข้อความเช้า', { groupId: 'Cmine' }), /พิมพ์ "กลุ่ม" เพื่อดูเลขกลุ่ม/);
+  assert.strictEqual(bot.say('ปิดข้อความเช้า 2', { groupId: 'Cf3' }), null, 'ในกลุ่มทั่วไปใส่เลขไม่ได้');
+  assert.match(bot.say('เมนู', { groupId: 'Cmine' }), /👥 กลุ่มที่มีน้องขุนศึก\n• กลุ่ม — /);
+  assert.match(bot.say('เมนู', { groupId: 'Cf3' }), /ไม่รับข้อความเช้า/);
+  assert.doesNotMatch(bot.say('เมนู', { groupId: 'Cf3' }), /ปิดข้อความเช้า 2/);
+});
+
+test('ข้อความเช้า + โควตา LINE: ใกล้หมด → กันไว้ให้กลุ่มหลักถึงสิ้นเดือน งดส่งกลุ่มอื่น · 429 หยุดส่ง · ไม่จำกัด = ส่งครบ', () => {
+  const setup = (quota) => {
+    const bot = bdBot(D(2026, 11, 27, 7, 0), { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine' });
+    const q = groupApi(bot, { Cmain: 20, Cmine: 3, Cf3: 8, Cbig: 50 }, { Cmain: 'ทีมขายปลา', Cf3: 'ทีม F3', Cbig: 'กลุ่มทดสอบใหญ่' }, quota);
+    ['Cmain', 'Cmine', 'Cf3', 'Cbig', 'Cgone'].forEach((g) => bot.say('เมนู', { groupId: g }));
+    bot.setNow(D(2026, 11, 27, 7, 30));
+    bot.ctx.tick();
+    return { bot, q, to: bot.pushes().map((p) => p.body.to) };
+  };
+  // เหลือ 60: กลุ่มหลักใช้ 20 วันนี้ + กัน 20 × 2 วันที่เหลือ → ไม่พอส่งกลุ่มอื่น
+  const tight = setup({ used: 940 });
+  assert.deepStrictEqual(tight.to, ['Cmain']);
+  assert.match(replyOf(tight.bot, 'กลุ่ม', 'Cmine').t, /☀️ ข้อความเช้าล่าสุด ศ\. 27 พ\.ย\.: ส่ง 1 กลุ่ม · งดส่ง 3 กลุ่ม \(โควตาใกล้หมด\/หมด\)/);
+  // เหลือพอบางส่วน: ส่งตามลำดับเท่าที่พอ (กลุ่มที่นับคนไม่ได้ = งดส่ง)
+  const some = setup({ used: 900 });
+  assert.deepStrictEqual(some.to, ['Cmain', 'Cf3']);
+  const enough = setup({ used: 100 });
+  assert.deepStrictEqual(enough.to, ['Cmain', 'Cf3', 'Cbig'], 'กลุ่มที่น้องขุนศึกไม่อยู่แล้ว (นับคนไม่ได้) ไม่ส่ง');
+  // LINE ตอบ 429 (โควตาหมด) → หยุด ไม่ยิงกลุ่มที่เหลือ
+  const full = setup({ used: 100, fail: { Cf3: 429 } });
+  assert.deepStrictEqual(full.to, ['Cmain', 'Cf3']);
+  assert.deepStrictEqual(JSON.parse(full.bot.props.LAST_MORNING_REPORT).skipped, ['Cbig', 'Cgone']);
+  // ไม่จำกัดโควตา → ส่งทุกกลุ่ม ไม่ต้องนับคน
+  const free = setup({ type: 'none' });
+  assert.deepStrictEqual(free.to, ['Cmain', 'Cf3', 'Cbig', 'Cgone']);
+  assert.strictEqual(free.bot.lineCalls.filter((c) => /members\/count/.test(c.url)).length, 0);
+  // กลุ่มหลักส่งไม่ได้ (429) → ไม่ส่งกลุ่มอื่นต่อ
+  const dead = setup({ used: 100, fail: { Cmain: 429 } });
+  assert.deepStrictEqual(dead.to, ['Cmain']);
+  assert.deepStrictEqual(JSON.parse(dead.bot.props.LAST_MORNING_REPORT), { date: 'ศ. 27 พ.ย.', sent: [], skipped: ['Cf3', 'Cbig', 'Cgone'], failed: ['Cmain'], quota: true });
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

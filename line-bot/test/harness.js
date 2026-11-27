@@ -6,7 +6,7 @@ const { checkFlexMessage } = require('./flexcheck');
 
 const SRC = path.join(__dirname, '..', 'src');
 const ORDER = ['Config', 'Util', 'Parser', 'Line', 'Flex', 'Store', 'Tasks', 'Weekly',
-  'Calendar', 'Sales', 'SalesData', 'Cards', 'Ai', 'Birthdays', 'Reminders', 'Visits', 'Schedule', 'Main'];
+  'Calendar', 'Sales', 'SalesData', 'Cards', 'Ai', 'Birthdays', 'Reminders', 'Visits', 'Groups', 'Schedule', 'Main'];
 
 function makeSheet(name) {
   const data = [];
@@ -58,6 +58,8 @@ function createBot(opts = {}) {
   const triggers = [];
   let dashboard = opts.dashboard;
   let rejectFlex = !!opts.rejectFlex;
+  // ปรับคำตอบของ LINE API ในเทสต์: (call) => ({ code, body }) หรือ null = ค่าปกติ
+  let lineResponder = opts.lineResponder || null;
 
   const ss = {
     getSheetByName: (n) => sheets[n] || null,
@@ -191,6 +193,11 @@ const folderObj = () => ctx.DriveApp._folder();
           if (rejectFlex && msgs.some((m) => m.type === 'flex')) {
             return { getResponseCode: () => 400, getContentText: () => '{"message":"A message (messages[0]) in the request body is invalid"}' };
           }
+          const custom = lineResponder && lineResponder(call);
+          if (custom) {
+            return { getResponseCode: () => custom.code || 200,
+              getContentText: () => (typeof custom.body === 'string' ? custom.body : JSON.stringify(custom.body || {})) };
+          }
           const body = /\/member\/|\/profile\//.test(url) ? JSON.stringify({ displayName: 'ผู้ทดสอบ' }) : '{}';
           return { getResponseCode: () => 200, getContentText: () => body };
         }
@@ -211,6 +218,14 @@ const folderObj = () => ctx.DriveApp._folder();
   return {
     ctx, props, sheets, events, lineCalls, triggers, driveFiles, aiCalls, msgText, mails,
     setRejectFlex(v) { rejectFlex = v; },
+    setLineResponder(fn) { lineResponder = fn; },
+    /** ส่ง event ใด ๆ (join / leave / memberJoined) คืนข้อความที่บอทตอบ หรือ null */
+    sendEvent(ev) {
+      const before = lineCalls.length;
+      ctx.doPost({ postData: { contents: JSON.stringify({ destination: 'Ubot', events: [ev] }) } });
+      const reply = lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));
+      return reply ? reply.body.messages.map(msgText).join('\n') : null;
+    },
     /** ข้อความของ push แต่ละครั้ง (การ์ดแปลงเป็นข้อความ) */
     pushTexts() { return lineCalls.filter((c) => c.url.endsWith('/message/push')).map((c) => c.body.messages.map(msgText).join('\n')); },
     geminiCalls,

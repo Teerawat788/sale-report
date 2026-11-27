@@ -42,12 +42,13 @@ function runMorning_(now) {
   return morningBrief();
 }
 
-/** ข้อความเช้า: ยอดขาย (รวม + F1–F5) + วันเกิดลูกค้า — ส่งเข้ากลุ่มหลักครั้งเดียว */
+/** ข้อความเช้า: ยอดขาย (รวม + F1–F5) + วันเกิดลูกค้า — ส่งกลุ่มหลัก + ทุกกลุ่มที่มีน้องขุนศึก (ดู Groups.gs) */
 function morningBrief() {
-  const messages = buildMorningMessages_(now_());
+  const now = now_();
+  if (!morningTargets_().length) { console.warn('ยังไม่มีกลุ่มรับข้อความเช้า — พิมพ์ "ลงทะเบียน" ในกลุ่มหลัก'); return false; }
+  const messages = buildMorningMessages_(now);
   if (!messages.length) return false;
-  linePush_(prop_('GROUP_ID', ''), messages);
-  return true;
+  return pushToMorningGroups_(messages, now).sent.length > 0;
 }
 
 function buildMorningMessages_(now) {
