@@ -1790,4 +1790,22 @@ test('วันหยุด (ห้องสั่งการ): ดูวัน
   assert.deepStrictEqual(JSON.parse(JSON.stringify(bot.ctx.workingDays_(D(2026, 12, 11)))), { total: 24, passed: 8 });
 });
 
+test('มูลค่ารายเซลส์/รายลูกค้า: ไฟล์รายลูกค้ามีคอลัมน์มูลค่า → การ์ดเซลส์/ลูกค้าแสดงมูลค่า + คาดปิดมูลค่า (ไม่มี = แสดงแค่ตัน)', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)', 'Actual Value ThisYY (Baht)'];
+  const bot = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  bot.sendFile('data - 2026-11-24T061539.279.xlsx', [head,
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 190, 5700000],
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '2', 'ร้านทดสอบสอง', 'Fish', 95, 2850000]], { groupId: 'Cmine' });
+  // 23 พ.ย. = วันทำงาน 19/25
+  const p = bot.say('เซลส์ ก', { groupId: 'Cmain' });
+  assert.match(p, /ยอดเดือนนี้ · 285\.0 ตัน\nมูลค่า · 8\.55 ล้านบาท[\s\S]*คาดปิดเดือน · 375\.0 ตัน\nคาดปิด มูลค่า · 11\.25 ล้านบาท/);
+  assert.match(bot.say('ร้านทดสอบหนึ่ง', { groupId: 'Cmain' }), /มูลค่า · 5\.70 ล้านบาท[\s\S]*คาดปิด มูลค่า · 7\.50 ล้านบาท/);
+  const plain = createBot({ now: D(2026, 11, 24, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  plain.ctx.setupSalesSheets();
+  plain.sendFile('data - 2026-11-24T061539.279.xlsx', [head.slice(0, 8),
+    ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', 190]], { groupId: 'Cmine' });
+  assert.doesNotMatch(plain.say('เซลส์ ก', { groupId: 'Cmain' }), /มูลค่า/);
+});
+
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

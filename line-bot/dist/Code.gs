@@ -2913,11 +2913,15 @@ function personCards_(snap, person) {
   const wd = cardWd_(snap, true);
   const remain = wd.total - wd.passed;
   const closed = isClosed_(snap, true);
+  // มูลค่ารายเซลส์: มีเมื่อไฟล์รายลูกค้ามีคอลัมน์มูลค่า (บาท)
+  const amtKnown = Math.abs(person.actualAmt || 0) > 1e-9;
   const kv = [[closed ? 'ยอดปิดเดือน' : 'ยอดเดือนนี้', fmtTon_(person.actualTon) + ' ตัน', { bold: true }]];
+  if (amtKnown) kv.push(['มูลค่า', fmtMB_(person.actualAmt) + ' ล้านบาท']);
   if (zone && zone.actualTon) kv.push(['สัดส่วนในเขต ' + zone.name, fmtPct_(person.actualTon / zone.actualTon * 100)]);
   if (!closed) {
     kv.push(['สปีด / วัน', fmtTon_(person.currentSpeed) + ' ตัน']);
     kv.push(['คาดปิดเดือน', fmtTon_(person.forecastTon) + ' ตัน', { bold: true }]);
+    if (amtKnown) kv.push(['คาดปิด มูลค่า', fmtMB_(person.forecastAmt) + ' ล้านบาท', { bold: true }]);
   }
   if (person.budgetTon) {
     kv.push('sep');
