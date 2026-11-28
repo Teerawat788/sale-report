@@ -237,7 +237,7 @@ const folderObj = () => ctx.DriveApp._folder();
       const id = 'm' + Object.keys(lineFiles).length;
       lineFiles[id] = table;
       const before = lineCalls.length;
-      const ev = { type: 'message', replyToken: 'rt', source: { type: 'group', groupId: o.groupId || 'Cgroup1', userId: 'Uuser1' },
+      const ev = { type: 'message', replyToken: 'rt', source: o.source || { type: 'group', groupId: o.groupId || 'Cgroup1', userId: 'Uuser1' },
         message: { type: 'file', id, fileName: name, fileSize: 1000 } };
       ctx.doPost({ postData: { contents: JSON.stringify({ destination: 'Ubot', events: [ev] }) } });
       const reply = lineCalls.slice(before).find((c) => c.url.endsWith('/message/reply'));

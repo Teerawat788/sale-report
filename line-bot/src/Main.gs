@@ -56,6 +56,13 @@ function handleEvent_(ev) {
     return;
   }
   try { rememberGroup_(source); } catch (e) { console.error('จำกลุ่มไม่ได้: ' + (e && e.message || e)); }
+  if (isControlRoom_(source)) { try { rememberAdmin_(source.userId); } catch (e) { /* ignore */ } }
+
+  // มีคนแอดน้องขุนศึกเป็นเพื่อน → ทักทาย + บอกว่าคุยส่วนตัวได้
+  if (ev.type === 'follow') {
+    if (ev.replyToken) lineReply_(ev.replyToken, dmAllowed_(source.userId) ? withQuickReply_(dmWelcomeText_(), DM_QUICK) : DM_LOCKED_TEXT);
+    return;
+  }
 
   if (ev.type === 'join') {
     const morning = morningToAllGroups_()
@@ -69,6 +76,12 @@ function handleEvent_(ev) {
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
+  // แชทส่วนตัว (1:1): ใช้ได้เหมือนในกลุ่ม เฉพาะคนในทีม
+  const isDM = source.type === 'user';
+  if (isDM && !dmAllowed_(source.userId)) {
+    if (ev.message.type === 'text') lineReply_(ev.replyToken, DM_LOCKED_TEXT);
+    return;
+  }
   const uploadGroup = prop_('UPLOAD_GROUP_ID', '');
   const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') &&
     chatId_(source) !== registered && chatId_(source) !== uploadGroup;
@@ -79,6 +92,10 @@ function handleEvent_(ev) {
   // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
   if (ev.message.type === 'file') {
     if (inOtherGroup || !/\.(xlsx|xls|csv)$/i.test(ev.message.fileName || '')) return;
+    if (isDM && uploadGroup && !isAdminUser_(source.userId)) {
+      lineReply_(ev.replyToken, 'ℹ️ น้องขุนศึกรับไฟล์ยอดขายจากห้องสั่งการเท่านั้นค่ะ');
+      return;
+    }
     const r = importLineFile_(ev.message.id, ev.message.fileName);
     if (!r) {
       // ห้องสั่งการส่งไฟล์ที่ไม่ใช่ไฟล์ยอด → บอกให้รู้ (กลุ่มอื่นเงียบ)
@@ -158,9 +175,11 @@ function handleEvent_(ev) {
   if (!parsed) {
     // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์อะไรก็ได้ (มี "ถาม" นำหน้าหรือไม่ก็ได้) → AI ตอบจากข้อมูลจริง
     const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
+    // แชทส่วนตัว = ถามได้เลยไม่ต้องแท็ก (เหมือนห้องสั่งการ) · ไม่มี AI → บอกวิธีพิมพ์แทนการเงียบ
     const question = stripped.botMentioned ? stripped.text
-      : isControlRoom_(source) ? (ask ? ask[1] : aiEnabled_() ? stripped.text : '').trim() : '';
+      : isControlRoom_(source) || isDM ? (ask ? ask[1] : aiEnabled_() ? stripped.text : '').trim() : '';
     if (question && !blocked) lineReply_(ev.replyToken, askBot_(question, now_()));
+    else if (isDM) lineReply_(ev.replyToken, withQuickReply_(DM_UNKNOWN_TEXT, DM_QUICK));
     return;
   }
 
@@ -188,12 +207,14 @@ function handleEvent_(ev) {
     else list.unshift(note);
     reply = list.slice(0, 5);
   }
+  if (!reply && isDM && ADMIN_ONLY_CMDS.indexOf(parsed.cmd) >= 0) reply = 'คำสั่งนี้ใช้ได้เฉพาะผู้ดูแลในห้องสั่งการค่ะ';
   if (reply) lineReply_(ev.replyToken, reply);
 }
 
-/** คำสั่งผู้ดูแล: มีห้องสั่งการแล้ว → ใช้ได้เฉพาะห้องสั่งการ (และแชท 1:1) */
+/** คำสั่งผู้ดูแล: มีห้องสั่งการแล้ว → ใช้ได้เฉพาะห้องสั่งการ และแชทส่วนตัวของผู้ดูแล */
 function adminAllowed_(ctx) {
-  return !prop_('UPLOAD_GROUP_ID', '') || ctx.source.type === 'user' || isControlRoom_(ctx.source);
+  if (!prop_('UPLOAD_GROUP_ID', '') || isControlRoom_(ctx.source)) return true;
+  return ctx.source.type === 'user' && isAdminUser_(ctx.source.userId);
 }
 
 const LEGACY_CMDS = ['tasks', 'mytasks', 'addtask', 'done', 'deltask', 'movetask', 'today', 'tomorrow', 'week',
@@ -472,6 +493,17 @@ function runCommand_(p, ctx) {
       if (!adminAllowed_(ctx)) return null;
       return groupsCard_(now);
 
+    case 'monthclose':
+      return monthCloseCommand_(p.argText, now);
+
+    case 'holidays':
+      if (!adminAllowed_(ctx)) return null;
+      return p.argText ? editHolidays_(p.argText, now, false) : holidaysText_(now);
+
+    case 'delholiday':
+      if (!adminAllowed_(ctx)) return null;
+      return editHolidays_(p.argText, now, true);
+
     case 'morningoff':
       return setMorningOff_(ctx, p.argText, true);
 
@@ -527,6 +559,8 @@ const HELP_TEXT = [
   "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
   '  (พิมพ์ชื่อผิดนิดหน่อย น้องขุนศึกเดาให้ค่ะ)',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
+  '• ปิดเดือน — สรุปยอดปิดเดือน ตัน + ล้านบาท',
+  '  (ปิดเดือน ต.ค. · ปิดเดือน F3)',
   '',
   '💬 ถาม AI',
   '• แท็ก @น้องขุนศึก แล้วพิมพ์คำถาม',
@@ -551,6 +585,7 @@ const HELP_TEXT = [
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
   '   ส่งทุกกลุ่มที่มีน้องขุนศึก · กลุ่มไหนไม่ต้องการ พิมพ์ ไม่รับข้อความเช้า',
+  '💬 แอดน้องขุนศึกเป็นเพื่อน คุยส่วนตัวได้เหมือนในกลุ่มค่ะ',
 ].join('\n');
 
 // เมนูห้องสั่งการ — เพิ่มคำสั่งของผู้ดูแล
@@ -562,6 +597,9 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '📤 ส่งไฟล์ Excel ยอดขายในห้องนี้',
   '• อัปเดตยอด 23/11 — แก้วันที่ของไฟล์ล่าสุด',
   '• สรุปเช้า — ดูตัวอย่างข้อความเช้า',
+  '',
+  '📅 วันทำงาน — ดูวันทำงาน/วันหยุด เดือนนี้–เดือนหน้า',
+  '• วันหยุด 5/12 10/12 · ลบวันหยุด 10/12',
   '',
   '👥 กลุ่มที่มีน้องขุนศึก',
   '• กลุ่ม — รายชื่อกลุ่ม · ใครได้ข้อความเช้า · โควตาข้อความ',

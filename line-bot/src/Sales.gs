@@ -23,6 +23,12 @@ function getSalesSnapshot_() {
   return flag_('USE_DASHBOARD_JSON', false) ? fetchDashboard_() : { source: 'none' };
 }
 
+/** ยอด ณ สิ้นวัน until (ใช้ดูยอดปิดเดือนก่อน) — null = ไม่มีข้อมูลถึงวันนั้น */
+function salesSnapshotAt_(until) {
+  const rows = readSalesRows_(until);
+  return rows.length ? buildSalesSnapshot_(rows, until) : null;
+}
+
 function normName_(s) {
   return String(s || '').toLowerCase().replace(/\s+/g, '');
 }

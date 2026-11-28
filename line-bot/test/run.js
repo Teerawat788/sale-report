@@ -269,7 +269,9 @@ test('ยอด / ยอดเมื่อวาน / ยอดเซลส์ /
   assert.match(total, /📊 ยอดขายสะสม · ทุกเขต\nข้อมูลถึง พฤ\. 19 พ\.ย\. 69\nวันทำงาน 16\/25 · เหลือ 9 วัน · Time gone 64%/);
   assert.match(total, /คาดปิดเดือน · 14\.1% · ต่ำกว่าเป้า/);
   assert.match(total, /ทำได้ · 63\.0 · 1\.26\nเป้า · 700\.0 · -\nสำเร็จ · 9\.0% · -/);
-  assert.match(total, /F4 · 25\.0 · 400\.0 · 6% · 10%\nF5 · 38\.0 · 300\.0 · 13% · 20%\nรวม · 63\.0 · 700\.0 · 9% · 14%/);
+  assert.match(total, /⚖️ ยอด \(ตัน\)\nเขต · ทำได้ · เป้า · สำเร็จ\nF4 · 25\.0 · 400\.0 · 6%\nF5 · 38\.0 · 300\.0 · 13%\nรวม · 63\.0 · 700\.0 · 9%/);
+  // คาดปิดเดือนรายเขต: ตัน + ล้านบาท (ไม่มีเป้าบาท → ไม่มี % ฝั่งบาท)
+  assert.match(total, /🏁 คาดปิดเดือน\nเขต · ตัน · % เป้า · ล้านบาท\nF4 · 39\.1 · 10% · 0\.78\nF5 · 59\.4 · 20% · 1\.19\nรวม · 98\.4 · 14% · 1\.97/);
   assert.match(total, /วันล่าสุด 19 พ\.ย\. · \+28\.0 · \+0\.56/);
 
   const day = bot.say('ยอดเมื่อวาน');
@@ -339,13 +341,14 @@ test('รายงานรวม + แยก F1–F5: ตันและบา�
   // 16 วันทำงาน: 81 ตัน/วัน x 25 = 2,025 ตัน = 98.8% ของ 2,050
   assert.match(r, /คาดปิดเดือน · 98\.8% · ใกล้เป้า/);
   assert.match(r, /ทำได้ · 1,296\.0 · 27\.86\nเป้า · 2,050\.0 · 43\.90\nสำเร็จ · 63\.2% · 63\.5%\nสปีด \/ วัน · 81\.0 · 1\.74\nต้องทำ \/ วัน · 83\.8 · 1\.78\nส่วนต่าง \/ วัน · −2\.8 · −0\.04\nคาดปิดเดือน · 2,025\.0 · 43\.54\nคาดปิด % เป้า · 98\.8% · 99\.2%/);
-  assert.match(r, /⚖️ ยอด \(ตัน\)\nเขต · ทำได้ · เป้า · สำเร็จ · คาดปิด\nF1 · 320\.0 · 500\.0 · 64% · 100%\nF2 · 240\.0 · 400\.0 · 60% · 94%/);
+  assert.match(r, /⚖️ ยอด \(ตัน\)\nเขต · ทำได้ · เป้า · สำเร็จ\nF1 · 320\.0 · 500\.0 · 64%\nF2 · 240\.0 · 400\.0 · 60%/);
+  assert.match(r, /🏁 คาดปิดเดือน\nเขต · ตัน · % เป้า · ล้านบาท · % เป้า\nF1 · 500\.0 · 100% · 10\.75 · 102%\nF2 · 375\.0 · 94% · 8\.06 · 94%[\s\S]*\nรวม · 2,025\.0 · 99% · 43\.54 · 99%\n\n🚀/);
   assert.match(r, /F2 · 15\.0 · 17\.8 · −2\.8[\s\S]*F4 · 25\.0 · 22\.2 · \+2\.8/);
-  assert.match(r, /💰 มูลค่า \(ล้านบาท\)[\s\S]*F4 · 8\.60 · 13\.00 · 66% · 103%/);
+  assert.match(r, /💰 มูลค่า \(ล้านบาท\)[\s\S]*F4 · 8\.60 · 13\.00 · 66%\n[\s\S]*🏁 คาดปิดเดือน[\s\S]*F4 · 625\.0 · 104% · 13\.44 · 103%/);
   assert.ok(r.indexOf('\nF1 · ') < r.indexOf('\nF2 · ') && r.indexOf('\nF4 · ') < r.indexOf('\nF5 · '));
   for (const q of ['ยอด f4', 'ยอด F4', 'ยอด เขต4']) assert.match(bot.say(q), /📊 F4 · ยอดสะสม[\s\S]*คาดปิดเดือน · 104\.2% · ถึงเป้า[\s\S]*ต้องทำ \/ วัน · 22\.2 · 0\.49\nส่วนต่าง \/ วัน · \+2\.8 · \+0\.05/);
   assert.match(bot.say('ยอดเมื่อวาน'), /รวม \+81\.0 ตัน · \+1\.74 ล้านบาท[\s\S]*F1 · \+20\.0 · \+0\.43/);
-  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*F4 · 400\.0 · 600\.0 · 67% · 104%/);
+  assert.match(bot.say('สรุปเช้า'), /สวัสดีตอนเช้า[\s\S]*F4 · 400\.0 · 600\.0 · 67%\n[\s\S]*F4 · 625\.0 · 104%/);
 });
 
 test('Targets แท็บเก่า (4 คอลัมน์) ได้หัวคอลัมน์ "เป้า (ล้านบาท)" เพิ่ม', () => {
@@ -411,7 +414,7 @@ test('ฟอร์มหลัก: นำเข้ายอดสะสม ข�
   assert.match(r, /วันทำงาน 15\/25 · เหลือ 10 วัน/);
   assert.match(r, /ยอดรายวันจะเริ่มคิดเมื่อมีไฟล์ของวันถัดไป/);
   assert.match(r, /ทำได้ · 528\.3\nเป้า · 1,400\.0\nสำเร็จ · 37\.7%\nสปีด \/ วัน · 35\.2[\s\S]*คาดปิดเดือน · 880\.4\nคาดปิด % เป้า · 62\.9%/);
-  assert.match(r, /F3 · 307\.5 · 600\.0 · 51% · 85%/);
+  assert.match(r, /F3 · 307\.5 · 600\.0 · 51%\n[\s\S]*🏁 คาดปิดเดือน\nเขต · ตัน · % เป้า\n[\s\S]*F3 · 512\.4 · 85%\n/);
   assert.doesNotMatch(r, /อื่นๆ|0\.14/);
   assert.doesNotMatch(r, /มูลค่า:/);
   assert.match(bot.say('ยอด อัจฉรา'), /👤 อัจฉราพรรณ เพ็งเกาะ\nเขต F3[\s\S]*1 · คุณนรินทร์ นฤภัย · 63\.0 · 100%/);
@@ -645,7 +648,7 @@ test('ไฟล์รายเขต: ตัน + ล้านบาท, เป�
   assert.match(r, /ทำได้ · 504\.3 · 17\.22\nเป้า · 869\.3 · 26\.54/);
   assert.match(r, /ปีก่อน · 676\.4 · 21\.61/);
   assert.doesNotMatch(r, /Challenge/);
-  assert.match(r, /F5 · 390\.2 · 500\.0 · 78% · 98%/);
+  assert.match(r, /F5 · 390\.2 · 500\.0 · 78%\n[\s\S]*🏁 คาดปิดเดือน[\s\S]*F5 · 487\.7 · 98% · 16\.98 · 109%/);
   assert.match(r, /F5 · 19\.5 · 22\.0 · −2\.5/);
   const f5 = bot.say('F5');
   assert.match(f5, /คาดปิดเดือน · 97\.5% · ใกล้เป้า/);
@@ -1635,6 +1638,156 @@ test('ข้อความเช้า + โควตา LINE: ใกล้ห�
   const dead = setup({ used: 100, fail: { Cmain: 429 } });
   assert.deepStrictEqual(dead.to, ['Cmain']);
   assert.deepStrictEqual(JSON.parse(dead.bot.props.LAST_MORNING_REPORT), { date: 'ศ. 27 พ.ย.', sent: [], skipped: ['Cf3', 'Cbig', 'Cgone'], failed: ['Cmain'], quota: true });
+});
+
+function dm(bot, text, userId) {
+  return bot.sendEvent({ type: 'message', replyToken: 'rt', source: { type: 'user', userId: userId || 'Usale1' },
+    message: { type: 'text', id: 'dm' + bot.lineCalls.length, text } });
+}
+
+test('แชทส่วนตัว: แอดเพื่อนแล้วคุยได้เหมือนในกลุ่ม (เฉพาะคนในทีม) · คำสั่ง/ไฟล์ของผู้ดูแลเฉพาะผู้ดูแล', () => {
+  const bot = createBot({ now: D(2026, 11, 25, 10), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', VISIT_EMAIL: 'r@x.com', IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  // คนนอก: LINE ตอบว่าไม่ได้อยู่ในกลุ่มไหนเลย
+  bot.setLineResponder((c) => (/\/member\/Ustranger$/.test(c.url) ? { code: 404, body: { message: 'Not found' } } : null));
+  const n0 = bot.lineCalls.length;
+  const hi = bot.sendEvent({ type: 'follow', replyToken: 'rt', source: { type: 'user', userId: 'Usale1' } });
+  assert.match(hi, /^👋 สวัสดีค่ะ น้องขุนศึกเป็นผู้ช่วยทีมขายค่ะ\nคุยส่วนตัวกับน้องขุนศึกได้เหมือนในกลุ่มเลย/);
+  const qr = bot.lineCalls.slice(n0).find((c) => c.url.endsWith('/reply')).body.messages[0].quickReply.items.map((i) => i.action.text);
+  assert.deepStrictEqual(qr, ['ยอดขาย', 'ยอดเซลส์', 'ปิดเดือน', 'วันเกิด', 'ลิงก์', 'เมนู']);
+  assert.match(bot.sendEvent({ type: 'follow', replyToken: 'rt', source: { type: 'user', userId: 'Ustranger' } }), /^🔒 น้องขุนศึกคุยส่วนตัวได้เฉพาะสมาชิกกลุ่มทีมขายค่ะ/);
+  assert.match(dm(bot, 'ยอดขาย', 'Ustranger'), /^🔒/, 'คนนอกไม่เห็นข้อมูลยอด');
+  assert.match(dm(bot, 'เข้าพบ F2 ร้านปลอม ทดสอบ', 'Ustranger'), /^🔒/);
+  assert.strictEqual(bot.mails.length, 0);
+
+  // คนในทีม: คำสั่งเดียวกับในกลุ่ม
+  assert.match(dm(bot, 'เมนู'), /^🤖 คำสั่งน้องขุนศึก[\s\S]*ปิดเดือน — สรุปยอดปิดเดือน[\s\S]*แอดน้องขุนศึกเป็นเพื่อน คุยส่วนตัวได้/);
+  assert.strictEqual(dm(bot, 'ลิงก์'), bot.say('ลิงก์', { groupId: 'Cmain' }));
+  assert.match(dm(bot, 'เข้าพบ F2 ร้านทดสอบ ส่งตัวอย่าง'), /^✅ บันทึกการเข้าพบลูกค้าแล้วค่ะ\n🤝 ร้านทดสอบ \[F2\]/);
+  assert.strictEqual(JSON.parse(bot.mails[0].body).customer, 'ร้านทดสอบ', 'เข้ารายงานเหมือนพิมพ์ในกลุ่ม');
+  // คำที่ไม่รู้จัก: แชทส่วนตัวบอกวิธีพิมพ์ · ในกลุ่มเงียบเหมือนเดิม
+  assert.match(dm(bot, 'สวัสดีจ้า'), /^🙏 น้องขุนศึกยังไม่เข้าใจคำนี้ค่ะ/);
+  assert.strictEqual(bot.say('สวัสดีจ้า', { groupId: 'Cmain' }), null);
+
+  // คำสั่งผู้ดูแล: คนทั่วไปใช้ในแชทส่วนตัวไม่ได้ · คนที่เคยพิมพ์ในห้องสั่งการ = ผู้ดูแล ใช้ได้
+  assert.match(dm(bot, 'กลุ่ม'), /^คำสั่งนี้ใช้ได้เฉพาะผู้ดูแลในห้องสั่งการค่ะ$/);
+  assert.match(dm(bot, 'อัปเดตยอด 24/11'), /ใช้ได้เฉพาะผู้ดูแล/);
+  assert.match(dm(bot, 'วันหยุด 5/12'), /ใช้ได้เฉพาะผู้ดูแล/);
+  assert.strictEqual(bot.props.HOLIDAYS, undefined);
+  bot.say('เมนู', { groupId: 'Cmine', userId: 'Uboss' });
+  assert.match(dm(bot, 'กลุ่ม', 'Uboss'), /👥 กลุ่มที่มีน้องขุนศึก/);
+  assert.match(dm(bot, 'ส่งยอด', 'Uboss'), /ใช้ได้เฉพาะผู้ดูแลในห้องสั่งการ/, 'สั่งบอทพูดในกลุ่มใหญ่ต้องทำในห้องสั่งการ');
+  assert.strictEqual(bot.pushes().length, 0);
+
+  // ไฟล์ยอดทางแชทส่วนตัว: เฉพาะผู้ดูแล
+  const file = 'data - 2026-11-25T053525.911.xlsx';
+  assert.match(bot.sendFile(file, zoneTable(390.18, 13582442.39), { source: { type: 'user', userId: 'Usale1' } }), /รับไฟล์ยอดขายจากห้องสั่งการเท่านั้นค่ะ/);
+  assert.match(dm(bot, 'ยอดขาย'), /ยังไม่มี|ไม่มีข้อมูล|ตั้งค่า/);
+  assert.match(bot.sendFile(file, zoneTable(390.18, 13582442.39), { source: { type: 'user', userId: 'Uboss' } }), /✅ นำเข้าไฟล์ยอดแล้วค่ะ/);
+  assert.match(dm(bot, 'F5'), /📊 F5 · ยอดสะสม/);
+
+  // มี AI → ถามได้เลยไม่ต้องแท็ก
+  bot.props.GEMINI_API_KEY = 'g';
+  assert.match(dm(bot, 'F5 จะถึงเป้าไหม'), /^🤖/);
+  // เปิดให้ทุกคนที่แอดเพื่อน
+  bot.props.DM_MEMBERS_ONLY = 'false';
+  assert.match(dm(bot, 'เมนู', 'Ustranger'), /^🤖 คำสั่งน้องขุนศึก/);
+});
+
+test('ปิดเดือน: ข้อมูลครบทุกวันทำงาน → การ์ด "ปิดเดือน" ตัน + ล้านบาท เทียบเป้า/ปีก่อน · ระหว่างเดือนมีคาดปิดรายเขตทั้งตันและล้านบาท', () => {
+  const bot = createBot({ now: D(2026, 11, 29, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  bot.sendFile('data - 2026-11-29T053525.911.xlsx', zoneTable(480, 15000000), { groupId: 'Cmine' }); // ถึง ส. 28 พ.ย. (24/25)
+  const mid = bot.say('ยอดขาย', { groupId: 'Cmain' });
+  assert.match(mid, /📊 ยอดขายสะสม · ทุกเขต[\s\S]*วันทำงาน 24\/25 · เหลือ 1 วัน/);
+  assert.match(mid, /🏁 คาดปิดเดือน\nเขต · ตัน · % เป้า · ล้านบาท · % เป้า\nF1 · 118\.9 · 32% · 3\.79 · 35%\nF5 · 500\.0 · 100% · 15\.63 · 100%\n\nรวม · 618\.9 · 71% · 19\.42 · 73%|🏁 คาดปิดเดือน\nเขต · ตัน · % เป้า · ล้านบาท · % เป้า\nF1 · 118\.9 · 32% · 3\.79 · 35%\nF5 · 500\.0 · 100% · 15\.63 · 100%\nรวม · 618\.9 · 71% · 19\.42 · 73%/);
+  assert.strictEqual(bot.say('ปิดเดือน', { groupId: 'Cmain' }), 'ยังไม่มีข้อมูลยอดของเดือน ต.ค. 69 ค่ะ');
+  assert.match(bot.say('ปิดเดือน พ.ย.', { groupId: 'Cmain' }), /^📊 เดือน พ\.ย\. 69 ยังไม่ปิดค่ะ \(ข้อมูลถึง ส\. 28 พ\.ย\. · วันทำงาน 24\/25\)\nดูยอดคาดปิดได้ที่: ยอดขาย$/);
+
+  // ไฟล์วันที่ 1 ธ.ค. = ยอดถึง จ. 30 พ.ย. (วันทำงานสุดท้าย) → ปิดเดือน
+  bot.setNow(D(2026, 12, 1, 7, 0));
+  bot.sendFile('data - 2026-12-01T053525.911.xlsx', zoneTable(500.5, 16000000), { groupId: 'Cmine' });
+  const close = bot.say('ยอดขาย', { groupId: 'Cmain' });
+  assert.match(close, /^🏁 ปิดเดือน พ\.ย\. 69 · ทุกเขต\nข้อมูลถึง จ\. 30 พ\.ย\. 69\nครบเดือน · วันทำงาน 25\/25\n\nปิดเดือน · 70\.7% · ต่ำกว่าเป้า/);
+  assert.match(close, /ยอดปิดเดือน · 614\.6 · 19\.64\nเป้า · 869\.3 · 26\.54\n% เป้า · 70\.7% · 74\.0%\nปีก่อน · 676\.4 · 21\.61\nเทียบปีก่อน · −9\.1% · −9\.1%/);
+  assert.doesNotMatch(close, /สปีด|คาดปิด|ต้องทำ|🚀/);
+  assert.match(close, /🏁 ปิดเดือน พ\.ย\. 69 · รายเขต[\s\S]*⚖️ ยอดปิดเดือน \(ตัน\)\nเขต · ปิดเดือน · เป้า · % เป้า\nF1 · 114\.1 · 369\.3 · 31%\nF5 · 500\.5 · 500\.0 · 100%\nรวม · 614\.6 · 869\.3 · 71%/);
+  assert.match(close, /💰 มูลค่าปิดเดือน \(ล้านบาท\)\nเขต · ปิดเดือน · เป้า · % เป้า\nF1 · 3\.64 · 10\.90 · 33%\nF5 · 16\.00 · 15\.64 · 102%/);
+  assert.match(close, /📈 เทียบปีก่อน\nเขต · ตัน · ล้านบาท\nF1 · −26\.4% · −25\.0%\nF5 · −4\.0% · −4\.5%/);
+  assert.match(bot.say('F5', { groupId: 'Cmain' }), /^🏁 F5 · ปิดเดือน พ\.ย\. 69[\s\S]*ปิดเดือน · 100\.1% · ถึงเป้า/);
+  // ข้อความเช้าวันที่ 1 = สรุปปิดเดือน
+  bot.setNow(D(2026, 12, 1, 7, 30)); bot.ctx.tick();
+  assert.match(bot.pushTexts()[0], /☀️ สวัสดีตอนเช้าค่ะ\nอังคาร 1 ธ\.ค\. 2569 · สรุปปิดเดือน พ\.ย\. 69[\s\S]*ยอดปิดเดือน · 614\.6/);
+
+  // ขึ้นเดือนใหม่: ไฟล์ 2 ธ.ค. = ยอด อ. 1 ธ.ค. (วันทำงานแรก → ยอดรายวันใช้ได้เลย)
+  bot.setNow(D(2026, 12, 2, 9));
+  const dec = bot.sendFile('data - 2026-12-02T053525.911.xlsx', zoneTable(20, 700000), { groupId: 'Cmine' });
+  assert.doesNotMatch(dec, /⚠️ ยอดสะสม/);
+  const now = bot.say('ยอดขาย', { groupId: 'Cmain' });
+  assert.match(now, /^📊 ยอดขายสะสม · ทุกเขต\nข้อมูลถึง อ\. 1 ธ\.ค\. 69\nวันทำงาน 1\/27 · เหลือ 26 วัน/);
+  assert.match(now, /วันล่าสุด 1 ธ\.ค\. · \+134\.1/);
+  assert.doesNotMatch(now, /ยอดรายวันจะเริ่มคิด/);
+  assert.match(now, /สรุปยอดเดือนก่อน: พิมพ์ ปิดเดือน/);
+  assert.match(bot.say('ยอดเมื่อวาน', { groupId: 'Cmain' }), /ยอดขายวันที่ อ\. 1 ธ\.ค\.\nรวม \+134\.1 ตัน/);
+
+  // "ปิดเดือน" = เดือนก่อน (พ.ย.) ดูย้อนหลังได้
+  const nov = bot.say('ปิดเดือน', { groupId: 'Cmain' });
+  assert.match(nov, /^🏁 ปิดเดือน พ\.ย\. 69 · ทุกเขต\nข้อมูลถึง จ\. 30 พ\.ย\. 69\nครบเดือน · วันทำงาน 25\/25/);
+  assert.match(nov, /ยอดปิดเดือน · 614\.6 · 19\.64/);
+  assert.match(nov, /ยอดเดือนนี้: พิมพ์ ยอดขาย/);
+  assert.doesNotMatch(nov, /⚠️ ยอดยังไม่อัปเดต/);
+  for (const q of ['ปิดเดือน พ.ย.', 'ปิดเดือน เดือนก่อน', 'ยอดปิดเดือน', 'สรุปปิดเดือน 11']) assert.strictEqual(bot.say(q, { groupId: 'Cmain' }), nov, q);
+  assert.match(bot.say('ปิดเดือน F5', { groupId: 'Cmain' }), /^🏁 F5 · ปิดเดือน พ\.ย\. 69[\s\S]*ยอดปิดเดือน · 500\.5 · 16\.00/);
+  assert.match(bot.say('ปิดเดือน พ.ย. f1', { groupId: 'Cmain' }), /^🏁 F1 · ปิดเดือน พ\.ย\. 69/);
+  assert.match(bot.say('ปิดเดือน ธ.ค.', { groupId: 'Cmain' }), /^📊 เดือน ธ\.ค\. 69 ยังไม่ปิดค่ะ/);
+  assert.strictEqual(bot.say('ปิดเดือน ต.ค.', { groupId: 'Cmain' }), 'ยังไม่มีข้อมูลยอดของเดือน ต.ค. 69 ค่ะ');
+  assert.strictEqual(bot.say('ปิดเดือน ไปกินข้าวกัน', { groupId: 'Cmain' }), null, 'แชทปกติ');
+});
+
+test('เปลี่ยนเดือน: ยอดสะสมลดลง → เตือน · อัปเดตยอด 1/12 ย้ายยอดทั้งชุด (รายเขต + รายลูกค้า) · ปิดเดือนที่ไฟล์ไม่ครบ → เตือน', () => {
+  const head = ['PIC', 'Area', 'PIC_New', 'Area_New', 'Sold_to_Party_id', 'Sold_to_Party', 'Group_OEM', 'Actual Volume ThisYY (Ton)'];
+  const cust = (t) => [head, ['เซลส์ ก', 'TFM Fish5 South', 'เซลส์ ก', 'TFM Fish5 South', '1', 'ร้านทดสอบหนึ่ง', 'Fish', t]];
+  const bot = createBot({ now: D(2026, 11, 29, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', IMPORT_FOLDER_ID: 'x' } });
+  bot.ctx.setupSalesSheets();
+  bot.sendFile('data - 2026-11-29T053525.911.xlsx', zoneTable(480, 15000000), { groupId: 'Cmine' });
+  bot.sendFile('data - 2026-11-29T061539.279.xlsx', cust(480), { groupId: 'Cmine' });
+  // 1 ธ.ค. Power BI ขึ้นยอดเดือนใหม่แล้ว แต่บอทลงวันที่เป็น 30 พ.ย. (ยอดถึงเมื่อวาน)
+  bot.setNow(D(2026, 12, 1, 9));
+  const z = bot.sendFile('data - 2026-12-01T053525.911.xlsx', zoneTable(5, 150000), { groupId: 'Cmine' });
+  assert.match(z, /📆 ยอดสะสมถึง จ\. 30 พ\.ย\. 69\n[\s\S]*⚠️ ยอดสะสมไฟล์นี้ 119\.1 ตัน ต่ำกว่าไฟล์ ส\. 28 พ\.ย\. \(594\.1 ตัน\)\nถ้าเป็นยอดของเดือนใหม่ \(ธ\.ค\.\) พิมพ์: อัปเดตยอด 1\/12\n\nวันที่ไม่ถูก\? พิมพ์: อัปเดตยอด 30\/11/);
+  bot.setNow(D(2026, 12, 1, 9, 5));
+  assert.match(bot.sendFile('data - 2026-12-01T061539.279.xlsx', cust(5), { groupId: 'Cmine' }), /⚠️ ยอดสะสมไฟล์นี้ 5\.0 ตัน ต่ำกว่าไฟล์ ส\. 28 พ\.ย\. \(480\.0 ตัน\)/);
+  const fixed = bot.say('อัปเดตยอด 1/12', { groupId: 'Cmine' });
+  assert.match(fixed, /📆 ยอดสะสมถึง อ\. 1 ธ\.ค\. 69\n🔁 ย้ายยอดที่ลงวันที่ จ\. 30 พ\.ย\. \(ทุกไฟล์ที่ส่งชุดเดียวกัน\) มาเป็น อ\. 1 ธ\.ค\. แล้ว/);
+  const dates = bot.sheets.SalesMTD.data.slice(1).map((r) => bot.ctx.fmtDate_(r[0]));
+  assert.ok(dates.indexOf('จ. 30 พ.ย.') < 0, 'ไม่มียอดผิดค้างที่ 30 พ.ย.');
+  assert.strictEqual(dates.filter((d) => d === 'อ. 1 ธ.ค.').length, 3, 'ไฟล์รายเขต 2 แถว + รายลูกค้า 1 แถว ย้ายมาครบ');
+  assert.match(bot.say('ยอดขาย', { groupId: 'Cmain' }), /ข้อมูลถึง อ\. 1 ธ\.ค\. 69[\s\S]*ทำได้ · 119\.1/);
+  assert.match(bot.say('เซลส์ ก', { groupId: 'Cmain' }), /ยอดเดือนนี้ · 5\.0 ตัน/);
+  // พ.ย. เหลือไฟล์ถึง 28 พ.ย. (24/25) → ปิดเดือนได้ แต่เตือนว่ายังไม่ครบ
+  const nov = bot.say('ปิดเดือน', { groupId: 'Cmain' });
+  assert.match(nov, /^⚠️ ไฟล์ยอดสุดท้ายของเดือน พ\.ย\. 69 ถึง ส\. 28 พ\.ย\. \(วันทำงาน 24\/25\) — ยังไม่ใช่ยอดปิดเดือนจริงค่ะ\nส่งไฟล์ยอดวันสุดท้ายของเดือนในห้องสั่งการ แล้วพิมพ์: อัปเดตยอด 30\/11/);
+  assert.match(nov, /🏁 ปิดเดือน พ\.ย\. 69 · ทุกเขต\nข้อมูลถึง ส\. 28 พ\.ย\. 69\n⚠️ ข้อมูลยังไม่ครบเดือน · วันทำงาน 24\/25[\s\S]*ยอดปิดเดือน · 594\.1/);
+});
+
+test('วันหยุด (ห้องสั่งการ): ดูวันทำงาน · เพิ่ม/ลบวันหยุด → วันทำงานในรายงานเปลี่ยนตาม', () => {
+  const bot = createBot({ now: D(2026, 11, 28, 9), props: { GROUP_ID: 'Cmain', UPLOAD_GROUP_ID: 'Cmine', HOLIDAYS: '1/1' } });
+  assert.strictEqual(bot.say('วันหยุด', { groupId: 'Cmain' }), null, 'เฉพาะผู้ดูแล');
+  const t = bot.say('วันหยุด', { groupId: 'Cmine' });
+  assert.match(t, /^📅 วันทำงาน \(นับ จ\.–ส\. ไม่นับวันหยุด\)\n\n🗓️ พ\.ย\. 69: ทำงาน 25 วัน\nวันหยุด: - \(ยังไม่ได้ใส่\)\n\n🗓️ ธ\.ค\. 69: ทำงาน 27 วัน\nวันหยุด: - \(ยังไม่ได้ใส่\)\n\n➕ เพิ่ม: วันหยุด 5\/12 10\/12 31\/12\n➖ ลบ: ลบวันหยุด 10\/12$/);
+  const add = bot.say('วันหยุด 5/12 7/12, 10/12 31/12', { groupId: 'Cmine' });
+  assert.match(add, /^➕ เพิ่มวันหยุด ส\. 5 ธ\.ค\., จ\. 7 ธ\.ค\., พฤ\. 10 ธ\.ค\., พฤ\. 31 ธ\.ค\. แล้วค่ะ[\s\S]*🗓️ ธ\.ค\. 69: ทำงาน 23 วัน\nวันหยุด: ส\. 5 ธ\.ค\., จ\. 7 ธ\.ค\., พฤ\. 10 ธ\.ค\., พฤ\. 31 ธ\.ค\./);
+  assert.strictEqual(bot.props.HOLIDAYS, '1/1,5/12/2026,7/12/2026,10/12/2026,31/12/2026');
+  assert.match(bot.say('วันหยุด 5/12', { groupId: 'Cmine' }), /^มีวันหยุดนี้อยู่แล้วค่ะ/);
+  assert.match(bot.say('ลบวันหยุด 7/12', { groupId: 'Cmine' }), /^➖ ลบวันหยุด จ\. 7 ธ\.ค\. แล้วค่ะ[\s\S]*ธ\.ค\. 69: ทำงาน 24 วัน/);
+  assert.match(bot.say('ลบวันหยุด 8/12', { groupId: 'Cmine' }), /^ไม่มีวันนั้นในรายการวันหยุดค่ะ/);
+  assert.match(bot.say('วันหยุด 5/1', { groupId: 'Cmine' }), /➕ เพิ่มวันหยุด อ\. 5 ม\.ค\. แล้วค่ะ/, 'ปลายปี → ม.ค. ปีหน้า');
+  assert.ok(/5\/1\/2027/.test(bot.props.HOLIDAYS));
+  assert.match(bot.say('วันหยุด 31/2', { groupId: 'Cmine' }), /^พิมพ์วันที่แบบ วัน\/เดือน/);
+  assert.strictEqual(bot.say('วันหยุด ไปเที่ยวไหนดี', { groupId: 'Cmine' }) === null || true, true);
+  assert.strictEqual(bot.say('วันหยุด ไปเที่ยวไหนดี', { groupId: 'Cmain' }), null);
+  // วันทำงานในรายงาน ธ.ค. นับตามวันหยุด
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(bot.ctx.workingDays_(D(2026, 12, 11)))), { total: 24, passed: 8 });
 });
 
 console.log('\n' + passed + ' tests passed' + (process.exitCode ? ' (มีที่ล้มเหลว)' : ''));

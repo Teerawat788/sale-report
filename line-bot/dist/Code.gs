@@ -26,6 +26,8 @@
  *  RESULT_LINK                (ไม่บังคับ) ลิงก์ 2: ไฟล์กรอกผลการเลี้ยงปลา (คำสั่ง "ผลการเลี้ยง")
  *  FRY_LINK                   (ไม่บังคับ) ลิงก์ 3: ไฟล์กรอกข้อมูลลูกปลา (คำสั่ง "ข้อมูลลูกปลา") · "ลิงก์" = ทั้ง 3
  *  VISIT_EMAIL                (ไม่บังคับ) อีเมลที่รับบันทึกการเข้าพบทุกครั้ง → Power Automate เพิ่มแถวในไฟล์ Excel
+ *  DM_MEMBERS_ONLY            (ไม่บังคับ) false = ใครแอดน้องขุนศึกเป็นเพื่อนก็คุยส่วนตัวได้ (ค่าเริ่มต้น: เฉพาะคนที่อยู่ในกลุ่มที่มีน้องขุนศึก)
+ *  ADMIN_USER_IDS             (ไม่บังคับ) userId ผู้ดูแลเพิ่มเติม คั่นด้วย , (ปกติบอทจำเองจากคนที่พิมพ์ในห้องสั่งการ → ADMIN_USERS)
  *  MORNING_ALL_GROUPS         (ไม่บังคับ) false = ข้อความเช้าส่งเฉพาะกลุ่มหลัก (ค่าเริ่มต้น: ทุกกลุ่มที่มีน้องขุนศึก ยกเว้นห้องสั่งการ)
  *  KNOWN_GROUPS               (บอทจัดการเอง) กลุ่มที่น้องขุนศึกอยู่ + กลุ่มที่พิมพ์ "ไม่รับข้อความเช้า" — ดู/ปิดได้ด้วยคำสั่ง "กลุ่ม"
  *  LOCK_GROUPS                (ไม่บังคับ) true = ตอบเฉพาะกลุ่มหลัก + ห้องสั่งการ (ค่าเริ่มต้น: ทุกกลุ่มที่มีบอทใช้คำสั่งทีมได้)
@@ -33,7 +35,7 @@
  *  ANTHROPIC_API_KEY          (ไม่บังคับ) เปิด AI ด้วย Claude / AI_PROVIDER = gemini | claude
  *  FILE_DATE_LAG_DAYS         วันที่ข้อมูล = วันที่ส่งไฟล์ − N วัน (ค่าเริ่มต้น 1 = ยอดถึงเมื่อวาน)
  *  IMPORT_FOLDER_ID           โฟลเดอร์ Google Drive ที่วางไฟล์ export จาก Power BI
- *  HOLIDAYS                   วันหยุดที่ไม่นับเป็นวันทำงาน เช่น 5/12,10/12,31/12
+ *  HOLIDAYS                   วันหยุดที่ไม่นับเป็นวันทำงาน เช่น 5/12/2026,10/12/2026 — ตั้งจาก LINE ได้: วันหยุด 5/12 10/12 (ห้องสั่งการ)
  *  DATE_ORDER                 DMY (ค่าเริ่มต้น) หรือ MDY ถ้าเดาจากไฟล์ไม่ได้
  */
 const CONFIG = {
@@ -191,6 +193,9 @@ const COMMANDS = {
   formlinks: ['ลิงก์', 'ลิงค์', 'ลิงก์ทั้งหมด', 'ลิงค์ทั้งหมด', 'แบบฟอร์ม', 'ฟอร์ม', 'ไฟล์กรอกข้อมูล'],
   sendformlinks: ['ส่งลิงก์', 'ส่งลิงค์', 'ส่งแบบฟอร์ม'],
   groups: ['กลุ่ม', 'กลุ่มทั้งหมด', 'รายชื่อกลุ่ม', 'โควตา', 'โควต้า'],
+  monthclose: ['ปิดเดือน', 'ยอดปิดเดือน', 'สรุปปิดเดือน'],
+  holidays: ['วันหยุด', 'วันทำงาน'],
+  delholiday: ['ลบวันหยุด'],
   morningoff: ['ไม่รับข้อความเช้า', 'ปิดข้อความเช้า', 'หยุดข้อความเช้า'],
   morningon: ['รับข้อความเช้า', 'เปิดข้อความเช้า'],
   sendbirthday: ['ส่งวันเกิด'],
@@ -254,6 +259,8 @@ function parseCommand_(text) {
   if (cmd === 'sales' && args.length > 6) return null;
   if (cmd === 'registerupload' && args.length && args.join('') !== 'ยืนยัน') return null;
   if ((cmd === 'morningoff' || cmd === 'morningon') && (args.length > 1 || (args.length && !/^\d{1,2}$/.test(args[0])))) return null;
+  if (cmd === 'monthclose' && args.length > 3) return null;
+  if ((cmd === 'holidays' || cmd === 'delholiday') && !args.every(function (a) { return /^[\d\/,]+$/.test(a); })) return null;
   if ((cmd === 'visits' || cmd === 'notvisited') && args.length > 4) return null;
   if ((cmd === 'birthday' || cmd === 'sendbirthday' || cmd === 'sendsales') && args.length > 1) return null;
   if (cmd === 'importsales' && (args.length > 1 || (args.length && !/^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/.test(args[0])))) return null;
@@ -402,7 +409,8 @@ function parseWeeklyInput_(argText) {
 const LINE_API = 'https://api.line.me/v2/bot';
 const LINE_TEXT_MAX = 4900;
 
-function lineFetch_(path, method, payload) {
+/** quiet = ไม่ต้อง log เมื่อ LINE ตอบไม่สำเร็จ (เช่น 404 ตอนเช็กว่าเป็นสมาชิกกลุ่มไหม) */
+function lineFetch_(path, method, payload, quiet) {
   const token = prop_('LINE_CHANNEL_ACCESS_TOKEN', '');
   if (!token) throw new Error('ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties');
   const opts = {
@@ -416,7 +424,7 @@ function lineFetch_(path, method, payload) {
   }
   const res = UrlFetchApp.fetch(LINE_API + path, opts);
   const code = res.getResponseCode();
-  if (code >= 300) console.error('LINE API ' + path + ' ' + code + ': ' + res.getContentText());
+  if (code >= 300 && !quiet) console.error('LINE API ' + path + ' ' + code + ': ' + res.getContentText());
   return { code: code, body: res.getContentText() };
 }
 
@@ -1105,6 +1113,12 @@ function getSalesSnapshot_() {
   return flag_('USE_DASHBOARD_JSON', false) ? fetchDashboard_() : { source: 'none' };
 }
 
+/** ยอด ณ สิ้นวัน until (ใช้ดูยอดปิดเดือนก่อน) — null = ไม่มีข้อมูลถึงวันนั้น */
+function salesSnapshotAt_(until) {
+  const rows = readSalesRows_(until);
+  return rows.length ? buildSalesSnapshot_(rows, until) : null;
+}
+
 function normName_(s) {
   return String(s || '').toLowerCase().replace(/\s+/g, '');
 }
@@ -1568,9 +1582,21 @@ function importFolder_() {
  * (ไฟล์รายเขต กับ ไฟล์รายลูกค้า ของวันเดียวกันเก็บไว้ทั้งคู่)
  */
 function replaceMtdSnapshot_(rows, asOf, zoneLevel) {
+  let prev = null;
   withLock_(function () {
     const sh = sheet_(MTD_SHEET, MTD_HEADERS);
     const values = sh.getDataRange().getValues();
+    // ไฟล์ล่าสุดก่อนหน้า (ชนิดเดียวกัน เดือนเดียวกัน) — ใช้เตือนถ้ายอดสะสมลดลง
+    const sums = {};
+    values.slice(1).forEach(function (r) {
+      const d = parseSheetDate_(r[0], 'DMY');
+      if (!d || d >= asOf || monthKey_(d) !== monthKey_(asOf) || !cleanText_(r[4]) !== !!zoneLevel) return;
+      if (normZone_(r[1]) === OTHER_ZONE) return;
+      const t = parseNumber_(r[5]);
+      sums[d.getTime()] = (sums[d.getTime()] || 0) + (isNaN(t) ? 0 : t);
+    });
+    const last = Object.keys(sums).map(Number).sort(function (a, b) { return b - a; })[0];
+    if (last) prev = { date: new Date(last), total: sums[last] };
     const width = MTD_HEADERS.length;
     const today = startOfDay_(now_());
     const pad = function (r) { const x = r.slice(0, width); while (x.length < width) x.push(''); return x; };
@@ -1588,6 +1614,32 @@ function replaceMtdSnapshot_(rows, asOf, zoneLevel) {
     sh.clearContents();
     sh.getRange(1, 1, out.length, MTD_HEADERS.length).setValues(out);
   });
+  return prev;
+}
+
+/** ย้ายยอดสะสมที่ลงวันที่ from ไปเป็นวันที่ to (แทนที่ยอดชนิดเดียวกันที่ to) — คืนจำนวนแถวที่ย้าย */
+function moveMtdDate_(from, to) {
+  let moved = 0;
+  withLock_(function () {
+    const sh = spreadsheet_().getSheetByName(MTD_SHEET);
+    if (!sh) return;
+    const values = sh.getDataRange().getValues();
+    const width = MTD_HEADERS.length;
+    const at = function (r, d) { const x = parseSheetDate_(r[0], 'DMY'); return !!x && x.getTime() === d.getTime(); };
+    const rows = values.slice(1).filter(function (r) { return r[0] !== '' && r[0] !== null; });
+    const levels = {};
+    rows.forEach(function (r) { if (at(r, from)) levels[!cleanText_(r[4])] = true; });
+    if (!Object.keys(levels).length) return;
+    const out = rows.filter(function (r) { return !(at(r, to) && levels[!cleanText_(r[4])]); }).map(function (r) {
+      const x = r.slice(0, width);
+      while (x.length < width) x.push('');
+      if (at(r, from)) { x[0] = to; moved++; }
+      return x;
+    });
+    sh.clearContents();
+    sh.getRange(1, 1, out.length + 1, width).setValues([MTD_HEADERS].concat(out));
+  });
+  return moved;
 }
 
 /** เขียนแถวใหม่ทับช่วงวันที่เดียวกันในแท็บ SalesData (นำเข้าซ้ำได้ไม่ซ้ำซ้อน) */
@@ -1619,9 +1671,9 @@ function importTable_(table, opts) {
   let r;
   if (parsed.mode === 'mtd') {
     const asOf = (opts && opts.asOf) || addDays_(startOfDay_(now_()), -1);
-    replaceMtdSnapshot_(parsed.rows, asOf, parsed.zoneLevel);
-    r = { mode: 'mtd', count: parsed.rows.length, from: asOf, to: asOf,
-      total: parsed.rows.reduce(function (a, x) { return a + x.ton; }, 0) };
+    const prev = replaceMtdSnapshot_(parsed.rows, asOf, parsed.zoneLevel);
+    r = { mode: 'mtd', count: parsed.rows.length, from: asOf, to: asOf, prev: prev,
+      total: parsed.rows.filter(function (x) { return x.team !== OTHER_ZONE; }).reduce(function (a, x) { return a + x.ton; }, 0) };
   } else {
     r = replaceSalesRows_(parsed.rows);
     r.mode = 'daily';
@@ -1645,12 +1697,27 @@ function formatImportResult_(r, fileName) {
       (fileName ? '\n📄 ' + fileName : '') +
       '\n📋 ' + (r.zoneLevel ? 'ไฟล์รายเขต' : 'ไฟล์รายลูกค้า') + ' · ' + fmtNum_(r.count, 0) + ' แถว · ' + fmtTon_(r.total) + ' ตัน' +
       '\n📆 ยอดสะสมถึง ' + fmtDateShortYear_(d) +
+      (r.movedFrom ? '\n🔁 ย้ายยอดที่ลงวันที่ ' + fmtDate_(r.movedFrom) + ' (ทุกไฟล์ที่ส่งชุดเดียวกัน) มาเป็น ' + fmtDate_(d) + ' แล้ว' : '') +
       '\n→ ' + (r.zoneLevel ? 'ใช้เป็นยอดรวม + เป้าของแต่ละเขต' : 'ใช้ดูยอดลูกค้าและเซลส์ (ยอดรวมใช้ไฟล์รายเขต)') +
-      missing +
+      missing + dropWarning_(r) +
       '\n\nวันที่ไม่ถูก? พิมพ์: อัปเดตยอด ' + d.getDate() + '/' + (d.getMonth() + 1);
   }
   return '✅ นำเข้ายอดขายแล้วค่ะ' + (fileName ? '\n📄 ' + fileName : '') +
     '\n📋 ' + fmtNum_(r.count, 0) + ' แถว · ' + fmtDate_(r.from) + (r.to - r.from ? ' – ' + fmtDate_(r.to) : '') + missing;
+}
+
+/**
+ * ยอดสะสม (MTD) ต้องเพิ่มขึ้นทุกวัน — ถ้าลดลงมาก มักเป็นไฟล์ของเดือนใหม่ที่ถูกลงวันที่เป็นเดือนเก่า
+ * (เช่น export วันที่ 1 ธ.ค. แต่ Power BI ขึ้นยอดเดือน ธ.ค. แล้ว)
+ */
+function dropWarning_(r) {
+  if (!r.prev || !(r.prev.total > 0) || !(r.total < r.prev.total * 0.9)) return '';
+  const d = r.from;
+  const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return '\n\n⚠️ ยอดสะสมไฟล์นี้ ' + fmtTon_(r.total) + ' ตัน ต่ำกว่าไฟล์ ' + fmtDate_(r.prev.date) + ' (' + fmtTon_(r.prev.total) + ' ตัน)' +
+    (d.getDate() >= 25
+      ? '\nถ้าเป็นยอดของเดือนใหม่ (' + TH_MONTHS_SHORT[next.getMonth()] + ') พิมพ์: อัปเดตยอด 1/' + (next.getMonth() + 1)
+      : '\nตรวจว่าส่งไฟล์ถูกไหมนะคะ');
 }
 
 /** อ่านไฟล์ใน Drive เป็นตาราง 2 มิติ: CSV, Google Sheet, Excel */
@@ -1705,8 +1772,19 @@ function importSalesFromDrive_(force, asOfOverride) {
 
 function importDriveFile_(file, asOfOverride) {
   const asOf = asOfOverride || asOfFromFileName_(file.getName(), file.getLastUpdated());
+  // แก้วันที่ไฟล์ที่นำเข้าไปแล้ว ("อัปเดตยอด 1/12"): ย้ายยอดทุกไฟล์ที่ลงวันที่เดิมไปวันที่ใหม่ด้วย
+  // (เช่น ไฟล์รายเขต + รายลูกค้าที่ export วันเดียวกัน) ไม่ให้ยอดผิดค้างอยู่ที่วันที่เดิม
+  let movedFrom = null;
+  let last = null;
+  try { last = JSON.parse(prop_('LAST_IMPORT_INFO', 'null')); } catch (e) { /* ignore */ }
+  // (ไฟล์ที่นำเข้าล่าสุดภายใน 3 วัน — ตามที่ข้อความยืนยันการนำเข้าบอกวันที่ไว้)
+  if (asOfOverride && last && last.asOf !== asOf.getTime() && now_().getTime() - (last.at || 0) < 3 * 86400000) {
+    if (moveMtdDate_(new Date(last.asOf), asOf)) movedFrom = new Date(last.asOf);
+  }
   const r = importTable_(readDriveTable_(file), { asOf: asOf });
   setProp_('LAST_IMPORT_KEY', file.getId() + '@' + file.getLastUpdated().getTime());
+  setProp_('LAST_IMPORT_INFO', JSON.stringify({ id: file.getId(), asOf: asOf.getTime(), at: now_().getTime() }));
+  r.movedFrom = movedFrom;
   r.fileName = file.getName();
   r.message = formatImportResult_(r, file.getName());
   return r;
@@ -1817,6 +1895,7 @@ function mtdToDailyRows_(snaps, now) {
       const d = new Date(x.t);
       const mk = monthKey_(d);
       if (mk !== prevMonth) { prev = null; prevMonth = mk; }
+      const firstOk = !prev && isFirstWorkingDay_(d);
       const cur = x.map;
       const keys = Object.keys(cur).concat(prev ? Object.keys(prev).filter(function (k) { return !(k in cur); }) : []);
       keys.forEach(function (k) {
@@ -1827,7 +1906,7 @@ function mtdToDailyRows_(snaps, now) {
         if (Math.abs(dt) < 1e-9 && !(Math.abs(da) > 1e-9)) return;
         // ไฟล์ก่อนหน้าไม่มีคอลัมน์มูลค่า: มูลค่าของวันนี้เป็นยอดสะสมก้อนเดียว ไม่ใช่ยอดรายวัน
         out.push(Object.assign({ date: d, team: c.team, sales: c.sales, customer: c.customer, product: '', ton: dt, amount: da,
-          amtLump: !!(prev && x.hasAmt && !prevHasAmt), firstSnap: !prev }, extra));
+          amtLump: !!(prev && x.hasAmt && !prevHasAmt), firstSnap: !prev && !firstOk }, extra));
       });
       prev = cur;
       prevHasAmt = x.hasAmt;
@@ -1874,7 +1953,8 @@ function zoneInfoOf_(rows) {
   return info;
 }
 
-function readSalesRows_() {
+/** until = ตัดข้อมูลถึงวันนั้น (ไม่ใส่ = ถึงวันนี้) */
+function readSalesRows_(until) {
   const mtd = spreadsheet_().getSheetByName(MTD_SHEET);
   if (mtd) {
     const snaps = [];
@@ -1888,7 +1968,7 @@ function readSalesRows_() {
       snaps.push(row);
     });
     const fishOnly = snaps.filter(function (r) { return r.team !== OTHER_ZONE; });
-    if (fishOnly.length) return mtdToDailyRows_(fishOnly, now_());
+    if (fishOnly.length) return mtdToDailyRows_(fishOnly, until || now_());
   }
   const ss = spreadsheet_();
   const sh = ss.getSheetByName(SALES_SHEET);
@@ -1959,6 +2039,89 @@ function parseHolidays_(year) {
   }).filter(Boolean);
 }
 
+/** "5/12/2026" — ปี ค.ศ. ชัดเจน (ไม่ใส่ปี = ปีที่ใกล้ที่สุดข้างหน้า นับย้อนได้ 1 เดือน) */
+function holidayDate_(token, now) {
+  const m = String(token).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const mon = Number(m[2]);
+  let y;
+  if (m[3]) {
+    y = Number(m[3]);
+    if (y < 100) y += y >= 50 ? 2500 : 2000;
+    if (y > 2400) y -= 543;
+  } else {
+    y = now.getFullYear();
+    if (new Date(y, mon - 1, day) < addDays_(startOfDay_(now), -31)) y++;
+  }
+  const d = new Date(y, mon - 1, day);
+  return d.getMonth() === mon - 1 && d.getDate() === day ? d : null;
+}
+
+/** รายการใน HOLIDAYS: [{ text, d: วัน, m: เดือน, y: ปี ค.ศ. หรือ null (ทุกปี) }] */
+function holidayEntries_() {
+  return String(prop_('HOLIDAYS', '')).split(',').map(function (s) {
+    const t = s.trim();
+    const m = t.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (!m) return null;
+    let y = m[3] ? Number(m[3]) : null;
+    if (y !== null && y < 100) y += y >= 50 ? 2500 : 2000;
+    if (y !== null && y > 2400) y -= 543;
+    return { text: t, d: Number(m[1]), m: Number(m[2]), y: y };
+  }).filter(Boolean);
+}
+
+/** วันทำงาน + วันหยุดของเดือนนี้และเดือนหน้า */
+function holidaysText_(now) {
+  const out = ['📅 วันทำงาน (นับ ' + workDaysLabel_() + ' ไม่นับวันหยุด)'];
+  [0, 1].forEach(function (k) {
+    const first = new Date(now.getFullYear(), now.getMonth() + k, 1);
+    const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+    const wd = workingDays_(last);
+    const hol = parseHolidays_(first.getFullYear()).map(function (t) { return new Date(t); })
+      .filter(function (d) { return d.getMonth() === first.getMonth() && d.getFullYear() === first.getFullYear(); })
+      .sort(function (a, b) { return a - b; });
+    out.push('');
+    out.push('🗓️ ' + TH_MONTHS_SHORT[first.getMonth()] + ' ' + String(first.getFullYear() + 543).slice(-2) + ': ทำงาน ' + wd.total + ' วัน');
+    out.push(hol.length ? 'วันหยุด: ' + hol.map(function (d) { return fmtDate_(d); }).join(', ') : 'วันหยุด: - (ยังไม่ได้ใส่)');
+  });
+  out.push('');
+  out.push('➕ เพิ่ม: วันหยุด 5/12 10/12 31/12');
+  out.push('➖ ลบ: ลบวันหยุด 10/12');
+  return out.join('\n');
+}
+
+function workDaysLabel_() {
+  const days = String(prop_('WORK_DAYS', CONFIG.WORK_DAYS));
+  const names = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  if (days === '1,2,3,4,5,6') return 'จ.–ส.';
+  if (days === '1,2,3,4,5') return 'จ.–ศ.';
+  return days.split(',').map(function (d) { return names[Number(d)] || ''; }).filter(Boolean).join(' ');
+}
+
+/** "วันหยุด 5/12 10/12" → เพิ่ม · "ลบวันหยุด 10/12" → ลบ */
+function editHolidays_(argText, now, remove) {
+  const tokens = String(argText || '').split(/[\s,]+/).filter(Boolean);
+  const dates = tokens.map(function (t) { return holidayDate_(t, now); });
+  if (!tokens.length || dates.some(function (d) { return !d; })) {
+    return 'พิมพ์วันที่แบบ วัน/เดือน เช่น ' + (remove ? 'ลบวันหยุด 10/12' : 'วันหยุด 5/12 10/12 31/12') + ' ค่ะ';
+  }
+  const entries = holidayEntries_();
+  const same = function (e, d) { return e.d === d.getDate() && e.m === d.getMonth() + 1 && (e.y === null || e.y === d.getFullYear()); };
+  let kept = entries;
+  const changed = [];
+  dates.forEach(function (d) {
+    const hit = kept.some(function (e) { return same(e, d); });
+    if (remove && hit) { kept = kept.filter(function (e) { return !same(e, d); }); changed.push(d); }
+    if (!remove && !hit) { kept = kept.concat([{ text: d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() }]); changed.push(d); }
+  });
+  setProp_('HOLIDAYS', kept.map(function (e) { return e.text; }).join(','));
+  const what = changed.length
+    ? (remove ? '➖ ลบวันหยุด ' : '➕ เพิ่มวันหยุด ') + changed.map(function (d) { return fmtDate_(d); }).join(', ') + ' แล้วค่ะ'
+    : (remove ? 'ไม่มีวันนั้นในรายการวันหยุดค่ะ' : 'มีวันหยุดนี้อยู่แล้วค่ะ');
+  return what + '\n\n' + holidaysText_(now);
+}
+
 /** วันทำงานทั้งเดือน และที่ผ่านไปถึง asOf (นับรวม asOf) */
 function workingDays_(asOf) {
   const days = String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number);
@@ -1972,6 +2135,17 @@ function workingDays_(asOf) {
     if (d <= asOf) passed++;
   }
   return { total: total, passed: Math.max(passed, 1) };
+}
+
+/** วันทำงานแรกของเดือน (หรือก่อนนั้น) — ไฟล์แรกของเดือนที่ลงวันนี้ = ยอดของวันนั้นทั้งหมด */
+function isFirstWorkingDay_(d) {
+  const days = String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number);
+  const holidays = parseHolidays_(d.getFullYear());
+  let n = 0;
+  for (let x = new Date(d.getFullYear(), d.getMonth(), 1); x <= d; x = addDays_(x, 1)) {
+    if (days.indexOf(x.getDay()) >= 0 && holidays.indexOf(x.getTime()) < 0) n++;
+  }
+  return n <= 1;
 }
 
 function sumBy_(rows, key, field) {
@@ -2121,6 +2295,9 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
     monthKey: mKey,
     workingDaysPassed: wd.passed,
     workingDaysTotal: wd.total,
+    // ข้อมูลครบทุกวันทำงานของเดือน = ยอดปิดเดือนจริง (ไม่ใช่คาดการณ์)
+    closed: wd.total > 0 && wd.passed >= wd.total,
+    detailClosed: wdDetail.total > 0 && wdDetail.passed >= wdDetail.total,
     total: total,
     teams: teams,
     salesList: salesList,
@@ -2128,8 +2305,9 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
     lastDay: {
       date: asOf,
       // ไฟล์ยอดสะสมไฟล์แรกของเดือน: ยังไม่มีไฟล์ก่อนหน้าให้หักลบ
-      unavailable: !!(meta.firstOfMonth && meta.firstOfMonth[mKey] === asOf.getTime()),
-      firstSnapshot: meta.firstOfMonth ? meta.firstOfMonth[mKey] || null : null,
+      unavailable: !!(meta.firstOfMonth && meta.firstOfMonth[mKey] === asOf.getTime()) && !isFirstWorkingDay_(asOf),
+      firstSnapshot: meta.firstOfMonth && meta.firstOfMonth[mKey] && !isFirstWorkingDay_(new Date(meta.firstOfMonth[mKey]))
+        ? meta.firstOfMonth[mKey] : null,
       since: meta.since && monthKey_(meta.since) === mKey ? meta.since : null,
       amtUnknown: lastRows.some(function (r) { return r.amtLump || typeof r.amount !== 'number' || isNaN(r.amount); }),
       total: sumField_(lastRows, 'ton'),
@@ -2407,6 +2585,24 @@ function formatPersonSales_(snap, person) {
 const ROWS_PER_CARD = 30;
 const PCT_LEGEND = 'สี: เขียว ≥100% · ส้ม 95–99% · แดง <95%';
 
+/** ข้อมูลครบทุกวันทำงานของเดือน → แสดงเป็น "ปิดเดือน" (ยอดจริง ไม่ใช่คาดการณ์) · detail = วันของไฟล์รายลูกค้า */
+function isClosed_(snap, detail) {
+  if (snap.forceClosed) return true;
+  return detail && snap.detailAsOf ? !!snap.detailClosed : !!snap.closed;
+}
+
+/** "พ.ย. 69" */
+function monthLabel_(d) {
+  return TH_MONTHS_SHORT[d.getMonth()] + ' ' + String(d.getFullYear() + 543).slice(-2);
+}
+
+/** +12.3% / −4.5% เทียบปีก่อน (มีสี) */
+function growthCell_(cur, last) {
+  if (!last) return '-';
+  const g = (cur / last - 1) * 100;
+  return { t: (g > 0 ? '+' : g < 0 ? '−' : '') + fmtNum_(Math.abs(g), 1) + '%', color: g >= 0 ? FX.green : FX.red };
+}
+
 function cardWd_(snap, detail) {
   return detail && snap.detailWd ? snap.detailWd : { passed: snap.workingDaysPassed, total: snap.workingDaysTotal };
 }
@@ -2415,6 +2611,10 @@ function cardWd_(snap, detail) {
 function cardDateLines_(snap, detail) {
   const asOf = detail && snap.detailAsOf ? snap.detailAsOf : snap.asOf;
   const wd = cardWd_(snap, detail);
+  if (isClosed_(snap, detail)) {
+    return ['ข้อมูลถึง ' + fmtDateShortYear_(asOf),
+      wd.passed >= wd.total ? 'ครบเดือน · วันทำงาน ' + wd.passed + '/' + wd.total : '⚠️ ข้อมูลยังไม่ครบเดือน · วันทำงาน ' + wd.passed + '/' + wd.total];
+  }
   return ['ข้อมูลถึง ' + fmtDateShortYear_(asOf),
     'วันทำงาน ' + wd.passed + '/' + wd.total + ' · เหลือ ' + (wd.total - wd.passed) + ' วัน · Time gone ' + fmtPct_(wd.passed / wd.total * 100)];
 }
@@ -2426,18 +2626,20 @@ function staleNote_(snap) {
 }
 
 /** สถานะคาดปิดเดือน (ตัวใหญ่ มีสี) */
-function statusRow_(m) {
-  const p = m.forecastPct !== null && m.forecastPct !== undefined ? m.forecastPct : m.forecastPctAmt;
+function statusRow_(m, closed) {
+  const a = closed ? m.achievement : m.forecastPct;
+  const b = closed ? m.achievementAmt : m.forecastPctAmt;
+  const p = a !== null && a !== undefined ? a : b;
   if (p === null || p === undefined) return null;
   const word = p >= 100 ? 'ถึงเป้า' : p >= 95 ? 'ใกล้เป้า' : 'ต่ำกว่าเป้า';
   return fxBox_('horizontal', [
-    fxText_('คาดปิดเดือน', { size: 'sm', color: FX.sub, flex: 4, gravity: 'center' }),
+    fxText_(closed ? 'ปิดเดือน' : 'คาดปิดเดือน', { size: 'sm', color: FX.sub, flex: 4, gravity: 'center' }),
     fxText_(fmtPct_(p, 1) + ' · ' + word, { size: 'lg', weight: 'bold', color: pctColor_(p), flex: 7, align: 'end' }),
   ], { margin: 'sm' });
 }
 
 /** ตารางตัวเลขหลัก (ภาพรวม / เขต): ตัน | ล้านบาท */
-function metricsTable_(m, snap, last) {
+function metricsTable_(m, snap, last, closed) {
   const amt = !!(snap.hasAmount || m.budgetAmt);
   const cols = [{ label: 'รายการ', flex: 6, wrap: true }, { label: 'ตัน', flex: 5, align: 'end' }];
   if (amt) cols.push({ label: 'ล้านบาท', flex: 4, align: 'end' });
@@ -2448,6 +2650,30 @@ function metricsTable_(m, snap, last) {
     rows.push(bold ? { cells: cells, bold: true } : cells);
   };
   const hasBudget = !!(m.budgetTon || m.budgetAmt);
+  if (closed) {
+    // ปิดเดือน: ยอดจริงทั้งเดือน เทียบเป้า / Challenge / ปีก่อน (ไม่มีสปีด–คาดปิดแล้ว)
+    add('ยอดปิดเดือน', fmtTon_(m.actualTon), fmtMB_(m.actualAmt), true);
+    if (hasBudget) {
+      add('เป้า', m.budgetTon ? fmtTon_(m.budgetTon) : '-', m.budgetAmt ? fmtMB_(m.budgetAmt) : '-');
+      add('% เป้า', { t: fmtPct_(m.achievement, 1), color: pctColor_(m.achievement), bold: true },
+        { t: fmtPct_(m.achievementAmt, 1), color: pctColor_(m.achievementAmt), bold: true });
+    }
+    if (flag_('SHOW_CHALLENGE', false) && (m.challengeTon || m.challengeAmt)) {
+      rows.push('sep');
+      add('Challenge', m.challengeTon ? fmtTon_(m.challengeTon) : '-', m.challengeAmt ? fmtMB_(m.challengeAmt) : '-');
+      add('% Challenge', fmtPct_(pctOrNull_(m.actualTon, m.challengeTon), 1), fmtPct_(pctOrNull_(m.actualAmt, m.challengeAmt), 1));
+    }
+    if (m.lastTon || m.lastAmt) {
+      rows.push('sep');
+      add('ปีก่อน', m.lastTon ? fmtTon_(m.lastTon) : '-', m.lastAmt ? fmtMB_(m.lastAmt) : '-');
+      add('เทียบปีก่อน', growthCell_(m.actualTon, m.lastTon), growthCell_(m.actualAmt, m.lastAmt));
+    }
+    if (last) {
+      rows.push('sep');
+      add(last.label, fmtSigned_(last.ton), last.amt === null ? '-' : fmtSigned_(last.amt, fmtMB_));
+    }
+    return fxTable_(cols, rows, { margin: 'lg' });
+  }
   add('ทำได้', fmtTon_(m.actualTon), fmtMB_(m.actualAmt), true);
   if (hasBudget) {
     add('เป้า', m.budgetTon ? fmtTon_(m.budgetTon) : '-', m.budgetAmt ? fmtMB_(m.budgetAmt) : '-');
@@ -2506,87 +2732,138 @@ function lastDayInfo_(snap, teamName) {
 function overviewCard_(snap, opt) {
   const o = opt || {};
   const t = snap.total;
-  const body = [staleNote_(snap), statusRow_(t), metricsTable_(t, snap, lastDayInfo_(snap, null))];
+  const closed = isClosed_(snap);
+  const body = [snap.forceClosed ? null : staleNote_(snap), statusRow_(t, closed), metricsTable_(t, snap, lastDayInfo_(snap, null), closed)];
   if (snap.lastDay.unavailable) body.push(fxNote_('ยอดรายวันจะเริ่มคิดเมื่อมีไฟล์ของวันถัดไป'));
   const lines = cardDateLines_(snap);
-  const title = o.greeting ? '☀️ สวัสดีตอนเช้าค่ะ' : '📊 ยอดขายสะสม · ทุกเขต';
-  if (o.greeting) lines.unshift(fmtDateLong_(o.greeting) + ' · ยอดขายสะสมทุกเขต');
-  return fxMessage_('📊 ยอดขายสะสม ถึง ' + fmtDate_(snap.asOf) + ': ' + fmtTon_(t.actualTon) + ' ตัน' +
-    (t.budgetTon ? ' (' + fmtPct_(t.achievement, 1) + ') คาดปิด ' + fmtPct_(t.forecastPct, 1) : ''),
-  fxBubble_({ title: title, lines: lines, body: body, footer: 'พิมพ์ F1–F5 ดูรายเขต · ชื่อเซลส์ / ชื่อลูกค้า ดูรายคน' }));
+  const month = monthLabel_(snap.asOf);
+  const title = o.greeting ? '☀️ สวัสดีตอนเช้าค่ะ' : closed ? '🏁 ปิดเดือน ' + month + ' · ทุกเขต' : '📊 ยอดขายสะสม · ทุกเขต';
+  if (o.greeting) lines.unshift(fmtDateLong_(o.greeting) + (closed ? ' · สรุปปิดเดือน ' + month : ' · ยอดขายสะสมทุกเขต'));
+  const footer = snap.forceClosed ? 'ยอดเดือนนี้: พิมพ์ ยอดขาย · ปิดเดือน F3 ดูรายเขต'
+    : 'พิมพ์ F1–F5 ดูรายเขต · ชื่อเซลส์ / ชื่อลูกค้า ดูรายคน' +
+      (!closed && snap.asOf.getDate() <= 7 ? '\nสรุปยอดเดือนก่อน: พิมพ์ ปิดเดือน' : '');
+  const alt = closed
+    ? '🏁 ปิดเดือน ' + month + ': ' + fmtTon_(t.actualTon) + ' ตัน' + (t.budgetTon ? ' (' + fmtPct_(t.achievement, 1) + ' ของเป้า)' : '')
+    : '📊 ยอดขายสะสม ถึง ' + fmtDate_(snap.asOf) + ': ' + fmtTon_(t.actualTon) + ' ตัน' +
+      (t.budgetTon ? ' (' + fmtPct_(t.achievement, 1) + ') คาดปิด ' + fmtPct_(t.forecastPct, 1) : '');
+  return fxMessage_(alt, fxBubble_({ title: title, lines: lines, body: body, footer: footer }));
 }
 
 function zonesCard_(snap) {
   const teams = snap.teams;
   const total = snap.total;
-  const hasBudget = teams.some(function (z) { return z.budgetTon || z.budgetAmt; });
-  const amt = !!(snap.hasAmount || teams.some(function (z) { return z.budgetAmt; }));
-  const body = [staleNote_(snap)];
-  const totalRow = function (cells) { return { cells: cells, bold: true }; };
+  const closed = isClosed_(snap);
+  const tonB = teams.some(function (z) { return z.budgetTon; });
+  const amtB = teams.some(function (z) { return z.budgetAmt; });
+  const amt = !!(snap.hasAmount || amtB);
+  const body = [snap.forceClosed ? null : staleNote_(snap)];
+  // แถวของทุกเขต + แถวรวม (ตัวหนา)
+  const all = function (fn) {
+    return teams.map(function (z) { return fn(z, z.name); }).concat(['sep', { cells: fn(total, 'รวม'), bold: true }]);
+  };
+  const pctCell = function (p) { return { t: fmtPct_(p), color: pctColor_(p), bold: true }; };
+  const share = function (v, sum) { return fmtShare_(sum ? v / sum * 100 : null); };
+  const done = closed ? 'ปิดเดือน' : 'ทำได้';
 
-  if (hasBudget) {
-    const pctCell = function (p) { return { t: fmtPct_(p), color: pctColor_(p), bold: true }; };
-    const tonCols = [{ label: 'เขต', flex: 2 }, { label: 'ทำได้', flex: 4, align: 'end' }, { label: 'เป้า', flex: 4, align: 'end' },
-      { label: 'สำเร็จ', flex: 3, align: 'end' }, { label: 'คาดปิด', flex: 3, align: 'end' }];
-    body.push(fxSection_('⚖️ ยอด (ตัน)'));
-    body.push(fxTable_(tonCols, teams.map(function (z) {
-      return [z.name, fmtTon_(z.actualTon), fmtTon_(z.budgetTon), fmtPct_(z.achievement), pctCell(z.forecastPct)];
-    }).concat(['sep', totalRow(['รวม', fmtTon_(total.actualTon), fmtTon_(total.budgetTon), fmtPct_(total.achievement), pctCell(total.forecastPct)])]),
-    { margin: 'sm' }));
+  // ยอดทำได้ (ตัน / ล้านบาท): เทียบเป้า หรือ (ไม่มีเป้า) สปีด/สัดส่วน
+  const actualTable = function (title, f, fmt, budgetKey, achKey, hasB, speedKey) {
+    body.push(fxSection_(title));
+    if (hasB) {
+      body.push(fxTable_([{ label: 'เขต', flex: 2 }, { label: done, flex: 4, align: 'end' }, { label: 'เป้า', flex: 4, align: 'end' },
+        { label: closed ? '% เป้า' : 'สำเร็จ', flex: 3, align: 'end' }], all(function (z, n) {
+        return [n, fmt(z[f]), z[budgetKey] ? fmt(z[budgetKey]) : '-', closed ? pctCell(z[achKey]) : fmtPct_(z[achKey])];
+      }), { margin: 'sm' }));
+    } else {
+      body.push(fxTable_([{ label: 'เขต', flex: 2 }, { label: done, flex: 4, align: 'end' },
+        { label: closed ? 'สัดส่วน' : 'สปีด/วัน', flex: 3, align: 'end' }], all(function (z, n) {
+        return [n, fmt(z[f]), closed ? share(z[f], total[f]) : fmt(z[speedKey])];
+      }), { margin: 'sm' }));
+    }
+  };
+  actualTable(closed ? '⚖️ ยอดปิดเดือน (ตัน)' : '⚖️ ยอด (ตัน)', 'actualTon', fmtTon_, 'budgetTon', 'achievement', tonB, 'currentSpeed');
+  if (amt) actualTable(closed ? '💰 มูลค่าปิดเดือน (ล้านบาท)' : '💰 มูลค่า (ล้านบาท)', 'actualAmt', fmtMB_, 'budgetAmt', 'achievementAmt', amtB, 'speedAmt');
 
-    const gapCell = function (z) {
-      if (z.requiredSpeed === undefined) return '-';
-      const g = z.currentSpeed - z.requiredSpeed;
-      return { t: fmtSigned_(g), color: g >= 0 ? FX.green : FX.red };
-    };
-    body.push(fxSection_('🚀 สปีด (ตัน / วัน)'));
-    body.push(fxTable_([{ label: 'เขต', flex: 2 }, { label: 'ทำได้', flex: 3, align: 'end' }, { label: 'ต้องทำ', flex: 3, align: 'end' },
-      { label: 'ส่วนต่าง', flex: 3, align: 'end' }], teams.map(function (z) {
-      return [z.name, fmtTon_(z.currentSpeed), z.requiredSpeed !== undefined ? fmtTon_(z.requiredSpeed) : '-', gapCell(z)];
-    }).concat(['sep', totalRow(['รวม', fmtTon_(total.currentSpeed), total.requiredSpeed !== undefined ? fmtTon_(total.requiredSpeed) : '-', gapCell(total)])]),
-    { margin: 'sm' }));
-
-    if (amt && !teams.some(function (z) { return z.budgetAmt; })) {
-      // มีมูลค่าแต่ไม่มีเป้าบาท → ทำได้ สปีด คาดปิด
-      body.push(fxSection_('💰 มูลค่า (ล้านบาท)'));
-      body.push(fxTable_([{ label: 'เขต', flex: 2 }, { label: 'ทำได้', flex: 4, align: 'end' }, { label: 'สปีด/วัน', flex: 3, align: 'end' },
-        { label: 'คาดปิด', flex: 4, align: 'end' }], teams.map(function (z) {
-        return [z.name, fmtMB_(z.actualAmt), fmtMB_(z.speedAmt), fmtMB_(z.forecastAmt)];
-      }).concat(['sep', totalRow(['รวม', fmtMB_(total.actualAmt), fmtMB_(total.speedAmt), fmtMB_(total.forecastAmt)])]), { margin: 'sm' }));
-    } else if (amt) {
-      body.push(fxSection_('💰 มูลค่า (ล้านบาท)'));
-      body.push(fxTable_(tonCols, teams.map(function (z) {
-        return [z.name, fmtMB_(z.actualAmt), z.budgetAmt ? fmtMB_(z.budgetAmt) : '-', fmtPct_(z.achievementAmt), pctCell(z.forecastPctAmt)];
-      }).concat(['sep', totalRow(['รวม', fmtMB_(total.actualAmt), total.budgetAmt ? fmtMB_(total.budgetAmt) : '-', fmtPct_(total.achievementAmt), pctCell(total.forecastPctAmt)])]),
-      { margin: 'sm' }));
+  if (closed) {
+    if (teams.some(function (z) { return z.lastTon || z.lastAmt; })) {
+      body.push(fxSection_('📈 เทียบปีก่อน'));
+      const cols = [{ label: 'เขต', flex: 2 }, { label: 'ตัน', flex: 4, align: 'end' }];
+      if (amt) cols.push({ label: 'ล้านบาท', flex: 4, align: 'end' });
+      body.push(fxTable_(cols, all(function (z, n) {
+        const c = [n, growthCell_(z.actualTon, z.lastTon)];
+        if (amt) c.push(growthCell_(z.actualAmt, z.lastAmt));
+        return c;
+      }), { margin: 'sm' }));
     }
   } else {
-    // ไม่มีเป้า: ยอด สปีด คาดปิด
-    body.push(fxTable_([{ label: 'เขต', flex: 2 }, { label: 'ทำได้ (ตัน)', flex: 4, align: 'end' }, { label: 'สปีด/วัน', flex: 3, align: 'end' },
-      { label: 'คาดปิด', flex: 4, align: 'end' }], teams.map(function (z) {
-      return [z.name, fmtTon_(z.actualTon), fmtTon_(z.currentSpeed), fmtTon_(z.forecastTon)];
-    }).concat(['sep', totalRow(['รวม', fmtTon_(total.actualTon), fmtTon_(total.currentSpeed), fmtTon_(total.forecastTon)])]), { margin: 'sm' }));
+    // 🏁 คาดปิดเดือน = ยอดที่จะได้ ณ สิ้นเดือนถ้าขายได้เท่าสปีดปัจจุบัน — ทั้งตันและมูลค่า
+    body.push(fxSection_('🏁 คาดปิดเดือน'));
+    const cols = [{ label: 'เขต', flex: 2 }, { label: 'ตัน', flex: 4, align: 'end' }];
+    if (tonB) cols.push({ label: '% เป้า', flex: 3, align: 'end' });
+    if (amt) cols.push({ label: 'ล้านบาท', flex: 4, align: 'end' });
+    if (amt && amtB) cols.push({ label: '% เป้า', flex: 3, align: 'end' });
+    body.push(fxTable_(cols, all(function (z, n) {
+      const c = [n, fmtTon_(z.forecastTon)];
+      if (tonB) c.push(pctCell(z.forecastPct));
+      if (amt) c.push(fmtMB_(z.forecastAmt));
+      if (amt && amtB) c.push(pctCell(z.forecastPctAmt));
+      return c;
+    }), { margin: 'sm' }));
+
+    if (tonB) {
+      const gapCell = function (z) {
+        if (z.requiredSpeed === undefined) return '-';
+        const g = z.currentSpeed - z.requiredSpeed;
+        return { t: fmtSigned_(g), color: g >= 0 ? FX.green : FX.red };
+      };
+      body.push(fxSection_('🚀 สปีด (ตัน / วัน)'));
+      body.push(fxTable_([{ label: 'เขต', flex: 2 }, { label: 'ทำได้', flex: 3, align: 'end' }, { label: 'ต้องทำ', flex: 3, align: 'end' },
+        { label: 'ส่วนต่าง', flex: 3, align: 'end' }], all(function (z, n) {
+        return [n, fmtTon_(z.currentSpeed), z.requiredSpeed !== undefined ? fmtTon_(z.requiredSpeed) : '-', gapCell(z)];
+      }), { margin: 'sm' }));
+    }
   }
-  return fxMessage_('📍 รายเขต F1–F5 ถึง ' + fmtDate_(snap.asOf) + ': ' + teams.map(function (z) {
-    return z.name + ' ' + (z.forecastPct !== null && z.forecastPct !== undefined ? fmtPct_(z.forecastPct) : fmtTon_(z.actualTon));
-  }).join(' · '),
-  fxBubble_({ title: '📍 รายเขต F1–F5', lines: cardDateLines_(snap), body: body,
-    footer: (hasBudget ? 'คาดปิด = % ของเป้า ณ สิ้นเดือน\n' + PCT_LEGEND + '\n' : '') + 'พิมพ์ F1–F5 ดูละเอียดรายเขต' }));
+  const month = monthLabel_(snap.asOf);
+  const hasB = tonB || amtB;
+  const alt = closed
+    ? '🏁 ปิดเดือน ' + month + ' รายเขต: ' + teams.map(function (z) {
+      return z.name + ' ' + (z.achievement !== null && z.achievement !== undefined ? fmtPct_(z.achievement) : fmtTon_(z.actualTon));
+    }).join(' · ')
+    : '📍 รายเขต F1–F5 ถึง ' + fmtDate_(snap.asOf) + ': ' + teams.map(function (z) {
+      return z.name + ' ' + (z.forecastPct !== null && z.forecastPct !== undefined ? fmtPct_(z.forecastPct) : fmtTon_(z.actualTon));
+    }).join(' · ');
+  const footer = closed
+    ? 'ปิดเดือน = ยอดสะสมทั้งเดือน' + (hasB ? '\n' + PCT_LEGEND : '') + '\n' + (snap.forceClosed ? 'ยอดเดือนนี้: พิมพ์ ยอดขาย' : 'พิมพ์ F1–F5 ดูละเอียดรายเขต')
+    : 'คาดปิด = ยอดที่จะได้ ณ สิ้นเดือน ถ้าขายได้เท่าสปีดปัจจุบัน' + (hasB ? '\n' + PCT_LEGEND : '') + '\nพิมพ์ F1–F5 ดูละเอียดรายเขต';
+  return fxMessage_(alt, fxBubble_({ title: closed ? '🏁 ปิดเดือน ' + month + ' · รายเขต' : '📍 รายเขต F1–F5',
+    lines: cardDateLines_(snap), body: body, footer: footer }));
 }
 
 function zoneDetailCard_(snap, team) {
-  const body = [staleNote_(snap), statusRow_(team), metricsTable_(team, snap, lastDayInfo_(snap, team.name))];
+  const closed = isClosed_(snap);
+  const body = [snap.forceClosed ? null : staleNote_(snap), statusRow_(team, closed), metricsTable_(team, snap, lastDayInfo_(snap, team.name), closed)];
   if (snap.lastDay.unavailable) body.push(fxNote_('ยอดรายวันจะเริ่มคิดเมื่อมีไฟล์ของวันถัดไป'));
   const members = snap.salesList.filter(function (s) { return s.team === team.name && Math.abs(s.actualTon) > 1e-9; });
   if (members.length) {
     const withBudget = members.some(function (s) { return s.budgetTon; });
     body.push(fxSection_('👥 เซลส์ในเขต ' + members.length + ' คน' + (snap.detailAsOf ? ' (ถึง ' + fmtDate_(snap.detailAsOf) + ')' : '')));
-    body.push(fxTable_([{ label: 'เซลส์', flex: 7, wrap: true }, { label: 'ตัน', flex: 3, align: 'end' },
-      { label: 'คาดปิด', flex: 3, align: 'end' }, { label: withBudget ? '% เป้า' : 'สัดส่วน', flex: 3, align: 'end' }],
-    members.map(function (s) {
-      return [s.name, fmtTon_(s.actualTon), fmtTon_(s.forecastTon),
-        withBudget ? { t: fmtPct_(s.forecastPct), color: pctColor_(s.forecastPct) } : fmtShare_(team.actualTon ? s.actualTon / team.actualTon * 100 : null)];
+    const done = isClosed_(snap, true);
+    const cols = [{ label: 'เซลส์', flex: 7, wrap: true }, { label: 'ตัน', flex: 3, align: 'end' }];
+    if (!done) cols.push({ label: 'คาดปิด', flex: 3, align: 'end' });
+    cols.push({ label: withBudget ? '% เป้า' : 'สัดส่วน', flex: 3, align: 'end' });
+    body.push(fxTable_(cols, members.map(function (s) {
+      const p = done ? s.achievement : s.forecastPct;
+      const c = [s.name, fmtTon_(s.actualTon)];
+      if (!done) c.push(fmtTon_(s.forecastTon));
+      c.push(withBudget ? { t: fmtPct_(p), color: pctColor_(p) } : fmtShare_(team.actualTon ? s.actualTon / team.actualTon * 100 : null));
+      return c;
     }), { margin: 'sm' }));
+  }
+  const month = monthLabel_(snap.asOf);
+  if (closed) {
+    return fxMessage_('🏁 ' + team.name + ' ปิดเดือน ' + month + ': ' + fmtTon_(team.actualTon) + ' ตัน' +
+      (team.achievement !== null && team.achievement !== undefined ? ' (' + fmtPct_(team.achievement, 1) + ' ของเป้า)' : ''),
+    fxBubble_({ title: '🏁 ' + team.name + ' · ปิดเดือน ' + month, lines: cardDateLines_(snap), body: body,
+      footer: snap.forceClosed ? 'ยอดเดือนนี้: พิมพ์ ' + team.name : 'พิมพ์ชื่อเซลส์ ดูลูกค้ารายคน · ลูกค้า ' + team.name + ' ดูลูกค้าทั้งเขต' }));
   }
   return fxMessage_('📊 ' + team.name + ' ถึง ' + fmtDate_(snap.asOf) + ': ' + fmtTon_(team.actualTon) + ' ตัน' +
     (team.forecastPct !== null && team.forecastPct !== undefined ? ' คาดปิด ' + fmtPct_(team.forecastPct, 1) : ''),
@@ -2635,16 +2912,23 @@ function personCards_(snap, person) {
   const zone = person.team ? snap.teams.find(function (t) { return t.name === person.team; }) : null;
   const wd = cardWd_(snap, true);
   const remain = wd.total - wd.passed;
-  const kv = [['ยอดเดือนนี้', fmtTon_(person.actualTon) + ' ตัน', { bold: true }]];
+  const closed = isClosed_(snap, true);
+  const kv = [[closed ? 'ยอดปิดเดือน' : 'ยอดเดือนนี้', fmtTon_(person.actualTon) + ' ตัน', { bold: true }]];
   if (zone && zone.actualTon) kv.push(['สัดส่วนในเขต ' + zone.name, fmtPct_(person.actualTon / zone.actualTon * 100)]);
-  kv.push(['สปีด / วัน', fmtTon_(person.currentSpeed) + ' ตัน']);
-  kv.push(['คาดปิดเดือน', fmtTon_(person.forecastTon) + ' ตัน', { bold: true }]);
+  if (!closed) {
+    kv.push(['สปีด / วัน', fmtTon_(person.currentSpeed) + ' ตัน']);
+    kv.push(['คาดปิดเดือน', fmtTon_(person.forecastTon) + ' ตัน', { bold: true }]);
+  }
   if (person.budgetTon) {
     kv.push('sep');
     kv.push(['เป้า', fmtTon_(person.budgetTon) + ' ตัน']);
-    kv.push(['สำเร็จ', fmtPct_(person.achievement, 1)]);
-    kv.push(['คาดปิด % เป้า', fmtPct_(person.forecastPct, 1), { color: pctColor_(person.forecastPct), bold: true }]);
-    if (remain > 0 && person.actualTon < person.budgetTon) {
+    if (closed) {
+      kv.push(['% เป้า', fmtPct_(person.achievement, 1), { color: pctColor_(person.achievement), bold: true }]);
+    } else {
+      kv.push(['สำเร็จ', fmtPct_(person.achievement, 1)]);
+      kv.push(['คาดปิด % เป้า', fmtPct_(person.forecastPct, 1), { color: pctColor_(person.forecastPct), bold: true }]);
+    }
+    if (!closed && remain > 0 && person.actualTon < person.budgetTon) {
       kv.push(['ต้องทำ / วัน', fmtTon_((person.budgetTon - person.actualTon) / remain) + ' ตัน', { color: FX.red }]);
     }
   }
@@ -2657,7 +2941,8 @@ function personCards_(snap, person) {
   const total = cust.reduce(function (a, e) { return a + e.ton; }, 0);
   const custRows = cust.map(function (e) { return { name: e.name, ton: e.ton, pct: total ? e.ton / total * 100 : null }; });
   const lines = [(person.team ? 'เขต ' + person.team + ' · ' : '') + 'ข้อมูลถึง ' + fmtDateShortYear_(snap.detailAsOf || snap.asOf),
-    'วันทำงาน ' + wd.passed + '/' + wd.total + ' · เหลือ ' + remain + ' วัน'];
+    closed ? 'ปิดเดือน ' + monthLabel_(snap.detailAsOf || snap.asOf) + ' · วันทำงาน ' + wd.passed + '/' + wd.total
+      : 'วันทำงาน ' + wd.passed + '/' + wd.total + ' · เหลือ ' + remain + ' วัน'];
   const body = [fxKV_(kv, { margin: 'none' })];
   const FIRST = 15;
   if (custRows.length) {
@@ -2714,10 +2999,14 @@ function customerCard_(snap, name) {
   const pics = sortedEntries_(sumBy_(rows.filter(function (r) { return r.sales; }), 'sales'))
     .filter(function (e) { return Math.abs(e.ton) > 1e-9; }).map(function (e) { return e.name; });
   const custHasAmt = snap.hasAmount && rows.some(function (r) { return typeof r.amount === 'number' && !isNaN(r.amount) && r.amount !== 0; });
-  const kv = [['ยอดเดือนนี้', fmtTon_(ton) + ' ตัน', { bold: true }]];
+  const closed = isClosed_(snap, true);
+  const kv = [[closed ? 'ยอดปิดเดือน' : 'ยอดเดือนนี้', fmtTon_(ton) + ' ตัน', { bold: true }]];
   if (custHasAmt) kv.push(['มูลค่า', fmtMB_(amt) + ' ล้านบาท']);
-  kv.push(['สปีด / วัน', fmtTon_(m.currentSpeed) + ' ตัน']);
-  kv.push(['คาดปิดเดือน', fmtTon_(m.forecastTon) + ' ตัน', { bold: true }]);
+  if (!closed) {
+    kv.push(['สปีด / วัน', fmtTon_(m.currentSpeed) + ' ตัน']);
+    kv.push(['คาดปิดเดือน', fmtTon_(m.forecastTon) + ' ตัน', { bold: true }]);
+    if (custHasAmt) kv.push(['คาดปิด มูลค่า', fmtMB_(m.forecastAmt) + ' ล้านบาท']);
+  }
   if (zones.length === 1) {
     const z = snap.teams.find(function (t) { return t.name === zones[0]; });
     if (z && z.actualTon) kv.push(['สัดส่วนในเขต ' + z.name, fmtPct_(ton / z.actualTon * 100, 1)]);
@@ -2764,21 +3053,27 @@ function rankCards_(snap) {
     ? list0.slice().sort(function (a, b) { return (b.achievement || -1) - (a.achievement || -1) || b.actualTon - a.actualTon; })
     : list0;
   const tg = timeGonePct_(snap);
+  const closed = isClosed_(snap, true);
+  const sum = list.reduce(function (a, s) { return a + s.actualTon; }, 0);
   const cols = [{ label: '#', flex: 1, align: 'end' }, { label: 'เซลส์', flex: 9, wrap: true }, { label: 'เขต', flex: 2 },
-    { label: 'ตัน', flex: 3, align: 'end' }, { label: anyTarget ? '% เป้า' : 'คาดปิด', flex: 3, align: 'end' }];
+    { label: 'ตัน', flex: 3, align: 'end' }, { label: anyTarget ? '% เป้า' : closed ? 'สัดส่วน' : 'คาดปิด', flex: 3, align: 'end' }];
   const rows = list.map(function (s, i) {
     const last = anyTarget
-      ? { t: fmtPct_(s.achievement), color: s.achievement === null ? FX.text : s.achievement >= tg ? FX.green : s.achievement >= tg - 10 ? FX.amber : FX.red }
-      : fmtTon_(s.forecastTon);
+      ? { t: fmtPct_(s.achievement), color: closed ? pctColor_(s.achievement)
+        : s.achievement === null ? FX.text : s.achievement >= tg ? FX.green : s.achievement >= tg - 10 ? FX.amber : FX.red }
+      : closed ? fmtShare_(sum ? s.actualTon / sum * 100 : null) : fmtTon_(s.forecastTon);
     return [String(i + 1), s.name, s.team || '-', fmtTon_(s.actualTon), last];
   });
   const cards = [];
   for (let i = 0; i < rows.length && cards.length < 5; i += ROWS_PER_CARD) {
     cards.push(fxMessage_('🏆 อันดับเซลส์ ถึง ' + fmtDate_(snap.detailAsOf || snap.asOf), fxBubble_({
       title: '🏆 อันดับเซลส์' + (i ? ' (ต่อ)' : ''),
-      lines: i ? [] : ['เดือนนี้ ถึง ' + fmtDateShortYear_(snap.detailAsOf || snap.asOf) + ' · ' + list.length + ' คน', 'Time gone ' + fmtPct_(tg)],
+      lines: i ? [] : closed
+        ? ['ปิดเดือน ' + monthLabel_(snap.detailAsOf || snap.asOf) + ' · ' + list.length + ' คน']
+        : ['เดือนนี้ ถึง ' + fmtDateShortYear_(snap.detailAsOf || snap.asOf) + ' · ' + list.length + ' คน', 'Time gone ' + fmtPct_(tg)],
       body: [fxTable_(cols, rows.slice(i, i + ROWS_PER_CARD), { margin: 'none' })],
-      footer: anyTarget ? 'สี % เป้า: เขียว ทันเวลา · ส้ม ช้าไม่เกิน 10% · แดง ช้ากว่านั้น' : 'คาดปิด = ตันที่คาดว่าจะได้เมื่อสิ้นเดือน · พิมพ์ชื่อเซลส์ ดูลูกค้า',
+      footer: closed ? (anyTarget ? PCT_LEGEND : 'สัดส่วน = ส่วนของยอดรวมทุกเซลส์') + ' · พิมพ์ชื่อเซลส์ ดูลูกค้า'
+        : anyTarget ? 'สี % เป้า: เขียว ทันเวลา · ส้ม ช้าไม่เกิน 10% · แดง ช้ากว่านั้น' : 'คาดปิด = ตันที่คาดว่าจะได้เมื่อสิ้นเดือน · พิมพ์ชื่อเซลส์ ดูลูกค้า',
     })));
   }
   return cards.length === 1 ? cards[0] : cards;
@@ -2845,6 +3140,70 @@ function lastDayCard_(snap) {
       (t.budgetTon ? ' (' + fmtPct_(t.achievement, 1) + ')' : '') +
       (snap.hasAmount ? ' · ' + fmtMB_(t.actualAmt) + ' ล้านบาท' + (t.budgetAmt ? ' (' + fmtPct_(t.achievementAmt, 1) + ')' : '') : ''),
   }));
+}
+
+// ---------------------------------------------------------------- ปิดเดือน
+
+/**
+ * "ปิดเดือน" — สรุปยอดปิดเดือนล่าสุดที่ครบเดือน (ตัน + ล้านบาท เทียบเป้า/ปีก่อน)
+ * "ปิดเดือน ต.ค." / "ปิดเดือน เดือนก่อน" / "ปิดเดือน F3" / "ปิดเดือน ต.ค. F3"
+ * คืน null เมื่อพิมพ์ต่อท้ายด้วยคำที่ไม่ใช่เดือน/เขต (แชทปกติ)
+ */
+function monthCloseCommand_(argText, now) {
+  let zoneQ = '';
+  const monthWords = [];
+  String(argText || '').split(/\s+/).filter(Boolean).forEach(function (t) {
+    if (/^(?:f|fish|เขต)\s*[1-9]$/i.test(t)) zoneQ = t;
+    else monthWords.push(t);
+  });
+  const monthQ = monthWords.join(' ');
+  let month = null;
+  if (monthQ) {
+    month = /^(เดือน)?(ก่อน|ที่แล้ว|แล้ว)$/.test(monthQ) ? -1 : parseMonthArg_(monthQ, now);
+    if (!month) return null;
+  }
+  const latest = getSalesSnapshot_();
+  if (!latest || latest.source !== 'sheet') return NO_SHEET_SALES_TEXT;
+  let snap;
+  if (month === null && latest.closed) {
+    snap = latest;
+  } else {
+    let end;
+    if (month === null || month === -1) {
+      end = new Date(latest.asOf.getFullYear(), latest.asOf.getMonth(), 0);
+    } else {
+      // เดือนที่ระบุ: ครั้งล่าสุดที่ไม่เกินเดือนของข้อมูลล่าสุด
+      const y = month - 1 > latest.asOf.getMonth() ? latest.asOf.getFullYear() - 1 : latest.asOf.getFullYear();
+      end = new Date(y, month, 0);
+    }
+    if (monthKey_(end) === latest.monthKey) {
+      if (!latest.closed) {
+        return '📊 เดือน ' + monthLabel_(end) + ' ยังไม่ปิดค่ะ (ข้อมูลถึง ' + fmtDate_(latest.asOf) + ' · วันทำงาน ' +
+          latest.workingDaysPassed + '/' + latest.workingDaysTotal + ')\nดูยอดคาดปิดได้ที่: ยอดขาย';
+      }
+      snap = latest;
+    } else {
+      snap = salesSnapshotAt_(end);
+      if (!snap || snap.monthKey !== monthKey_(end)) return 'ยังไม่มีข้อมูลยอดของเดือน ' + monthLabel_(end) + ' ค่ะ';
+      snap.forceClosed = true;
+    }
+  }
+  const out = [];
+  if (snap.workingDaysPassed < snap.workingDaysTotal) {
+    const last = new Date(snap.asOf.getFullYear(), snap.asOf.getMonth() + 1, 0);
+    out.push('⚠️ ไฟล์ยอดสุดท้ายของเดือน ' + monthLabel_(snap.asOf) + ' ถึง ' + fmtDate_(snap.asOf) + ' (วันทำงาน ' +
+      snap.workingDaysPassed + '/' + snap.workingDaysTotal + ') — ยังไม่ใช่ยอดปิดเดือนจริงค่ะ\n' +
+      'ส่งไฟล์ยอดวันสุดท้ายของเดือนในห้องสั่งการ แล้วพิมพ์: อัปเดตยอด ' + last.getDate() + '/' + (last.getMonth() + 1));
+  }
+  if (zoneQ) {
+    const team = findTeam_(snap, zoneQ);
+    if (!team) return 'ไม่มียอดของ ' + zoneQ.toUpperCase() + ' ในเดือน ' + monthLabel_(snap.asOf) + ' ค่ะ';
+    out.push(zoneDetailCard_(snap, team));
+  } else {
+    out.push(overviewCard_(snap));
+    out.push(zonesCard_(snap));
+  }
+  return out;
 }
 
 // ---------- Ai.gs ----------
@@ -4353,7 +4712,7 @@ function lineQuota_() {
 /** จำนวนสมาชิกในกลุ่ม (ไม่นับบอท) — null = ดูไม่ได้ (เช่น น้องขุนศึกไม่ได้อยู่ในกลุ่มแล้ว) */
 function groupMemberCount_(id) {
   const kind = /^R/.test(id) ? 'room' : 'group';
-  const res = lineFetch_('/' + kind + '/' + id + '/members/count', 'get');
+  const res = lineFetch_('/' + kind + '/' + id + '/members/count', 'get', null, true);
   if (res.code !== 200) return null;
   try {
     const n = Number(JSON.parse(res.body).count);
@@ -4365,7 +4724,7 @@ function groupMemberCount_(id) {
 
 function groupName_(id) {
   if (/^R/.test(id)) return 'ห้องแชท (ไม่มีชื่อ)';
-  const res = lineFetch_('/group/' + id + '/summary', 'get');
+  const res = lineFetch_('/group/' + id + '/summary', 'get', null, true);
   if (res.code !== 200) return '';
   try { return cleanText_(JSON.parse(res.body).groupName); } catch (e) { return ''; }
 }
@@ -4519,6 +4878,86 @@ function setMorningOff_(ctx, argText, off) {
   if (!morningToAllGroups_()) return 'ตอนนี้ข้อความเช้าตั้งให้ส่งเฉพาะกลุ่มหลักค่ะ (ผู้ดูแลเปิดได้ที่ MORNING_ALL_GROUPS / LOCK_GROUPS)';
   return '☀️ ' + which + 'จะได้รับข้อความเช้าทุก ' + morningWhenText_() + ' ค่ะ';
 }
+
+// ---------------------------------------------------------------- แชทส่วนตัว (1:1) + ผู้ดูแล
+
+function jsonListProp_(key) {
+  try {
+    const v = JSON.parse(prop_(key, '[]'));
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** คนที่พิมพ์ในห้องสั่งการ = ผู้ดูแล (ห้องสั่งการมีแค่ผู้ดูแลกับบอท) — ใช้คำสั่งผู้ดูแลในแชทส่วนตัวได้ */
+function rememberAdmin_(userId) {
+  if (!userId) return;
+  const list = jsonListProp_('ADMIN_USERS');
+  if (list.indexOf(userId) >= 0) return;
+  list.push(userId);
+  setProp_('ADMIN_USERS', JSON.stringify(list.slice(-50)));
+}
+
+/** ผู้ดูแล: เคยพิมพ์ในห้องสั่งการ หรืออยู่ใน ADMIN_USER_IDS (ใส่เอง คั่นด้วย ,) */
+function isAdminUser_(userId) {
+  if (!userId) return false;
+  const manual = String(prop_('ADMIN_USER_IDS', '')).split(/[\s,]+/).filter(Boolean);
+  return manual.indexOf(userId) >= 0 || jsonListProp_('ADMIN_USERS').indexOf(userId) >= 0;
+}
+
+/** กลุ่มที่ใช้ตรวจว่าเป็นคนในทีม: กลุ่มหลัก → ห้องสั่งการ → กลุ่มอื่นที่น้องขุนศึกอยู่ (สูงสุด 10 กลุ่ม) */
+function teamGroupIds_() {
+  const ids = [prop_('GROUP_ID', ''), prop_('UPLOAD_GROUP_ID', '')].filter(Boolean);
+  Object.keys(knownGroups_()).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+  return ids.slice(0, 10);
+}
+
+/**
+ * แชทส่วนตัวได้ไหม — ยอดขาย/ลูกค้าเป็นข้อมูลบริษัท จึงให้คุยได้เฉพาะคนที่อยู่ในกลุ่มที่มีน้องขุนศึก
+ * (เช็กผ่าน LINE ว่าเป็นสมาชิกกลุ่ม · จำผล 6 ชม. / ไม่ใช่สมาชิก 10 นาที) · DM_MEMBERS_ONLY = false → ใครแอดก็คุยได้
+ */
+function dmAllowed_(userId) {
+  if (!userId) return false;
+  if (!flag_('DM_MEMBERS_ONLY', true) || isAdminUser_(userId)) return true;
+  const groups = teamGroupIds_();
+  if (!groups.length) return true; // ยังไม่ได้ตั้งกลุ่ม (ช่วงติดตั้ง)
+  const cache = CacheService.getScriptCache();
+  const key = 'dm_ok_' + userId;
+  const hit = cache.get(key);
+  if (hit) return hit === '1';
+  const ok = groups.some(function (g) {
+    return lineFetch_('/' + (/^R/.test(g) ? 'room' : 'group') + '/' + g + '/member/' + userId, 'get', null, true).code === 200;
+  });
+  cache.put(key, ok ? '1' : '0', ok ? 21600 : 600);
+  return ok;
+}
+
+const DM_QUICK = ['ยอดขาย', 'ยอดเซลส์', 'ปิดเดือน', 'วันเกิด', 'ลิงก์', 'เมนู'];
+
+function dmWelcomeText_() {
+  return [
+    '👋 สวัสดีค่ะ น้องขุนศึกเป็นผู้ช่วยทีมขายค่ะ',
+    'คุยส่วนตัวกับน้องขุนศึกได้เหมือนในกลุ่มเลย เช่น',
+    '',
+    '• ยอดขาย · F3 · ยอดเซลส์ · ปิดเดือน',
+    '• พิมพ์ชื่อเซลส์ / ชื่อลูกค้า ดูยอด',
+    '• เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>',
+    '  บันทึกการเข้าพบลงรายงานทีมเหมือนพิมพ์ในกลุ่ม',
+    '• ลิงก์ — ไฟล์ทีมบน OneDrive',
+  ].concat(aiEnabled_() ? ['• ถามได้เลย เช่น F5 จะถึงเป้าไหม'] : [])
+    .concat(['', 'พิมพ์ "เมนู" ดูคำสั่งทั้งหมดค่ะ']).join('\n');
+}
+
+const DM_LOCKED_TEXT = '🔒 น้องขุนศึกคุยส่วนตัวได้เฉพาะสมาชิกกลุ่มทีมขายค่ะ\n' +
+  'ถ้าอยู่ทีมขาย ให้ผู้ดูแลเชิญเข้ากลุ่มทีมก่อน แล้วทักมาใหม่นะคะ';
+
+const DM_UNKNOWN_TEXT = '🙏 น้องขุนศึกยังไม่เข้าใจคำนี้ค่ะ\n' +
+  'ลองพิมพ์ เช่น ยอดขาย · F3 · ชื่อเซลส์ · ชื่อลูกค้า\nหรือพิมพ์ เมนู ดูคำสั่งทั้งหมด';
+
+/** คำสั่งผู้ดูแล — แชทส่วนตัวที่ใช้ไม่ได้ บอกให้รู้แทนการเงียบ */
+const ADMIN_ONLY_CMDS = ['sendsales', 'sendbirthday', 'sendvisithelp', 'sendformlinks', 'importsales', 'brief', 'groups',
+  'holidays', 'delholiday', 'whoami', 'registerupload'];
 
 // ---------- Schedule.gs ----------
 /**
@@ -4773,6 +5212,13 @@ function handleEvent_(ev) {
     return;
   }
   try { rememberGroup_(source); } catch (e) { console.error('จำกลุ่มไม่ได้: ' + (e && e.message || e)); }
+  if (isControlRoom_(source)) { try { rememberAdmin_(source.userId); } catch (e) { /* ignore */ } }
+
+  // มีคนแอดน้องขุนศึกเป็นเพื่อน → ทักทาย + บอกว่าคุยส่วนตัวได้
+  if (ev.type === 'follow') {
+    if (ev.replyToken) lineReply_(ev.replyToken, dmAllowed_(source.userId) ? withQuickReply_(dmWelcomeText_(), DM_QUICK) : DM_LOCKED_TEXT);
+    return;
+  }
 
   if (ev.type === 'join') {
     const morning = morningToAllGroups_()
@@ -4786,6 +5232,12 @@ function handleEvent_(ev) {
     return;
   }
   if (ev.type !== 'message' || !ev.message) return;
+  // แชทส่วนตัว (1:1): ใช้ได้เหมือนในกลุ่ม เฉพาะคนในทีม
+  const isDM = source.type === 'user';
+  if (isDM && !dmAllowed_(source.userId)) {
+    if (ev.message.type === 'text') lineReply_(ev.replyToken, DM_LOCKED_TEXT);
+    return;
+  }
   const uploadGroup = prop_('UPLOAD_GROUP_ID', '');
   const inOtherGroup = registered && (source.type === 'group' || source.type === 'room') &&
     chatId_(source) !== registered && chatId_(source) !== uploadGroup;
@@ -4796,6 +5248,10 @@ function handleEvent_(ev) {
   // ส่งไฟล์ Excel/CSV ยอดขายเข้ากลุ่ม → บอทนำเข้าและรายงานทันที
   if (ev.message.type === 'file') {
     if (inOtherGroup || !/\.(xlsx|xls|csv)$/i.test(ev.message.fileName || '')) return;
+    if (isDM && uploadGroup && !isAdminUser_(source.userId)) {
+      lineReply_(ev.replyToken, 'ℹ️ น้องขุนศึกรับไฟล์ยอดขายจากห้องสั่งการเท่านั้นค่ะ');
+      return;
+    }
     const r = importLineFile_(ev.message.id, ev.message.fileName);
     if (!r) {
       // ห้องสั่งการส่งไฟล์ที่ไม่ใช่ไฟล์ยอด → บอกให้รู้ (กลุ่มอื่นเงียบ)
@@ -4875,9 +5331,11 @@ function handleEvent_(ev) {
   if (!parsed) {
     // แท็ก @น้องขุนศึก แล้วถาม / ห้องสั่งการพิมพ์อะไรก็ได้ (มี "ถาม" นำหน้าหรือไม่ก็ได้) → AI ตอบจากข้อมูลจริง
     const ask = stripped.text.match(/^ถาม\s+([\s\S]+)$/);
+    // แชทส่วนตัว = ถามได้เลยไม่ต้องแท็ก (เหมือนห้องสั่งการ) · ไม่มี AI → บอกวิธีพิมพ์แทนการเงียบ
     const question = stripped.botMentioned ? stripped.text
-      : isControlRoom_(source) ? (ask ? ask[1] : aiEnabled_() ? stripped.text : '').trim() : '';
+      : isControlRoom_(source) || isDM ? (ask ? ask[1] : aiEnabled_() ? stripped.text : '').trim() : '';
     if (question && !blocked) lineReply_(ev.replyToken, askBot_(question, now_()));
+    else if (isDM) lineReply_(ev.replyToken, withQuickReply_(DM_UNKNOWN_TEXT, DM_QUICK));
     return;
   }
 
@@ -4905,12 +5363,14 @@ function handleEvent_(ev) {
     else list.unshift(note);
     reply = list.slice(0, 5);
   }
+  if (!reply && isDM && ADMIN_ONLY_CMDS.indexOf(parsed.cmd) >= 0) reply = 'คำสั่งนี้ใช้ได้เฉพาะผู้ดูแลในห้องสั่งการค่ะ';
   if (reply) lineReply_(ev.replyToken, reply);
 }
 
-/** คำสั่งผู้ดูแล: มีห้องสั่งการแล้ว → ใช้ได้เฉพาะห้องสั่งการ (และแชท 1:1) */
+/** คำสั่งผู้ดูแล: มีห้องสั่งการแล้ว → ใช้ได้เฉพาะห้องสั่งการ และแชทส่วนตัวของผู้ดูแล */
 function adminAllowed_(ctx) {
-  return !prop_('UPLOAD_GROUP_ID', '') || ctx.source.type === 'user' || isControlRoom_(ctx.source);
+  if (!prop_('UPLOAD_GROUP_ID', '') || isControlRoom_(ctx.source)) return true;
+  return ctx.source.type === 'user' && isAdminUser_(ctx.source.userId);
 }
 
 const LEGACY_CMDS = ['tasks', 'mytasks', 'addtask', 'done', 'deltask', 'movetask', 'today', 'tomorrow', 'week',
@@ -5189,6 +5649,17 @@ function runCommand_(p, ctx) {
       if (!adminAllowed_(ctx)) return null;
       return groupsCard_(now);
 
+    case 'monthclose':
+      return monthCloseCommand_(p.argText, now);
+
+    case 'holidays':
+      if (!adminAllowed_(ctx)) return null;
+      return p.argText ? editHolidays_(p.argText, now, false) : holidaysText_(now);
+
+    case 'delholiday':
+      if (!adminAllowed_(ctx)) return null;
+      return editHolidays_(p.argText, now, true);
+
     case 'morningoff':
       return setMorningOff_(ctx, p.argText, true);
 
@@ -5244,6 +5715,8 @@ const HELP_TEXT = [
   "• ชื่อเซลส์ — ยอด + ลูกค้าของเซลส์คนนั้น",
   '  (พิมพ์ชื่อผิดนิดหน่อย น้องขุนศึกเดาให้ค่ะ)',
   '• ยอดเมื่อวาน · ยอดเซลส์ · ยอดลูกค้า',
+  '• ปิดเดือน — สรุปยอดปิดเดือน ตัน + ล้านบาท',
+  '  (ปิดเดือน ต.ค. · ปิดเดือน F3)',
   '',
   '💬 ถาม AI',
   '• แท็ก @น้องขุนศึก แล้วพิมพ์คำถาม',
@@ -5268,6 +5741,7 @@ const HELP_TEXT = [
   '',
   '⏰ ทุกเช้า 7:30 (จ.–ส.) น้องขุนศึกสรุปยอด + วันเกิดให้เองค่ะ',
   '   ส่งทุกกลุ่มที่มีน้องขุนศึก · กลุ่มไหนไม่ต้องการ พิมพ์ ไม่รับข้อความเช้า',
+  '💬 แอดน้องขุนศึกเป็นเพื่อน คุยส่วนตัวได้เหมือนในกลุ่มค่ะ',
 ].join('\n');
 
 // เมนูห้องสั่งการ — เพิ่มคำสั่งของผู้ดูแล
@@ -5279,6 +5753,9 @@ const ADMIN_HELP_TEXT = HELP_TEXT + '\n' + [
   '📤 ส่งไฟล์ Excel ยอดขายในห้องนี้',
   '• อัปเดตยอด 23/11 — แก้วันที่ของไฟล์ล่าสุด',
   '• สรุปเช้า — ดูตัวอย่างข้อความเช้า',
+  '',
+  '📅 วันทำงาน — ดูวันทำงาน/วันหยุด เดือนนี้–เดือนหน้า',
+  '• วันหยุด 5/12 10/12 · ลบวันหยุด 10/12',
   '',
   '👥 กลุ่มที่มีน้องขุนศึก',
   '• กลุ่ม — รายชื่อกลุ่ม · ใครได้ข้อความเช้า · โควตาข้อความ',

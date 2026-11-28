@@ -96,7 +96,7 @@ function lineQuota_() {
 /** จำนวนสมาชิกในกลุ่ม (ไม่นับบอท) — null = ดูไม่ได้ (เช่น น้องขุนศึกไม่ได้อยู่ในกลุ่มแล้ว) */
 function groupMemberCount_(id) {
   const kind = /^R/.test(id) ? 'room' : 'group';
-  const res = lineFetch_('/' + kind + '/' + id + '/members/count', 'get');
+  const res = lineFetch_('/' + kind + '/' + id + '/members/count', 'get', null, true);
   if (res.code !== 200) return null;
   try {
     const n = Number(JSON.parse(res.body).count);
@@ -108,7 +108,7 @@ function groupMemberCount_(id) {
 
 function groupName_(id) {
   if (/^R/.test(id)) return 'ห้องแชท (ไม่มีชื่อ)';
-  const res = lineFetch_('/group/' + id + '/summary', 'get');
+  const res = lineFetch_('/group/' + id + '/summary', 'get', null, true);
   if (res.code !== 200) return '';
   try { return cleanText_(JSON.parse(res.body).groupName); } catch (e) { return ''; }
 }
@@ -262,3 +262,83 @@ function setMorningOff_(ctx, argText, off) {
   if (!morningToAllGroups_()) return 'ตอนนี้ข้อความเช้าตั้งให้ส่งเฉพาะกลุ่มหลักค่ะ (ผู้ดูแลเปิดได้ที่ MORNING_ALL_GROUPS / LOCK_GROUPS)';
   return '☀️ ' + which + 'จะได้รับข้อความเช้าทุก ' + morningWhenText_() + ' ค่ะ';
 }
+
+// ---------------------------------------------------------------- แชทส่วนตัว (1:1) + ผู้ดูแล
+
+function jsonListProp_(key) {
+  try {
+    const v = JSON.parse(prop_(key, '[]'));
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** คนที่พิมพ์ในห้องสั่งการ = ผู้ดูแล (ห้องสั่งการมีแค่ผู้ดูแลกับบอท) — ใช้คำสั่งผู้ดูแลในแชทส่วนตัวได้ */
+function rememberAdmin_(userId) {
+  if (!userId) return;
+  const list = jsonListProp_('ADMIN_USERS');
+  if (list.indexOf(userId) >= 0) return;
+  list.push(userId);
+  setProp_('ADMIN_USERS', JSON.stringify(list.slice(-50)));
+}
+
+/** ผู้ดูแล: เคยพิมพ์ในห้องสั่งการ หรืออยู่ใน ADMIN_USER_IDS (ใส่เอง คั่นด้วย ,) */
+function isAdminUser_(userId) {
+  if (!userId) return false;
+  const manual = String(prop_('ADMIN_USER_IDS', '')).split(/[\s,]+/).filter(Boolean);
+  return manual.indexOf(userId) >= 0 || jsonListProp_('ADMIN_USERS').indexOf(userId) >= 0;
+}
+
+/** กลุ่มที่ใช้ตรวจว่าเป็นคนในทีม: กลุ่มหลัก → ห้องสั่งการ → กลุ่มอื่นที่น้องขุนศึกอยู่ (สูงสุด 10 กลุ่ม) */
+function teamGroupIds_() {
+  const ids = [prop_('GROUP_ID', ''), prop_('UPLOAD_GROUP_ID', '')].filter(Boolean);
+  Object.keys(knownGroups_()).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+  return ids.slice(0, 10);
+}
+
+/**
+ * แชทส่วนตัวได้ไหม — ยอดขาย/ลูกค้าเป็นข้อมูลบริษัท จึงให้คุยได้เฉพาะคนที่อยู่ในกลุ่มที่มีน้องขุนศึก
+ * (เช็กผ่าน LINE ว่าเป็นสมาชิกกลุ่ม · จำผล 6 ชม. / ไม่ใช่สมาชิก 10 นาที) · DM_MEMBERS_ONLY = false → ใครแอดก็คุยได้
+ */
+function dmAllowed_(userId) {
+  if (!userId) return false;
+  if (!flag_('DM_MEMBERS_ONLY', true) || isAdminUser_(userId)) return true;
+  const groups = teamGroupIds_();
+  if (!groups.length) return true; // ยังไม่ได้ตั้งกลุ่ม (ช่วงติดตั้ง)
+  const cache = CacheService.getScriptCache();
+  const key = 'dm_ok_' + userId;
+  const hit = cache.get(key);
+  if (hit) return hit === '1';
+  const ok = groups.some(function (g) {
+    return lineFetch_('/' + (/^R/.test(g) ? 'room' : 'group') + '/' + g + '/member/' + userId, 'get', null, true).code === 200;
+  });
+  cache.put(key, ok ? '1' : '0', ok ? 21600 : 600);
+  return ok;
+}
+
+const DM_QUICK = ['ยอดขาย', 'ยอดเซลส์', 'ปิดเดือน', 'วันเกิด', 'ลิงก์', 'เมนู'];
+
+function dmWelcomeText_() {
+  return [
+    '👋 สวัสดีค่ะ น้องขุนศึกเป็นผู้ช่วยทีมขายค่ะ',
+    'คุยส่วนตัวกับน้องขุนศึกได้เหมือนในกลุ่มเลย เช่น',
+    '',
+    '• ยอดขาย · F3 · ยอดเซลส์ · ปิดเดือน',
+    '• พิมพ์ชื่อเซลส์ / ชื่อลูกค้า ดูยอด',
+    '• เข้าพบ / ติดตาม <ลูกค้า> <รายละเอียด>',
+    '  บันทึกการเข้าพบลงรายงานทีมเหมือนพิมพ์ในกลุ่ม',
+    '• ลิงก์ — ไฟล์ทีมบน OneDrive',
+  ].concat(aiEnabled_() ? ['• ถามได้เลย เช่น F5 จะถึงเป้าไหม'] : [])
+    .concat(['', 'พิมพ์ "เมนู" ดูคำสั่งทั้งหมดค่ะ']).join('\n');
+}
+
+const DM_LOCKED_TEXT = '🔒 น้องขุนศึกคุยส่วนตัวได้เฉพาะสมาชิกกลุ่มทีมขายค่ะ\n' +
+  'ถ้าอยู่ทีมขาย ให้ผู้ดูแลเชิญเข้ากลุ่มทีมก่อน แล้วทักมาใหม่นะคะ';
+
+const DM_UNKNOWN_TEXT = '🙏 น้องขุนศึกยังไม่เข้าใจคำนี้ค่ะ\n' +
+  'ลองพิมพ์ เช่น ยอดขาย · F3 · ชื่อเซลส์ · ชื่อลูกค้า\nหรือพิมพ์ เมนู ดูคำสั่งทั้งหมด';
+
+/** คำสั่งผู้ดูแล — แชทส่วนตัวที่ใช้ไม่ได้ บอกให้รู้แทนการเงียบ */
+const ADMIN_ONLY_CMDS = ['sendsales', 'sendbirthday', 'sendvisithelp', 'sendformlinks', 'importsales', 'brief', 'groups',
+  'holidays', 'delholiday', 'whoami', 'registerupload'];

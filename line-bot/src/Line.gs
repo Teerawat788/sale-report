@@ -3,7 +3,8 @@
 const LINE_API = 'https://api.line.me/v2/bot';
 const LINE_TEXT_MAX = 4900;
 
-function lineFetch_(path, method, payload) {
+/** quiet = ไม่ต้อง log เมื่อ LINE ตอบไม่สำเร็จ (เช่น 404 ตอนเช็กว่าเป็นสมาชิกกลุ่มไหม) */
+function lineFetch_(path, method, payload, quiet) {
   const token = prop_('LINE_CHANNEL_ACCESS_TOKEN', '');
   if (!token) throw new Error('ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties');
   const opts = {
@@ -17,7 +18,7 @@ function lineFetch_(path, method, payload) {
   }
   const res = UrlFetchApp.fetch(LINE_API + path, opts);
   const code = res.getResponseCode();
-  if (code >= 300) console.error('LINE API ' + path + ' ' + code + ': ' + res.getContentText());
+  if (code >= 300 && !quiet) console.error('LINE API ' + path + ' ' + code + ': ' + res.getContentText());
   return { code: code, body: res.getContentText() };
 }
 

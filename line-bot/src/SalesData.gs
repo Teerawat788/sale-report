@@ -283,9 +283,21 @@ function importFolder_() {
  * (ไฟล์รายเขต กับ ไฟล์รายลูกค้า ของวันเดียวกันเก็บไว้ทั้งคู่)
  */
 function replaceMtdSnapshot_(rows, asOf, zoneLevel) {
+  let prev = null;
   withLock_(function () {
     const sh = sheet_(MTD_SHEET, MTD_HEADERS);
     const values = sh.getDataRange().getValues();
+    // ไฟล์ล่าสุดก่อนหน้า (ชนิดเดียวกัน เดือนเดียวกัน) — ใช้เตือนถ้ายอดสะสมลดลง
+    const sums = {};
+    values.slice(1).forEach(function (r) {
+      const d = parseSheetDate_(r[0], 'DMY');
+      if (!d || d >= asOf || monthKey_(d) !== monthKey_(asOf) || !cleanText_(r[4]) !== !!zoneLevel) return;
+      if (normZone_(r[1]) === OTHER_ZONE) return;
+      const t = parseNumber_(r[5]);
+      sums[d.getTime()] = (sums[d.getTime()] || 0) + (isNaN(t) ? 0 : t);
+    });
+    const last = Object.keys(sums).map(Number).sort(function (a, b) { return b - a; })[0];
+    if (last) prev = { date: new Date(last), total: sums[last] };
     const width = MTD_HEADERS.length;
     const today = startOfDay_(now_());
     const pad = function (r) { const x = r.slice(0, width); while (x.length < width) x.push(''); return x; };
@@ -303,6 +315,32 @@ function replaceMtdSnapshot_(rows, asOf, zoneLevel) {
     sh.clearContents();
     sh.getRange(1, 1, out.length, MTD_HEADERS.length).setValues(out);
   });
+  return prev;
+}
+
+/** ย้ายยอดสะสมที่ลงวันที่ from ไปเป็นวันที่ to (แทนที่ยอดชนิดเดียวกันที่ to) — คืนจำนวนแถวที่ย้าย */
+function moveMtdDate_(from, to) {
+  let moved = 0;
+  withLock_(function () {
+    const sh = spreadsheet_().getSheetByName(MTD_SHEET);
+    if (!sh) return;
+    const values = sh.getDataRange().getValues();
+    const width = MTD_HEADERS.length;
+    const at = function (r, d) { const x = parseSheetDate_(r[0], 'DMY'); return !!x && x.getTime() === d.getTime(); };
+    const rows = values.slice(1).filter(function (r) { return r[0] !== '' && r[0] !== null; });
+    const levels = {};
+    rows.forEach(function (r) { if (at(r, from)) levels[!cleanText_(r[4])] = true; });
+    if (!Object.keys(levels).length) return;
+    const out = rows.filter(function (r) { return !(at(r, to) && levels[!cleanText_(r[4])]); }).map(function (r) {
+      const x = r.slice(0, width);
+      while (x.length < width) x.push('');
+      if (at(r, from)) { x[0] = to; moved++; }
+      return x;
+    });
+    sh.clearContents();
+    sh.getRange(1, 1, out.length + 1, width).setValues([MTD_HEADERS].concat(out));
+  });
+  return moved;
 }
 
 /** เขียนแถวใหม่ทับช่วงวันที่เดียวกันในแท็บ SalesData (นำเข้าซ้ำได้ไม่ซ้ำซ้อน) */
@@ -334,9 +372,9 @@ function importTable_(table, opts) {
   let r;
   if (parsed.mode === 'mtd') {
     const asOf = (opts && opts.asOf) || addDays_(startOfDay_(now_()), -1);
-    replaceMtdSnapshot_(parsed.rows, asOf, parsed.zoneLevel);
-    r = { mode: 'mtd', count: parsed.rows.length, from: asOf, to: asOf,
-      total: parsed.rows.reduce(function (a, x) { return a + x.ton; }, 0) };
+    const prev = replaceMtdSnapshot_(parsed.rows, asOf, parsed.zoneLevel);
+    r = { mode: 'mtd', count: parsed.rows.length, from: asOf, to: asOf, prev: prev,
+      total: parsed.rows.filter(function (x) { return x.team !== OTHER_ZONE; }).reduce(function (a, x) { return a + x.ton; }, 0) };
   } else {
     r = replaceSalesRows_(parsed.rows);
     r.mode = 'daily';
@@ -360,12 +398,27 @@ function formatImportResult_(r, fileName) {
       (fileName ? '\n📄 ' + fileName : '') +
       '\n📋 ' + (r.zoneLevel ? 'ไฟล์รายเขต' : 'ไฟล์รายลูกค้า') + ' · ' + fmtNum_(r.count, 0) + ' แถว · ' + fmtTon_(r.total) + ' ตัน' +
       '\n📆 ยอดสะสมถึง ' + fmtDateShortYear_(d) +
+      (r.movedFrom ? '\n🔁 ย้ายยอดที่ลงวันที่ ' + fmtDate_(r.movedFrom) + ' (ทุกไฟล์ที่ส่งชุดเดียวกัน) มาเป็น ' + fmtDate_(d) + ' แล้ว' : '') +
       '\n→ ' + (r.zoneLevel ? 'ใช้เป็นยอดรวม + เป้าของแต่ละเขต' : 'ใช้ดูยอดลูกค้าและเซลส์ (ยอดรวมใช้ไฟล์รายเขต)') +
-      missing +
+      missing + dropWarning_(r) +
       '\n\nวันที่ไม่ถูก? พิมพ์: อัปเดตยอด ' + d.getDate() + '/' + (d.getMonth() + 1);
   }
   return '✅ นำเข้ายอดขายแล้วค่ะ' + (fileName ? '\n📄 ' + fileName : '') +
     '\n📋 ' + fmtNum_(r.count, 0) + ' แถว · ' + fmtDate_(r.from) + (r.to - r.from ? ' – ' + fmtDate_(r.to) : '') + missing;
+}
+
+/**
+ * ยอดสะสม (MTD) ต้องเพิ่มขึ้นทุกวัน — ถ้าลดลงมาก มักเป็นไฟล์ของเดือนใหม่ที่ถูกลงวันที่เป็นเดือนเก่า
+ * (เช่น export วันที่ 1 ธ.ค. แต่ Power BI ขึ้นยอดเดือน ธ.ค. แล้ว)
+ */
+function dropWarning_(r) {
+  if (!r.prev || !(r.prev.total > 0) || !(r.total < r.prev.total * 0.9)) return '';
+  const d = r.from;
+  const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return '\n\n⚠️ ยอดสะสมไฟล์นี้ ' + fmtTon_(r.total) + ' ตัน ต่ำกว่าไฟล์ ' + fmtDate_(r.prev.date) + ' (' + fmtTon_(r.prev.total) + ' ตัน)' +
+    (d.getDate() >= 25
+      ? '\nถ้าเป็นยอดของเดือนใหม่ (' + TH_MONTHS_SHORT[next.getMonth()] + ') พิมพ์: อัปเดตยอด 1/' + (next.getMonth() + 1)
+      : '\nตรวจว่าส่งไฟล์ถูกไหมนะคะ');
 }
 
 /** อ่านไฟล์ใน Drive เป็นตาราง 2 มิติ: CSV, Google Sheet, Excel */
@@ -420,8 +473,19 @@ function importSalesFromDrive_(force, asOfOverride) {
 
 function importDriveFile_(file, asOfOverride) {
   const asOf = asOfOverride || asOfFromFileName_(file.getName(), file.getLastUpdated());
+  // แก้วันที่ไฟล์ที่นำเข้าไปแล้ว ("อัปเดตยอด 1/12"): ย้ายยอดทุกไฟล์ที่ลงวันที่เดิมไปวันที่ใหม่ด้วย
+  // (เช่น ไฟล์รายเขต + รายลูกค้าที่ export วันเดียวกัน) ไม่ให้ยอดผิดค้างอยู่ที่วันที่เดิม
+  let movedFrom = null;
+  let last = null;
+  try { last = JSON.parse(prop_('LAST_IMPORT_INFO', 'null')); } catch (e) { /* ignore */ }
+  // (ไฟล์ที่นำเข้าล่าสุดภายใน 3 วัน — ตามที่ข้อความยืนยันการนำเข้าบอกวันที่ไว้)
+  if (asOfOverride && last && last.asOf !== asOf.getTime() && now_().getTime() - (last.at || 0) < 3 * 86400000) {
+    if (moveMtdDate_(new Date(last.asOf), asOf)) movedFrom = new Date(last.asOf);
+  }
   const r = importTable_(readDriveTable_(file), { asOf: asOf });
   setProp_('LAST_IMPORT_KEY', file.getId() + '@' + file.getLastUpdated().getTime());
+  setProp_('LAST_IMPORT_INFO', JSON.stringify({ id: file.getId(), asOf: asOf.getTime(), at: now_().getTime() }));
+  r.movedFrom = movedFrom;
   r.fileName = file.getName();
   r.message = formatImportResult_(r, file.getName());
   return r;
@@ -532,6 +596,7 @@ function mtdToDailyRows_(snaps, now) {
       const d = new Date(x.t);
       const mk = monthKey_(d);
       if (mk !== prevMonth) { prev = null; prevMonth = mk; }
+      const firstOk = !prev && isFirstWorkingDay_(d);
       const cur = x.map;
       const keys = Object.keys(cur).concat(prev ? Object.keys(prev).filter(function (k) { return !(k in cur); }) : []);
       keys.forEach(function (k) {
@@ -542,7 +607,7 @@ function mtdToDailyRows_(snaps, now) {
         if (Math.abs(dt) < 1e-9 && !(Math.abs(da) > 1e-9)) return;
         // ไฟล์ก่อนหน้าไม่มีคอลัมน์มูลค่า: มูลค่าของวันนี้เป็นยอดสะสมก้อนเดียว ไม่ใช่ยอดรายวัน
         out.push(Object.assign({ date: d, team: c.team, sales: c.sales, customer: c.customer, product: '', ton: dt, amount: da,
-          amtLump: !!(prev && x.hasAmt && !prevHasAmt), firstSnap: !prev }, extra));
+          amtLump: !!(prev && x.hasAmt && !prevHasAmt), firstSnap: !prev && !firstOk }, extra));
       });
       prev = cur;
       prevHasAmt = x.hasAmt;
@@ -589,7 +654,8 @@ function zoneInfoOf_(rows) {
   return info;
 }
 
-function readSalesRows_() {
+/** until = ตัดข้อมูลถึงวันนั้น (ไม่ใส่ = ถึงวันนี้) */
+function readSalesRows_(until) {
   const mtd = spreadsheet_().getSheetByName(MTD_SHEET);
   if (mtd) {
     const snaps = [];
@@ -603,7 +669,7 @@ function readSalesRows_() {
       snaps.push(row);
     });
     const fishOnly = snaps.filter(function (r) { return r.team !== OTHER_ZONE; });
-    if (fishOnly.length) return mtdToDailyRows_(fishOnly, now_());
+    if (fishOnly.length) return mtdToDailyRows_(fishOnly, until || now_());
   }
   const ss = spreadsheet_();
   const sh = ss.getSheetByName(SALES_SHEET);
@@ -674,6 +740,89 @@ function parseHolidays_(year) {
   }).filter(Boolean);
 }
 
+/** "5/12/2026" — ปี ค.ศ. ชัดเจน (ไม่ใส่ปี = ปีที่ใกล้ที่สุดข้างหน้า นับย้อนได้ 1 เดือน) */
+function holidayDate_(token, now) {
+  const m = String(token).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const mon = Number(m[2]);
+  let y;
+  if (m[3]) {
+    y = Number(m[3]);
+    if (y < 100) y += y >= 50 ? 2500 : 2000;
+    if (y > 2400) y -= 543;
+  } else {
+    y = now.getFullYear();
+    if (new Date(y, mon - 1, day) < addDays_(startOfDay_(now), -31)) y++;
+  }
+  const d = new Date(y, mon - 1, day);
+  return d.getMonth() === mon - 1 && d.getDate() === day ? d : null;
+}
+
+/** รายการใน HOLIDAYS: [{ text, d: วัน, m: เดือน, y: ปี ค.ศ. หรือ null (ทุกปี) }] */
+function holidayEntries_() {
+  return String(prop_('HOLIDAYS', '')).split(',').map(function (s) {
+    const t = s.trim();
+    const m = t.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (!m) return null;
+    let y = m[3] ? Number(m[3]) : null;
+    if (y !== null && y < 100) y += y >= 50 ? 2500 : 2000;
+    if (y !== null && y > 2400) y -= 543;
+    return { text: t, d: Number(m[1]), m: Number(m[2]), y: y };
+  }).filter(Boolean);
+}
+
+/** วันทำงาน + วันหยุดของเดือนนี้และเดือนหน้า */
+function holidaysText_(now) {
+  const out = ['📅 วันทำงาน (นับ ' + workDaysLabel_() + ' ไม่นับวันหยุด)'];
+  [0, 1].forEach(function (k) {
+    const first = new Date(now.getFullYear(), now.getMonth() + k, 1);
+    const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+    const wd = workingDays_(last);
+    const hol = parseHolidays_(first.getFullYear()).map(function (t) { return new Date(t); })
+      .filter(function (d) { return d.getMonth() === first.getMonth() && d.getFullYear() === first.getFullYear(); })
+      .sort(function (a, b) { return a - b; });
+    out.push('');
+    out.push('🗓️ ' + TH_MONTHS_SHORT[first.getMonth()] + ' ' + String(first.getFullYear() + 543).slice(-2) + ': ทำงาน ' + wd.total + ' วัน');
+    out.push(hol.length ? 'วันหยุด: ' + hol.map(function (d) { return fmtDate_(d); }).join(', ') : 'วันหยุด: - (ยังไม่ได้ใส่)');
+  });
+  out.push('');
+  out.push('➕ เพิ่ม: วันหยุด 5/12 10/12 31/12');
+  out.push('➖ ลบ: ลบวันหยุด 10/12');
+  return out.join('\n');
+}
+
+function workDaysLabel_() {
+  const days = String(prop_('WORK_DAYS', CONFIG.WORK_DAYS));
+  const names = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  if (days === '1,2,3,4,5,6') return 'จ.–ส.';
+  if (days === '1,2,3,4,5') return 'จ.–ศ.';
+  return days.split(',').map(function (d) { return names[Number(d)] || ''; }).filter(Boolean).join(' ');
+}
+
+/** "วันหยุด 5/12 10/12" → เพิ่ม · "ลบวันหยุด 10/12" → ลบ */
+function editHolidays_(argText, now, remove) {
+  const tokens = String(argText || '').split(/[\s,]+/).filter(Boolean);
+  const dates = tokens.map(function (t) { return holidayDate_(t, now); });
+  if (!tokens.length || dates.some(function (d) { return !d; })) {
+    return 'พิมพ์วันที่แบบ วัน/เดือน เช่น ' + (remove ? 'ลบวันหยุด 10/12' : 'วันหยุด 5/12 10/12 31/12') + ' ค่ะ';
+  }
+  const entries = holidayEntries_();
+  const same = function (e, d) { return e.d === d.getDate() && e.m === d.getMonth() + 1 && (e.y === null || e.y === d.getFullYear()); };
+  let kept = entries;
+  const changed = [];
+  dates.forEach(function (d) {
+    const hit = kept.some(function (e) { return same(e, d); });
+    if (remove && hit) { kept = kept.filter(function (e) { return !same(e, d); }); changed.push(d); }
+    if (!remove && !hit) { kept = kept.concat([{ text: d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() }]); changed.push(d); }
+  });
+  setProp_('HOLIDAYS', kept.map(function (e) { return e.text; }).join(','));
+  const what = changed.length
+    ? (remove ? '➖ ลบวันหยุด ' : '➕ เพิ่มวันหยุด ') + changed.map(function (d) { return fmtDate_(d); }).join(', ') + ' แล้วค่ะ'
+    : (remove ? 'ไม่มีวันนั้นในรายการวันหยุดค่ะ' : 'มีวันหยุดนี้อยู่แล้วค่ะ');
+  return what + '\n\n' + holidaysText_(now);
+}
+
 /** วันทำงานทั้งเดือน และที่ผ่านไปถึง asOf (นับรวม asOf) */
 function workingDays_(asOf) {
   const days = String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number);
@@ -687,6 +836,17 @@ function workingDays_(asOf) {
     if (d <= asOf) passed++;
   }
   return { total: total, passed: Math.max(passed, 1) };
+}
+
+/** วันทำงานแรกของเดือน (หรือก่อนนั้น) — ไฟล์แรกของเดือนที่ลงวันนี้ = ยอดของวันนั้นทั้งหมด */
+function isFirstWorkingDay_(d) {
+  const days = String(prop_('WORK_DAYS', CONFIG.WORK_DAYS)).split(',').map(Number);
+  const holidays = parseHolidays_(d.getFullYear());
+  let n = 0;
+  for (let x = new Date(d.getFullYear(), d.getMonth(), 1); x <= d; x = addDays_(x, 1)) {
+    if (days.indexOf(x.getDay()) >= 0 && holidays.indexOf(x.getTime()) < 0) n++;
+  }
+  return n <= 1;
 }
 
 function sumBy_(rows, key, field) {
@@ -836,6 +996,9 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
     monthKey: mKey,
     workingDaysPassed: wd.passed,
     workingDaysTotal: wd.total,
+    // ข้อมูลครบทุกวันทำงานของเดือน = ยอดปิดเดือนจริง (ไม่ใช่คาดการณ์)
+    closed: wd.total > 0 && wd.passed >= wd.total,
+    detailClosed: wdDetail.total > 0 && wdDetail.passed >= wdDetail.total,
     total: total,
     teams: teams,
     salesList: salesList,
@@ -843,8 +1006,9 @@ function buildSalesSnapshot_(rows, now, targetsFn) {
     lastDay: {
       date: asOf,
       // ไฟล์ยอดสะสมไฟล์แรกของเดือน: ยังไม่มีไฟล์ก่อนหน้าให้หักลบ
-      unavailable: !!(meta.firstOfMonth && meta.firstOfMonth[mKey] === asOf.getTime()),
-      firstSnapshot: meta.firstOfMonth ? meta.firstOfMonth[mKey] || null : null,
+      unavailable: !!(meta.firstOfMonth && meta.firstOfMonth[mKey] === asOf.getTime()) && !isFirstWorkingDay_(asOf),
+      firstSnapshot: meta.firstOfMonth && meta.firstOfMonth[mKey] && !isFirstWorkingDay_(new Date(meta.firstOfMonth[mKey]))
+        ? meta.firstOfMonth[mKey] : null,
       since: meta.since && monthKey_(meta.since) === mKey ? meta.since : null,
       amtUnknown: lastRows.some(function (r) { return r.amtLump || typeof r.amount !== 'number' || isNaN(r.amount); }),
       total: sumField_(lastRows, 'ton'),
